@@ -171,10 +171,11 @@ export async function getProductAdvertisingWorkspaceBundle(
 ): Promise<ProductAdvertisingWorkspaceBundleResponse> {
   // Response-level cache: same (nmId, startDate, endDate) → instant reply.
   const bundleResponseCacheKey = [nmId, input?.startDate ?? "", input?.endDate ?? ""].join(":");
-  const cachedBundle = self.productAdvertisingWorkspaceBundleResponseCache.get(bundleResponseCacheKey);
-  if (cachedBundle && Date.now() < cachedBundle.expiresAtMs) {
-    return cachedBundle.response;
-  }
+  // Кэш bundle отключён вместе с кэшем cluster-table.
+  // const cachedBundle = self.productAdvertisingWorkspaceBundleResponseCache.get(bundleResponseCacheKey);
+  // if (cachedBundle && Date.now() < cachedBundle.expiresAtMs) {
+  //   return cachedBundle.response;
+  // }
 
   const workspace = await getProductAdvertisingWorkspace(self, nmId, input);
 
@@ -230,10 +231,13 @@ export async function getProductAdvertisingWorkspaceClusterTable(
     input?.page ?? 1,
     input?.pageSize ?? 200,
   ].join(":");
-  const cachedResponse = self.productAdvertisingClusterTableResponseCache.get(responseCacheKey);
-  if (cachedResponse && Date.now() < cachedResponse.expiresAtMs) {
-    return cachedResponse.response;
-  }
+  // Кэш cluster-table отключён: каждый запрос читает актуальные данные из БД.
+  // Ставки и статусы кластеров меняются часто; кэш вызывал стойкие расхождения
+  // между БД и UI (ставки сбрасывались, статус не обновлялся до истечения TTL).
+  // const cachedResponse = self.productAdvertisingClusterTableResponseCache.get(responseCacheKey);
+  // if (cachedResponse && Date.now() < cachedResponse.expiresAtMs) {
+  //   return cachedResponse.response;
+  // }
 
   const currentPeriod =
     input?.startDate && input?.endDate
