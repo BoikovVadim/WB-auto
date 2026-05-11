@@ -313,7 +313,7 @@ export function ProductAdvertisingClusterDataTable(
               prefix="sticky-cluster-col"
             />
             <tbody>
-              <tr className={`${getAdvertisingClusterRowClass(stuckBodyEntry.row)} wb-advertising-group-row is-expanded`}>
+              <tr className={`${getAdvertisingClusterRowClass(stuckBodyEntry.row)} wb-advertising-group-row is-expanded${props.selectedClusterKeys.includes(stuckClusterKey) ? " is-selected" : ""}`}>
                 <td
                   className={getAdvertisingCellClassName(stickyOffsets, "select")}
                   style={getAdvertisingStickyStyle(stickyOffsets, "select")}

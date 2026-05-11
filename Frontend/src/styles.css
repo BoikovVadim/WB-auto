@@ -1779,6 +1779,13 @@ input {
   margin: 0;
   accent-color: #111111;
   cursor: pointer;
+  display: block;
+}
+
+/* Center checkbox in its cell — both header and body */
+.wb-data-table--advertising th:has(.wb-advertising-checkbox),
+.wb-data-table--advertising td:has(.wb-advertising-checkbox) {
+  text-align: center;
 }
 
 .wb-advertising-group-row td {
@@ -1787,6 +1794,23 @@ input {
 
 .wb-advertising-group-row .wb-advertising-column--sticky {
   background: #fff;
+}
+
+/* Row highlight when selected */
+.wb-advertising-group-row.is-selected td {
+  background: #f0f6ff;
+}
+
+.wb-advertising-group-row.is-selected .wb-advertising-column--sticky {
+  background: #f0f6ff;
+}
+
+.wb-data-table--advertising .wb-advertising-group-row.is-selected.is-expanded td {
+  background: #eaf3ff;
+}
+
+.wb-data-table--advertising .wb-advertising-group-row.is-selected.is-expanded .wb-advertising-column--sticky {
+  background: #eaf3ff;
 }
 
 .wb-data-table--advertising .wb-advertising-group-row.is-expanded td {

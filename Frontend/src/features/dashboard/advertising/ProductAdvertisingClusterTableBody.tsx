@@ -58,11 +58,12 @@ export const ProductAdvertisingClusterTableBody = memo(function ProductAdvertisi
               tableProps.productAdvertisingClusterQueriesByKey[entry.clusterKey]?.data?.queries ?? [];
             const isExpanded = tableProps.expandedClusterKeys.includes(entry.clusterKey);
 
+            const isSelected = selectedClusterKeySet.has(entry.clusterKey);
             return (
               <tr
                 key={entry.key}
                 data-cluster-key={entry.clusterKey}
-                className={`${getAdvertisingClusterRowClass(entry.row)} wb-advertising-group-row${isExpanded ? " is-expanded" : ""}${hiddenClusterKey === entry.clusterKey ? " is-stuck-hidden" : ""}`}
+                className={`${getAdvertisingClusterRowClass(entry.row)} wb-advertising-group-row${isExpanded ? " is-expanded" : ""}${isSelected ? " is-selected" : ""}${hiddenClusterKey === entry.clusterKey ? " is-stuck-hidden" : ""}`}
               >
                 <td
                   className={getAdvertisingCellClassName(stickyOffsets, "select")}
