@@ -144,4 +144,39 @@ export abstract class WbClustersRepositoryClusterCorePersistence extends WbClust
     return deduplicatedInputs.length;
   }
 
+  /**
+   * После синка помечает активные кластеры, которых WB больше не возвращает,
+   * как source_kind='stats', is_active=NULL. Это убирает их из списка рабочего
+   * пространства (WHERE source_kind IN ('active','excluded') их не поймает),
+   * но сохраняет для исторических wb_cluster_daily_stats.
+   *
+   * Принимает raw имена кластеров; нормализует их внутри.
+   * Для каждой кампании: деактивирует все 'active' кластеры, которых НЕТ в списке.
+   */
+  async deactivateStaleActiveClusters(
+    items: Array<{
+      advertId: number;
+      nmId: number;
+      activeClusterNames: string[];
+    }>,
+  ): Promise<void> {
+    if (items.length === 0) return;
+    await this.ensureSchemaOrThrow();
+    const pool = this.getPool();
+    for (const item of items) {
+      const normalizedNames = item.activeClusterNames.map((n) => this.normalizeQuery(n));
+      await pool.query(
+        `
+          UPDATE ${this.tableName("wb_clusters")}
+          SET source_kind = 'stats', is_active = NULL, synced_at = NOW()
+          WHERE advert_id = $1
+            AND nm_id = $2
+            AND source_kind = 'active'
+            AND normalized_cluster_name != ALL($3::text[])
+        `,
+        [item.advertId, item.nmId, normalizedNames],
+      );
+    }
+  }
+
 }

@@ -125,6 +125,17 @@ export async function runStructureSyncPhase(self: WbClustersService, syncRunId: 
       })),
     ]);
     clustersUpserted += await self.wbClustersRepository.upsertClusters(clusterRows);
+
+    // Mark previously-active clusters that WB no longer returns as source_kind='stats'.
+    // Prevents wb_clusters from accumulating stale entries that inflate the active count.
+    const deactivationItems = (listResponse.items ?? []).map((item) => ({
+      advertId: item.advertId,
+      nmId: item.nmId,
+      activeClusterNames: item.normQueries?.active ?? [],
+    }));
+    if (deactivationItems.length > 0) {
+      await self.wbClustersRepository.deactivateStaleActiveClusters(deactivationItems);
+    }
   }
 
   if (phaseCompleted) {
