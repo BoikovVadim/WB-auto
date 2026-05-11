@@ -373,7 +373,11 @@ export async function getProductAdvertisingWorkspaceClusterTable(
         const liveBid = liveBidMap.get(
           (row.canonicalNormQuery ?? row.clusterName ?? "").trim().toLowerCase(),
         );
-        if (!liveBid) return row;
+        // Only overlay when wb_cluster_bids has a non-null bid for this cluster.
+        // Rows with bid=null in wb_cluster_bids are placeholders — their displayed
+        // bid comes from cp.search_bid / cp.min_search_bid which is already baked
+        // into the snapshot. Overriding with null would erase all displayed bids.
+        if (!liveBid || liveBid.bid === null) return row;
         return {
           ...row,
           bid: liveBid.bid,
