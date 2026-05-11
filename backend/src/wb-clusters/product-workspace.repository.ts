@@ -97,6 +97,10 @@ export class ProductWorkspaceRepository {
     return this.wbClustersRepository.batchReplaceStoredProductWorkspaceClusterQueries(input);
   }
 
+  deleteWorkspaceCampaignRowsForNmId(nmId: number): Promise<void> {
+    return this.wbClustersRepository.deleteWorkspaceCampaignRowsForNmId(nmId);
+  }
+
   listReadySheetSnapshotsMissingWorkspace(limit = 200): Promise<StoredProductAdvertisingSheetSnapshotRecord[]> {
     return this.wbClustersRepository.listReadyProductAdvertisingSheetSnapshotsMissingWorkspace(limit);
   }

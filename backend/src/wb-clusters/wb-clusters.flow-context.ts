@@ -77,6 +77,7 @@ export interface WbClustersSnapshotReadContext {
     | "resolveWorkspaceCampaignRows"
     | "resolveWorkspaceClusterQueries"
     | "saveWorkspaceCampaignRows"
+    | "invalidateWorkspaceCampaignRows"
   >;
   productAdvertisingSheetSnapshotSchemaVersion: number;
   productRefreshInFlight: Map<number, ProductRefreshInFlightEntry>;

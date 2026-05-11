@@ -148,6 +148,20 @@ export abstract class WbClustersRepositoryWorkspaceSnapshotWriteStorage extends 
     );
   }
 
+  /**
+   * Удаляет все сохранённые строки кластеров для nmId из wb_product_workspace_campaign_rows.
+   * Вызывается при изменении ставки или действия, чтобы следующий GET читал
+   * актуальные данные из wb_cluster_bids напрямую через SQL-fast-path.
+   */
+  async deleteWorkspaceCampaignRowsForNmId(nmId: number): Promise<void> {
+    await this.ensureSchemaOrThrow();
+    const pool = this.getPool();
+    await pool.query(
+      `DELETE FROM ${this.tableName("wb_product_workspace_campaign_rows")} WHERE nm_id = $1`,
+      [nmId],
+    );
+  }
+
   // Батчевая запись всех кластерных запросов одного продукта за один SQL-запрос.
   // Заменяет цикл из N отдельных INSERT на один unnest-запрос.
   // При 50 кластерах — экономия ~50 round-trip'ов, ускорение ~30-40x.

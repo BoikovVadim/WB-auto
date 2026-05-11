@@ -403,4 +403,8 @@ export class ProductWorkspaceSnapshotResolver {
   }): Promise<void> {
     await this.productWorkspaceRepository.replaceWorkspaceCampaignRows(input);
   }
+
+  async invalidateWorkspaceCampaignRows(nmId: number): Promise<void> {
+    await this.productWorkspaceRepository.deleteWorkspaceCampaignRowsForNmId(nmId);
+  }
 }

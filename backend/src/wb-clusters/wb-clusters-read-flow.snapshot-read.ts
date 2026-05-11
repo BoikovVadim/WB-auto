@@ -707,6 +707,10 @@ export function invalidateProductAdvertisingSheetCaches(self: WbClustersSnapshot
       self.querySearchIndexCache.delete(key);
     }
   }
+  // Удаляем сохранённые строки кластеров из wb_product_workspace_campaign_rows.
+  // resolveWorkspaceCampaignRows возвращает их напрямую (минуя wb_cluster_bids),
+  // поэтому без удаления re-fetch после смены ставки вернёт устаревший bid из снэпшота.
+  void self.productWorkspaceSnapshotResolver.invalidateWorkspaceCampaignRows(nmId).catch(() => null);
 }
 
 export function resolveProductAdvertisingSheetSnapshotCacheTtlMs(
