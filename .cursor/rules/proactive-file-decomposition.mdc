@@ -1,0 +1,35 @@
+---
+description: Build features through proactive decomposition instead of growing monolith files
+alwaysApply: true
+---
+
+# Proactive file decomposition
+
+1. Do not add a new responsibility to an already overloaded file when it can live in a nearby `hook`, `helper`, `section`, `service`, `repository`, `mapper`, or `builder`.
+2. Before a substantial edit, name the file roles: orchestration, rendering, URL-state, formatting, persistence, domain logic, transport, query-shaping. If too many roles are mixed, expand the file only after extraction.
+3. For frontend, separate page orchestration, widgets/sections, hooks, formatters, URL-state, and API/data-access helpers.
+4. For backend, separate controller transport, service orchestration, repository/query logic, DTO/mapper, read-model builders, and jobs/materializers.
+5. Extraction must reduce responsibility, not just move the same monolith next door.
+6. Even short files should be split when they mix `3+` semantic blocks or a function grows beyond `60-80` lines without a strong reason.
+
+## Size thresholds
+
+- `200+` lines: attention zone, check for a second responsibility.
+- `350+` lines: new feature block should be extracted by default.
+- `500+` lines: do not keep extending without explicit decomposition.
+- `800+` lines: overloaded file, expand only in rare exceptions.
+
+## Target ranges
+
+- `helper` / `formatter` / `hook` / `mapper`: target `120-180`, hard limit `250`
+- `component`: target `180-250`, hard limit `350`
+- `section` / `modal` / `drawer section`: target `250-350`, hard limit `400`
+- `page` / `screen orchestration`: target `350-500`, hard limit `600`
+- `controller`: target `120-180`, hard limit `220`
+- `service` / `repository`: target `250-400`, hard limit `500-600`
+
+## Self-check
+
+- Which structure avoids another refactor after `100` more products, categories, or filters?
+- Is a React screen mixing heavy JSX, formatting, storage, drag-drop, URL sync, and API orchestration?
+- Is a backend service mixing business flow, analytics, backfill, attachment flow, and query shaping?

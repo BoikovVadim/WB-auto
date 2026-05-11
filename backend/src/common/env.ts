@@ -1,0 +1,281 @@
+import path from "node:path";
+import dotenv from "dotenv";
+
+const envFiles = [
+  path.resolve(process.cwd(), ".env"),
+  path.resolve(process.cwd(), "..", ".env"),
+  path.resolve(process.cwd(), "..", ".env.local"),
+];
+
+for (const envFile of envFiles) {
+  dotenv.config({ path: envFile, override: true });
+}
+
+export function getRequiredEnv(name: string): string {
+  const value = process.env[name];
+
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+
+  return value;
+}
+
+export function getOptionalEnv(name: string, fallback: string): string {
+  return process.env[name] ?? fallback;
+}
+
+function parseBooleanEnv(name: string, fallback: string): boolean {
+  const rawValue = getOptionalEnv(name, fallback).trim().toLowerCase();
+
+  if (rawValue === "true" || rawValue === "1" || rawValue === "yes") {
+    return true;
+  }
+
+  if (rawValue === "false" || rawValue === "0" || rawValue === "no") {
+    return false;
+  }
+
+  throw new Error(`Invalid ${name} value: ${rawValue}`);
+}
+
+function parsePositiveIntegerEnv(
+  name: string,
+  fallback: string,
+  minimum = 0,
+): number {
+  const rawValue = getOptionalEnv(name, fallback).trim();
+  const value = Number(rawValue);
+
+  if (!Number.isInteger(value) || value < minimum) {
+    throw new Error(`Invalid ${name} value: ${rawValue}`);
+  }
+
+  return value;
+}
+
+function getOptionalNullablePathEnv(name: string): string | null {
+  const rawValue = (process.env[name] ?? "").trim();
+  return rawValue ? path.resolve(rawValue) : null;
+}
+
+function getOptionalPathEnv(name: string, fallback: string): string {
+  const value = getOptionalEnv(name, fallback).trim();
+
+  if (!value) {
+    throw new Error(`Invalid path in environment variable: ${name}`);
+  }
+
+  return path.resolve(value);
+}
+
+function parsePort(rawValue: string): number {
+  const port = Number(rawValue);
+
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`Invalid BACKEND_PORT value: ${rawValue}`);
+  }
+
+  return port;
+}
+
+function getOptionalUrlEnv(name: string, fallback: string): string {
+  const value = getOptionalEnv(name, fallback);
+
+  try {
+    const url = new URL(value);
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    throw new Error(`Invalid URL in environment variable: ${name}`);
+  }
+}
+
+function resolvePostgresConfig() {
+  const connectionString = (process.env.DATABASE_URL ?? "").trim();
+  const ssl = parseBooleanEnv("PGSSL", "false");
+  const schema = getOptionalEnv("PGSCHEMA", "public").trim() || "public";
+
+  if (connectionString) {
+    return {
+      enabled: true,
+      connectionString,
+      ssl,
+      schema,
+    };
+  }
+
+  const host = (process.env.PGHOST ?? "").trim();
+  const user = (process.env.PGUSER ?? "").trim();
+  const password = (process.env.PGPASSWORD ?? "").trim();
+  const database = (process.env.PGDATABASE ?? "").trim();
+
+  if (!host || !user || !database) {
+    return {
+      enabled: false,
+      ssl,
+      schema,
+    };
+  }
+
+  return {
+    enabled: true,
+    host,
+    port: parsePositiveIntegerEnv("PGPORT", "5432", 1),
+    user,
+    password,
+    database,
+    ssl,
+    schema,
+  };
+}
+
+export const appEnv = {
+  nodeEnv: getOptionalEnv("NODE_ENV", "development"),
+  port: parsePort(getOptionalEnv("BACKEND_PORT", "3000")),
+  frontendOrigin: getOptionalUrlEnv(
+    "FRONTEND_ORIGIN",
+    "http://localhost:5173",
+  ),
+  wbApiBaseUrl: getOptionalUrlEnv(
+    "WB_API_BASE_URL",
+    "https://seller-analytics-api.wildberries.ru",
+  ),
+  wbApiTimeoutMs: parsePositiveIntegerEnv("WB_API_TIMEOUT_MS", "45000", 1),
+  wbApiMinIntervalMs: parsePositiveIntegerEnv("WB_API_MIN_INTERVAL_MS", "21000"),
+  // WB /api/v2/search-report/product/search-texts allows ~5 req/sec.
+  // Default 200 ms keeps us safely under that limit.
+  wbJamMinIntervalMs: parsePositiveIntegerEnv("WB_JAM_MIN_INTERVAL_MS", "200"),
+  wbApiRetryAttempts: parsePositiveIntegerEnv("WB_API_RETRY_ATTEMPTS", "2"),
+  wbApiRetryBaseDelayMs: parsePositiveIntegerEnv("WB_API_RETRY_BASE_DELAY_MS", "2000"),
+  wbApiRetryMaxDelayMs: parsePositiveIntegerEnv("WB_API_RETRY_MAX_DELAY_MS", "8000"),
+  wbDefaultLocale: getOptionalEnv("WB_DEFAULT_LOCALE", "ru"),
+  wbApiToken: (process.env.WB_API_TOKEN ?? "").trim(),
+  wbClustersWriteApiKey: (process.env.WB_CLUSTERS_WRITE_API_KEY ?? "").trim(),
+  wbPromotionApiBaseUrl: getOptionalUrlEnv(
+    "WB_PROMOTION_API_BASE_URL",
+    "https://advert-api.wildberries.ru",
+  ),
+  wbPromotionApiTimeoutMs: parsePositiveIntegerEnv(
+    "WB_PROMOTION_API_TIMEOUT_MS",
+    "45000",
+    1,
+  ),
+  // Default lane: /adv/v1/promotion/count, /adv/v0/normquery/list and other general
+  // Promotion API endpoints. WB allows ~5 req/sec → 200 ms is the safe floor.
+  wbPromotionApiMinIntervalMs: parsePositiveIntegerEnv(
+    "WB_PROMOTION_API_MIN_INTERVAL_MS",
+    "200",
+  ),
+  wbPromotionBidWriteMinIntervalMs: parsePositiveIntegerEnv(
+    "WB_PROMOTION_BID_WRITE_MIN_INTERVAL_MS",
+    "700",
+  ),
+  wbPromotionBidReadMinIntervalMs: parsePositiveIntegerEnv(
+    "WB_PROMOTION_BID_READ_MIN_INTERVAL_MS",
+    "220",
+  ),
+  wbPromotionMinusWriteMinIntervalMs: parsePositiveIntegerEnv(
+    "WB_PROMOTION_MINUS_WRITE_MIN_INTERVAL_MS",
+    "200",
+  ),
+  wbPromotionMinusReadMinIntervalMs: parsePositiveIntegerEnv(
+    "WB_PROMOTION_MINUS_READ_MIN_INTERVAL_MS",
+    "200",
+  ),
+  // /api/advert/v2/adverts accepts up to 50 IDs per request and allows ~5 req/sec.
+  // 400 ms gives a safe 2.5 req/sec buffer; bump chunk size to 50 to halve the
+  // number of round-trips needed for the inventory phase.
+  wbPromotionDetailsMinIntervalMs: parsePositiveIntegerEnv(
+    "WB_PROMOTION_DETAILS_MIN_INTERVAL_MS",
+    "400",
+  ),
+  wbPromotionDetailsChunkSize: parsePositiveIntegerEnv(
+    "WB_PROMOTION_DETAILS_CHUNK_SIZE",
+    "50",
+    1,
+  ),
+  // WB enforces a hard 1 req/6 s limit on normquery/stats endpoints.
+  // Do NOT reduce below ~6100 ms or 429s will cause 60 s cooldown penalties.
+  wbPromotionStatsMinIntervalMs: parsePositiveIntegerEnv(
+    "WB_PROMOTION_STATS_MIN_INTERVAL_MS",
+    "6500",
+  ),
+  wbPromotionRetryAttempts: parsePositiveIntegerEnv(
+    "WB_PROMOTION_RETRY_ATTEMPTS",
+    "2",
+  ),
+  wbPromotionRetryBaseDelayMs: parsePositiveIntegerEnv(
+    "WB_PROMOTION_RETRY_BASE_DELAY_MS",
+    "15000",
+  ),
+  wbPromotionApiToken: (process.env.WB_PROMOTION_API_TOKEN ?? "").trim(),
+  wbPromotionStatsLookbackDays: parsePositiveIntegerEnv(
+    "WB_PROMOTION_STATS_LOOKBACK_DAYS",
+    "30",
+    1,
+  ),
+  wbPromotionSyncEnabled: parseBooleanEnv("WB_PROMOTION_SYNC_ENABLED", "true"),
+  wbPromotionSyncCron:
+    getOptionalEnv("WB_PROMOTION_SYNC_CRON", "*/10 * * * *").trim() ||
+    "*/10 * * * *",
+  wbPromotionRawArchiveBatchSize: parsePositiveIntegerEnv(
+    "WB_PROMOTION_RAW_ARCHIVE_BATCH_SIZE",
+    "16",
+    1,
+  ),
+  wbPromotionEnableCmpInFullSync: parseBooleanEnv(
+    "WB_PROMOTION_ENABLE_CMP_IN_FULL_SYNC",
+    "true",
+  ),
+  wbPromotionEnableMonthlyFrequencyInFullSync: parseBooleanEnv(
+    "WB_PROMOTION_ENABLE_MONTHLY_FREQUENCY_IN_FULL_SYNC",
+    "true",
+  ),
+  wbPromotionEnableJamInFullSync: parseBooleanEnv(
+    "WB_PROMOTION_ENABLE_JAM_IN_FULL_SYNC",
+    "false",
+  ),
+  wbPromotionJamSyncEnabled: parseBooleanEnv("WB_PROMOTION_JAM_SYNC_ENABLED", "true"),
+  wbPromotionJamSyncCron:
+    getOptionalEnv("WB_PROMOTION_JAM_SYNC_CRON", "0 */6 * * *").trim() ||
+    "0 */6 * * *",
+  wbCabinetEnabled: parseBooleanEnv("WB_CABINET_ENABLED", "false"),
+  wbCabinetCmpBaseUrl: getOptionalUrlEnv(
+    "WB_CABINET_CMP_BASE_URL",
+    "https://cmp.wildberries.ru",
+  ),
+  wbCabinetHeadless: parseBooleanEnv("WB_CABINET_HEADLESS", "true"),
+  wbCabinetStorageStatePath:
+    getOptionalNullablePathEnv("WB_CABINET_STORAGE_STATE_PATH") ??
+    path.resolve(
+      path.basename(process.cwd()) === "backend"
+        ? path.join(process.cwd(), "data", "wb-cabinet-storage-state.json")
+        : path.join(process.cwd(), "backend", "data", "wb-cabinet-storage-state.json"),
+    ),
+  wbCabinetExecutablePath: getOptionalNullablePathEnv(
+    "WB_CABINET_EXECUTABLE_PATH",
+  ),
+  wbCabinetRequestTimeoutMs: parsePositiveIntegerEnv(
+    "WB_CABINET_REQUEST_TIMEOUT_MS",
+    "60000",
+    1,
+  ),
+  wbCabinetProbeMaxRequests: parsePositiveIntegerEnv(
+    "WB_CABINET_PROBE_MAX_REQUESTS",
+    "60",
+    1,
+  ),
+  wbCabinetEnableInFullSync: parseBooleanEnv(
+    "WB_CABINET_ENABLE_IN_FULL_SYNC",
+    "true",
+  ),
+  wbArchiveRoot: getOptionalPathEnv(
+    "WB_ARCHIVE_ROOT",
+    path.resolve(
+      path.basename(process.cwd()) === "backend"
+        ? path.join(process.cwd(), "data", "search-queries")
+        : path.join(process.cwd(), "backend", "data", "search-queries"),
+    ),
+  ),
+  postgres: resolvePostgresConfig(),
+};

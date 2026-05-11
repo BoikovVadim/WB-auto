@@ -1,0 +1,15 @@
+---
+description: Project-wide architecture canon for the Wildberries automation system
+alwaysApply: true
+---
+
+# Project architecture canon
+
+1. Start from the canonical source of truth first: `domain/service`, `env/config`, `DB`, or the `WB API` contract.
+2. Keep read paths read-only. `GET` endpoints, read repositories, and read-model builders must not hide mutations, silent repair, click-time warmup, or implicit materialization.
+3. Prefer backend-owned read models for heavy screens and multi-step domain views instead of rebuilding the same semantics from raw arrays in the browser.
+4. Design for scale: decisions must stay generic enough for large product counts, many categories, and repeated sync cycles without rewriting the core flow.
+5. Reuse nearby modules before creating a second parallel implementation or a second source of truth.
+6. Discovery is mandatory before edits: search all affected functions, DTOs, contracts, readers, caches, and UI flows before changing code.
+7. If confidence is low or migration risk is unclear, stop and ask instead of guessing.
+8. Every durable architecture decision must be reflected in `README.md`, `docs/module-map.md`, or a rule file.

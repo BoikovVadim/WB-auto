@@ -1,0 +1,19 @@
+---
+description: Backend must preserve bounded contexts and controller service repository layering
+globs: backend/src/**/*.ts
+alwaysApply: false
+---
+
+# Backend layering
+
+1. Preserve explicit bounded contexts: `wb-sync`, `wb-clusters`, `catalog`, `pricing`, `stocks`, `orders`, `analytics`, `audit`.
+2. Controllers handle transport only: route, DTO, auth/guard boundary, and response code.
+3. Services own business rules, orchestration, retries, and cross-step coordination.
+4. Repositories own direct SQL/ORM queries and read/write persistence access.
+5. Builders and mappers shape DTOs or read-model responses; they should not own side effects.
+6. Jobs, queues, backfills, and materializers belong to explicit write/background services, not to user-facing read endpoints.
+7. Direct SQL, external API branching, or heavy business decisions must not live in controllers.
+8. Use dependency injection instead of manual object construction inside feature flows.
+9. User-facing `GET` read paths must resolve stored snapshots or explicit missing states only; diagnostic live read-model access stays on separate routes/services.
+10. Security belongs to the server boundary: validate input DTOs, keep secrets in env/config, and keep access checks explicit at controller/guard/service boundaries.
+11. When backend contracts change, update DTOs, builders, tests/checks, and all readers together.

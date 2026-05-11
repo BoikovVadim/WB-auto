@@ -1,0 +1,14 @@
+---
+description: Deploy to production after every code change request
+alwaysApply: true
+---
+
+# Deploy after every change
+
+After completing any code change request, always run a full production deploy:
+
+1. `npm run verify:ci` — lint + typecheck + tests + build
+2. `npm run deploy:server-first:auto` — upload, reload PM2, verify health
+3. Confirm `verify:prod` passed and `wb-automation-backend` is `online` in the PM2 table
+
+Do not skip the deploy step, even for small changes.

@@ -1,0 +1,21 @@
+---
+description: Cross-layer changes must update the full delivery chain
+alwaysApply: true
+---
+
+# Change protocol
+
+1. Before editing, identify the canonical source of truth for this feature: domain service, DB snapshot, env/config, or WB API contract.
+2. Name the change type explicitly: read-model, write path, sync/job, DTO/contract, cache/state, UI rendering, or persisted data.
+3. For any contract or behavior change, update the full chain instead of one layer only:
+   - backend logic/service
+   - DTO/serializer/builder
+   - frontend API reader/types/validator
+   - cache key/invalidation/state handling
+   - loading/error/empty/fallback branches
+   - audit/backfill/data-fix path if persisted meaning changed
+   - docs/rules when the decision is durable
+4. Do not stop at "types compile". Verify that the user flow, cache behavior, and fallback semantics still match the new contract.
+5. If the change introduces a new endpoint, queue, snapshot field, or workspace slice, define its ownership and invalidation path before coding.
+6. Do not leave temporary cross-layer drift for a later refactor; if a touched layer needs updating because the contract changed, update it now.
+7. Before finishing, run the smallest meaningful anti-regression check for the changed flow.

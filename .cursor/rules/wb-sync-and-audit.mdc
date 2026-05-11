@@ -1,0 +1,15 @@
+---
+description: WB API syncs must be observable idempotent and auditable
+alwaysApply: true
+---
+
+# WB sync and audit
+
+1. Any integration with `WB API` must record direction, entity type, request intent, response result, and timestamps.
+2. Sync jobs must have explicit statuses such as `queued`, `running`, `succeeded`, `failed`, `retry_scheduled`.
+3. Repeated runs should be safe whenever possible: design write paths with idempotency in mind.
+4. Raw inbound payloads and normalized internal data are separate layers and must not be mixed casually.
+5. Validate inbound payloads before saving or rendering them. Reject malformed responses instead of silently repairing them in random layers.
+6. Validate outbound changes before sending and log the durable result after sending.
+7. Failures must stay observable with enough context for retry, diagnosis, and audit trails.
+8. Keep sync orchestration, read-model consumption, and write-back lanes explicit so user reads do not inherit background sync side effects.

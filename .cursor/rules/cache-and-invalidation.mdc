@@ -1,0 +1,19 @@
+---
+description: Cache keys, invalidation, and optimistic updates must stay explicit and canonical
+globs: Frontend/src/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Cache and invalidation
+
+1. Every cached resource must have one canonical identity based on machine-readable request fields only.
+2. Different transport shapes for the same logical resource must reuse the same cache identity or document why they are intentionally separate.
+3. Invalidation must follow ownership:
+   - write command invalidates the exact affected resource
+   - derived views invalidate through their parent resource contract
+   - optimistic writes define reconcile or rollback behavior
+4. Do not use display labels, translated text, array position, or incidental component state inside cache keys.
+5. If a write affects multiple read slices, list them before implementation and update invalidation together.
+6. Cache readers must tolerate compatible old payloads only through one explicit reader/mapper layer.
+7. When adding local persistence or session restore, preserve deterministic recovery for the same canonical resource identity.
+8. If stale data is acceptable, encode that policy explicitly; do not rely on accidental cache reuse.

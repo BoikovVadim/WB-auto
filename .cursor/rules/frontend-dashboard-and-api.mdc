@@ -1,0 +1,19 @@
+---
+description: Frontend must stay feature based and consume backend-first read-model contracts
+globs: Frontend/src/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Frontend architecture and API boundary
+
+1. Keep frontend feature-based: domain screens in `features/`, shared shell/components in `components/`, transport and validators in `api/`.
+2. The API layer is the canonical frontend boundary. Do not embed backend URLs or raw network calls directly into UI components.
+3. Frontend should stay thin: prefer backend-first read-models over rebuilding heavy domain summaries from raw arrays in hooks/components.
+4. Heavy tables or detail views should use server-side slices for filtering, sorting, totals, pagination, or lazy expansion instead of holding the whole dataset for local derive.
+5. UI must render machine-readable statuses from the backend, not branch on user-facing labels.
+6. Prefer explicit loading, success, error, and empty states before render. Do not rely on undefined data accidentally rendering.
+7. `products -> product` should use one canonical workspace/snapshot read flow; do not reintroduce click-time materialize, warmup-gated reads, or parallel legacy fetch paths.
+8. Product detail read-path must not be gated on `currentExport` hydration if `nmId` and the needed date range are already known.
+9. `products` navigation stays list-first by default. Storage may preserve filters or UI state, but it must not auto-open detail unless there is an explicit deep link or deliberate user action.
+10. Persisted dashboard state should stay deterministic and recoverable. Cache keys and request identity must remain canonical for the same resource.
+11. User-facing text belongs in the shared UI copy layer, not as scattered hardcoded strings across the screen code.

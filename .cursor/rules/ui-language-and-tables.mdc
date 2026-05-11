@@ -1,0 +1,15 @@
+---
+description: User-facing UI text must stay Russian and dashboard tables must keep stable alignment
+globs: Frontend/src/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# UI language and tables
+
+1. All user-facing UI text should be in Russian. Technical codes, machine-readable enums, and backend statuses may stay in English internally.
+2. Do not scatter hardcoded fallback strings through components when the shared UI copy layer can own them.
+3. If backend returns technical codes, frontend should map them to understandable Russian labels.
+4. For dashboard tables, center column headers by default.
+5. Center numeric values in table cells and keep text-heavy columns like names, vendor codes, and search phrases left-aligned unless there is a clear reason not to.
+6. When adding or changing table cells with numeric values, use an explicit numeric-cell class such as `wb-table-cell--numeric` instead of relying on accidental inheritance.
+7. If a table mixes raw WB data and text values, detect numeric cells and center only those values.

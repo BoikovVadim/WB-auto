@@ -1,0 +1,12 @@
+---
+description: DTOs and cross-layer boundaries must stay machine readable
+alwaysApply: true
+---
+
+# Machine-readable contracts
+
+1. Cross-layer decisions must be expressed as `id`, `enum`, `status`, `flag`, `timestamp`, `count`, or another machine-readable field.
+2. Do not branch code on display labels or translated text meant for users.
+3. Freshness, fallback, and readiness policy must stay machine-readable: use fields like `status`, `fit`, `source`, `builtAt`, and requested vs actual range, never inferred labels.
+4. Prefer additive machine-readable fields over reusing one overloaded field for multiple meanings.
+5. User-facing text may translate technical states, but the underlying transport and persistence layers must keep the stable machine-readable value.

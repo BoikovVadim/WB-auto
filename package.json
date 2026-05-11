@@ -1,0 +1,53 @@
+{
+  "name": "wildberries-automation-platform",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "backend",
+    "Frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace backend\" \"npm run dev --workspace Frontend\"",
+    "dev:backend": "npm run dev --workspace backend",
+    "dev:frontend": "npm run dev --workspace Frontend",
+    "test": "vitest run",
+    "test:reliability": "vitest run \"backend/src/health/health.controller.test.ts\" \"backend/src/wb-clusters/product-workspace-cluster-table.filters.test.ts\" \"backend/src/wb-clusters/product-workspace-cluster-table.totals.test.ts\" \"Frontend/src/api/productWorkspaceCache.test.ts\" \"Frontend/src/api/syncClientAdvertisingValidators.test.ts\"",
+    "test:watch": "vitest",
+    "typecheck": "npm run typecheck:backend && npm run typecheck:frontend",
+    "typecheck:backend": "npm run typecheck --workspace backend",
+    "typecheck:frontend": "npm run typecheck --workspace Frontend",
+    "build:release:backend": "npm run build --workspace backend",
+    "build:release:frontend": "npm run build --workspace Frontend",
+    "build:release": "npm run build:release:backend && npm run build:release:frontend",
+    "lint": "npm run lint:backend && npm run lint:frontend",
+    "lint:backend": "eslint backend/src --ext .ts",
+    "lint:frontend": "eslint Frontend/src --ext .ts,.tsx",
+    "build": "npm run build --workspace backend && npm run build --workspace Frontend",
+    "verify:fast": "npm run lint && npm run typecheck && npm run test:reliability",
+    "verify:ci": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "smoke:local": "curl --fail --show-error --silent http://localhost:3300/api/health && curl --fail --show-error --silent http://localhost:5173/",
+    "smoke:prod": "npm run verify:prod",
+    "health:prod:local": "curl --fail --show-error --silent http://localhost:3300/api/health",
+    "health:prod": "curl --fail --show-error --silent https://legendgames.space/wb/api/health",
+    "verify:prod": "bash ./scripts/verify-prod.sh",
+    "deploy:prod:auto": "bash ./scripts/deploy-prod.sh auto",
+    "deploy:prod": "bash ./scripts/deploy-prod.sh full",
+    "deploy:prod:backend": "bash ./scripts/deploy-prod.sh backend-only",
+    "deploy:prod:frontend": "bash ./scripts/deploy-prod.sh frontend-only",
+    "deploy:prod:sync": "bash ./scripts/deploy-prod.sh sync-only",
+    "deploy:server-first:auto": "bash ./scripts/run-wb-server-first-deploy.sh auto",
+    "deploy:server-first:backend": "bash ./scripts/run-wb-server-first-deploy.sh backend-only",
+    "deploy:server-first:frontend": "bash ./scripts/run-wb-server-first-deploy.sh frontend-only",
+    "deploy:server-first:sync": "bash ./scripts/run-wb-server-first-deploy.sh sync-only"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^9.2.1",
+    "eslint": "^10.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.6.0",
+    "typescript-eslint": "^8.59.2",
+    "vitest": "^4.1.5"
+  }
+}

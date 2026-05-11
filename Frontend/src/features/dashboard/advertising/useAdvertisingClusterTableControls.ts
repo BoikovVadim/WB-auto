@@ -1,0 +1,145 @@
+import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
+
+import type {
+  AdvertisingClusterNumericFilterKey,
+  AdvertisingClusterNumericFilters,
+  AdvertisingClusterStatusFilter,
+  AdvertisingClusterSortDirection,
+  AdvertisingClusterSortKey,
+} from "./advertisingTableTypes";
+import {
+  createAdvertisingClusterNumericFilters,
+  getDefaultAdvertisingSortDirection,
+} from "./model";
+
+const SORT_SESSION_KEY = "wb-advertising-sort-state";
+
+function readStoredSortState(): { key: AdvertisingClusterSortKey; direction: AdvertisingClusterSortDirection } | null {
+  try {
+    const raw = window.sessionStorage.getItem(SORT_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      "key" in parsed &&
+      "direction" in parsed &&
+      typeof (parsed as { key: unknown }).key === "string" &&
+      typeof (parsed as { direction: unknown }).direction === "string"
+    ) {
+      return parsed as { key: AdvertisingClusterSortKey; direction: AdvertisingClusterSortDirection };
+    }
+  } catch {
+    // ignore malformed storage
+  }
+  return null;
+}
+
+function writeStoredSortState(state: { key: AdvertisingClusterSortKey; direction: AdvertisingClusterSortDirection }) {
+  try {
+    window.sessionStorage.setItem(SORT_SESSION_KEY, JSON.stringify(state));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+function clearStoredSortState() {
+  try {
+    window.sessionStorage.removeItem(SORT_SESSION_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+const DEFAULT_SORT_STATE = { key: "spend" as AdvertisingClusterSortKey, direction: "desc" as AdvertisingClusterSortDirection };
+
+export function useAdvertisingClusterTableControls(input: {
+  selectedCampaignAdvertId: number | null;
+  tableRefreshKey: number;
+}) {
+  const [clusterSearch, setClusterSearch] = useState("");
+  const [numericFilters, setNumericFilters] = useState<AdvertisingClusterNumericFilters>(() =>
+    createAdvertisingClusterNumericFilters(),
+  );
+  const [statusFilter, setStatusFilter] =
+    useState<AdvertisingClusterStatusFilter>("all");
+  const [sortState, setSortState] = useState<{
+    key: AdvertisingClusterSortKey;
+    direction: AdvertisingClusterSortDirection;
+  }>(() => readStoredSortState() ?? DEFAULT_SORT_STATE);
+
+  // Track whether the user has been in detail view so we can reset sort on exit
+  const wasInDetailRef = useRef(input.selectedCampaignAdvertId !== null);
+  useEffect(() => {
+    const isNowInDetail = input.selectedCampaignAdvertId !== null;
+    if (wasInDetailRef.current && !isNowInDetail) {
+      // Exited product detail → reset to default and clear storage
+      setSortState(DEFAULT_SORT_STATE);
+      clearStoredSortState();
+    }
+    wasInDetailRef.current = isNowInDetail;
+  }, [input.selectedCampaignAdvertId]);
+  const [page, setPage] = useState(1);
+  const pageSize = 5000;
+
+  const deferredClusterSearch = useDeferredValue(clusterSearch);
+
+  useEffect(() => {
+    setPage(1);
+  }, [
+    input.selectedCampaignAdvertId,
+    input.tableRefreshKey,
+    deferredClusterSearch,
+    statusFilter,
+    sortState,
+  ]);
+
+  const handleSortChange = useCallback((key: AdvertisingClusterSortKey) => {
+    setSortState((currentValue) => {
+      const direction: AdvertisingClusterSortDirection =
+        currentValue.key === key
+          ? currentValue.direction === "asc" ? "desc" : "asc"
+          : getDefaultAdvertisingSortDirection(key);
+      const next = { key, direction };
+      writeStoredSortState(next);
+      return next;
+    });
+  }, []);
+
+  const handleNumericFilterChange = useCallback(
+    (
+      key: AdvertisingClusterNumericFilterKey,
+      bound: "min" | "max",
+      nextValue: string,
+    ) => {
+      setNumericFilters((currentValue) => ({
+        ...currentValue,
+        [key]: {
+          ...currentValue[key],
+          [bound]: nextValue,
+        },
+      }));
+    },
+    [],
+  );
+
+  const applyNumericFilter = useCallback((_key: AdvertisingClusterNumericFilterKey) => {
+    // filter is applied instantly via deferredNumericFilters — no explicit commit needed
+  }, []);
+
+  return {
+    clusterSearch,
+    setClusterSearch,
+    numericFilters,
+    statusFilter,
+    setStatusFilter,
+    sortState,
+    deferredClusterSearch,
+    page,
+    pageSize,
+    setPage,
+    handleSortChange,
+    handleNumericFilterChange,
+    applyNumericFilter,
+  };
+}

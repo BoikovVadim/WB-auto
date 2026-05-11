@@ -1,0 +1,268 @@
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
+
+import type {
+  WbExportResponse,
+} from "../../api/syncClient";
+import {
+  resolveProductAdvertisingSheetRequestInput,
+} from "./advertising/useProductAdvertisingRequestInput";
+import { useProductAdvertisingPendingSyncPolling } from "./advertising/useProductAdvertisingPendingSyncPolling";
+import { completeAdvertisingUxBudget } from "./advertising/advertisingUxBudgets";
+import type {
+  ProductAdvertisingDetailInvalidationTarget,
+  ProductAdvertisingDetailRevisions,
+} from "./advertising/productAdvertisingDetailInvalidation";
+import { useProductAdvertisingWorkspacePrefetch } from "./advertising/useProductAdvertisingWorkspacePrefetch";
+import { useProductWorkspace } from "./advertising/useProductWorkspace";
+import type { AdvertisingDateRange } from "./advertising/date";
+import { useDashboardProductCatalog } from "./useDashboardProductCatalog";
+import { useDashboardProductSelection } from "./useDashboardProductSelection";
+import { useProductSnapshotTargets } from "./useProductSnapshotTargets";
+import { useProductsSnapshotWarmup } from "./useProductsSnapshotWarmup";
+
+type ProductOption = {
+  vendorCode: string;
+  nmId: number | null;
+};
+
+export function useDashboardProductsWorkspace(input: {
+  activeSection: "exports" | "method" | "products";
+  productsMode: "list" | "detail";
+  currentProductExport: WbExportResponse | null;
+  currentExportProducts: ProductOption[];
+  productAdvertisingDateRange: AdvertisingDateRange;
+  selectedCatalogVendorCode: string | null;
+  selectedProductNmId: number | null;
+  productsSearch: string;
+  productsSortDirection: "asc" | "desc";
+  productAdvertisingDetailRevisions: ProductAdvertisingDetailRevisions;
+  setError: (value: string | null) => void;
+  setSelectedCatalogVendorCode: Dispatch<SetStateAction<string | null>>;
+  setSelectedProductNmId: Dispatch<SetStateAction<number | null>>;
+  invalidateProductAdvertisingDetail: (
+    target?: ProductAdvertisingDetailInvalidationTarget,
+  ) => void;
+  openProductsList: () => void;
+}) {
+  const { invalidateProductAdvertisingDetail } = input;
+  const isProductsSectionActive = input.activeSection === "products";
+  const isProductsListActive = isProductsSectionActive && input.productsMode === "list";
+  const isProductsDetailActive = isProductsSectionActive && input.productsMode === "detail";
+  const {
+    productCatalogItems,
+    isProductCatalogLoading,
+  } = useDashboardProductCatalog({
+    active: isProductsSectionActive,
+    onError: input.setError,
+  });
+  const deferredProductsSearch = useDeferredValue(input.productsSearch);
+  const sortedProducts = useMemo(() => {
+    return [...productCatalogItems].sort((left, right) => {
+      const result = left.vendorCode.localeCompare(right.vendorCode, "ru");
+      return input.productsSortDirection === "asc" ? result : -result;
+    });
+  }, [input.productsSortDirection, productCatalogItems]);
+
+  const filteredProducts = useMemo(() => {
+    const normalizedQuery = deferredProductsSearch.trim().toLocaleLowerCase("ru");
+
+    if (!normalizedQuery) {
+      return sortedProducts;
+    }
+
+    return sortedProducts.filter((product) => {
+      if (product.vendorCode.toLocaleLowerCase("ru").includes(normalizedQuery)) {
+        return true;
+      }
+      if (String(product.nmId).includes(normalizedQuery)) {
+        return true;
+      }
+      return false;
+    });
+  }, [deferredProductsSearch, sortedProducts]);
+
+  useEffect(() => {
+    if (!isProductsListActive) {
+      return;
+    }
+
+    completeAdvertisingUxBudget("products:list-search");
+  }, [filteredProducts, isProductsListActive]);
+
+  const { registerCandidateProductSnapshotNmId } = useProductSnapshotTargets(filteredProducts);
+  const productAdvertisingPrefetchRequestInput = useMemo(() => {
+    return resolveProductAdvertisingSheetRequestInput({
+      currentExport: input.currentProductExport,
+      initialProductAdvertisingSheet: null,
+      selectedProductNmId: null,
+      productAdvertisingDateRange: input.productAdvertisingDateRange,
+    });
+  }, [input.currentProductExport, input.productAdvertisingDateRange]);
+
+  const { queueCandidateWarmup } = useProductsSnapshotWarmup({
+    active: false,
+    requestInput: productAdvertisingPrefetchRequestInput,
+    visibleNmIds: [],
+    backgroundNmIds: [],
+  });
+
+  const prefetchCandidateSnapshot = useCallback((_nmId: number | null) => {}, []);
+
+  // Прогреваем воркспейс всех видимых товаров пока пользователь смотрит список —
+  // чтобы при клике данные брались из кэша моментально без состояния загрузки.
+  const allCatalogNmIds = useMemo(
+    () =>
+      productCatalogItems
+        .map((p) => p.nmId)
+        .filter((id): id is number => id !== null && id > 0),
+    [productCatalogItems],
+  );
+  const visibleFirstNmIds = useMemo(
+    () => filteredProducts
+      .slice(0, 30)
+      .map((p) => p.nmId)
+      .filter((id): id is number => id !== null && id > 0),
+    [filteredProducts],
+  );
+  useProductAdvertisingWorkspacePrefetch({
+    active: isProductsListActive,
+    requestInput: productAdvertisingPrefetchRequestInput,
+    visibleNmIds: visibleFirstNmIds,
+    allNmIds: allCatalogNmIds,
+  });
+
+  const { resolvedCatalogProduct } = useDashboardProductSelection({
+    enabled: isProductsDetailActive,
+    fixedProducts: productCatalogItems,
+    currentExportProducts: input.currentExportProducts,
+    selectedCatalogVendorCode: input.selectedCatalogVendorCode,
+    selectedProductNmId: input.selectedProductNmId,
+    setSelectedCatalogVendorCode: input.setSelectedCatalogVendorCode,
+    setSelectedProductNmId: input.setSelectedProductNmId,
+  });
+  const [stickyDetailProduct, setStickyDetailProduct] = useState<ProductOption | null>(null);
+  useEffect(() => {
+    if (input.productsMode !== "detail") {
+      setStickyDetailProduct(null);
+      return;
+    }
+
+    if (resolvedCatalogProduct) {
+      setStickyDetailProduct(resolvedCatalogProduct);
+      return;
+    }
+
+    if (input.selectedCatalogVendorCode !== null || input.selectedProductNmId !== null) {
+      setStickyDetailProduct({
+        vendorCode: input.selectedCatalogVendorCode ?? stickyDetailProduct?.vendorCode ?? "",
+        nmId: input.selectedProductNmId,
+      });
+    }
+  }, [
+    input.productsMode,
+    input.selectedCatalogVendorCode,
+    input.selectedProductNmId,
+    resolvedCatalogProduct,
+    stickyDetailProduct?.vendorCode,
+  ]);
+  const selectedDetailProduct = useMemo(() => {
+    if (input.activeSection !== "products" || input.productsMode !== "detail") {
+      return null;
+    }
+
+    if (resolvedCatalogProduct) {
+      return resolvedCatalogProduct;
+    }
+
+    if (input.selectedCatalogVendorCode !== null || input.selectedProductNmId !== null) {
+      return {
+        vendorCode: input.selectedCatalogVendorCode ?? "",
+        nmId: input.selectedProductNmId,
+      };
+    }
+
+    return stickyDetailProduct;
+  }, [
+    input.activeSection,
+    input.productsMode,
+    input.selectedCatalogVendorCode,
+    input.selectedProductNmId,
+    resolvedCatalogProduct,
+    stickyDetailProduct,
+  ]);
+  const productAdvertisingSheetRequestInput = useMemo(() => {
+    if (!isProductsDetailActive || !selectedDetailProduct) {
+      return null;
+    }
+
+    return resolveProductAdvertisingSheetRequestInput({
+      currentExport: input.currentProductExport,
+      initialProductAdvertisingSheet: null,
+      selectedProductNmId: selectedDetailProduct.nmId,
+      productAdvertisingDateRange: input.productAdvertisingDateRange,
+    });
+  }, [
+    input.currentProductExport,
+    input.productAdvertisingDateRange,
+    isProductsDetailActive,
+    selectedDetailProduct,
+  ]);
+
+  const {
+    productAdvertisingWorkspace,
+    productAdvertisingWorkspaceError,
+    isProductAdvertisingWorkspaceLoading,
+  } = useProductWorkspace({
+    active: isProductsDetailActive,
+    nmId: selectedDetailProduct?.nmId ?? null,
+    requestInput: productAdvertisingSheetRequestInput,
+    refreshKey: input.productAdvertisingDetailRevisions.workspace,
+  });
+  const handlePendingWorkspaceRefresh = useCallback(() => {
+    invalidateProductAdvertisingDetail("workspace");
+  }, [invalidateProductAdvertisingDetail]);
+
+  const hasPendingClusterSync =
+    productAdvertisingWorkspace?.syncState.hasPendingClusterSync ?? false;
+  const prevHasPendingClusterSyncRef = useRef(hasPendingClusterSync);
+
+  // When hasPendingClusterSync transitions true → false it means the bid has been
+  // confirmed (or failed) on WB. Refresh the cluster table so the checkmark (✓)
+  // updates to the confirmed status without waiting for the next manual action.
+  useEffect(() => {
+    const prev = prevHasPendingClusterSyncRef.current;
+    prevHasPendingClusterSyncRef.current = hasPendingClusterSync;
+    if (prev && !hasPendingClusterSync && isProductsDetailActive) {
+      invalidateProductAdvertisingDetail("table");
+    }
+  }, [hasPendingClusterSync, invalidateProductAdvertisingDetail, isProductsDetailActive]);
+
+  useProductAdvertisingPendingSyncPolling({
+    active: isProductsDetailActive,
+    hasPendingSync: hasPendingClusterSync,
+    onRefresh: handlePendingWorkspaceRefresh,
+  });
+
+  return {
+    productCatalogItems,
+    isProductCatalogLoading,
+    filteredProducts,
+    resolvedCatalogProduct: selectedDetailProduct,
+    registerCandidateProductSnapshotNmId,
+    queueCandidateWarmup,
+    prefetchCandidateSnapshot,
+    productAdvertisingSheetRequestInput,
+    productAdvertisingWorkspace,
+    productAdvertisingWorkspaceError,
+    isProductAdvertisingWorkspaceLoading,
+  };
+}

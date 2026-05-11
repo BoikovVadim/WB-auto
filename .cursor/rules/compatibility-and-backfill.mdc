@@ -1,0 +1,25 @@
+---
+description: Contract evolution must preserve compatibility or include an explicit migration path
+alwaysApply: true
+---
+
+# Compatibility and backfill
+
+1. When contract meaning changes, decide explicitly:
+   - direct replacement is safe
+   - temporary compatibility alias is required
+   - persisted data needs retrofix/backfill
+2. Do not silently reinterpret old stored data under new semantics.
+3. New machine-readable fields are preferred over overloading old fields with new meaning.
+4. Temporary aliases must be explicit and short-lived; document the replacement target.
+5. If old snapshots, archives, or cache entries can still be read, define how they degrade:
+   - supported as-is
+   - mapped through compatibility logic
+   - rejected as incompatible
+6. If a read path can encounter old and new shapes, keep the branching local to the reader/mapper layer instead of scattering checks through UI code.
+7. Any change to status/enum/flag/timestamp/count semantics must review:
+   - DB rows and archived payloads
+   - backend DTOs/builders
+   - frontend readers and cache payloads
+   - docs describing the canonical meaning
+8. If migration risk is unclear, stop and ask instead of guessing.
