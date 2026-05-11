@@ -126,12 +126,18 @@ export async function runStructureSyncPhase(self: WbClustersService, syncRunId: 
     ]);
     clustersUpserted += await self.wbClustersRepository.upsertClusters(clusterRows);
 
-    // Mark previously-active clusters that WB no longer returns as source_kind='stats'.
-    // Prevents wb_clusters from accumulating stale entries that inflate the active count.
+    // Deactivate stale cluster entries to prevent duplicates from SQL JOIN.
+    // Two passes per campaign:
+    //   1. Old 'active' entries not in current WB active list → 'stats'.
+    //   2. Old 'excluded' entries not in current WB excluded list → 'stats'.
+    // This fixes the case where a cluster moves excluded→active: without pass 2,
+    // both the old 'excluded' and new 'active' entries exist with the same
+    // normalized_cluster_name and the JOIN returns two rows.
     const deactivationItems = (listResponse.items ?? []).map((item) => ({
       advertId: item.advertId,
       nmId: item.nmId,
       activeClusterNames: item.normQueries?.active ?? [],
+      excludedClusterNames: item.normQueries?.excluded ?? [],
     }));
     if (deactivationItems.length > 0) {
       await self.wbClustersRepository.deactivateStaleActiveClusters(deactivationItems);

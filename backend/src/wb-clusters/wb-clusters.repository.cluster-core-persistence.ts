@@ -145,26 +145,32 @@ export abstract class WbClustersRepositoryClusterCorePersistence extends WbClust
   }
 
   /**
-   * После синка помечает активные кластеры, которых WB больше не возвращает,
-   * как source_kind='stats', is_active=NULL. Это убирает их из списка рабочего
-   * пространства (WHERE source_kind IN ('active','excluded') их не поймает),
-   * но сохраняет для исторических wb_cluster_daily_stats.
+   * После синка помечает кластеры, которых WB больше не возвращает в своём
+   * источнике, как source_kind='stats', is_active=NULL. Убирает их из рабочего
+   * пространства, сохраняя для исторических wb_cluster_daily_stats.
    *
-   * Принимает raw имена кластеров; нормализует их внутри.
-   * Для каждой кампании: деактивирует все 'active' кластеры, которых НЕТ в списке.
+   * Два прохода, чтобы устранить дубликаты при переходе кластера между списками:
+   *   1. Старые 'active' записи, которых нет в текущем active-списке WB → 'stats'.
+   *      Обрабатывает переход active→excluded и выбывшие кластеры.
+   *   2. Старые 'excluded' записи, которых нет в текущем excluded-списке WB → 'stats'.
+   *      Обрабатывает переход excluded→active: иначе в wb_clusters существуют ОБЕ
+   *      записи для одного normalized_cluster_name, JOIN возвращает дубликаты.
    */
   async deactivateStaleActiveClusters(
     items: Array<{
       advertId: number;
       nmId: number;
       activeClusterNames: string[];
+      excludedClusterNames?: string[];
     }>,
   ): Promise<void> {
     if (items.length === 0) return;
     await this.ensureSchemaOrThrow();
     const pool = this.getPool();
     for (const item of items) {
-      const normalizedNames = item.activeClusterNames.map((n) => this.normalizeQuery(n));
+      const normalizedActive = item.activeClusterNames.map((n) => this.normalizeQuery(n));
+      const normalizedExcluded = (item.excludedClusterNames ?? []).map((n) => this.normalizeQuery(n));
+      // Pass 1: deactivate stale 'active' entries (not in current WB active list).
       await pool.query(
         `
           UPDATE ${this.tableName("wb_clusters")}
@@ -174,7 +180,20 @@ export abstract class WbClustersRepositoryClusterCorePersistence extends WbClust
             AND source_kind = 'active'
             AND normalized_cluster_name != ALL($3::text[])
         `,
-        [item.advertId, item.nmId, normalizedNames],
+        [item.advertId, item.nmId, normalizedActive],
+      );
+      // Pass 2: deactivate stale 'excluded' entries (not in current WB excluded list).
+      // Prevents duplicates when a cluster moves from excluded back to active.
+      await pool.query(
+        `
+          UPDATE ${this.tableName("wb_clusters")}
+          SET source_kind = 'stats', is_active = NULL, synced_at = NOW()
+          WHERE advert_id = $1
+            AND nm_id = $2
+            AND source_kind = 'excluded'
+            AND normalized_cluster_name != ALL($3::text[])
+        `,
+        [item.advertId, item.nmId, normalizedExcluded],
       );
     }
   }
