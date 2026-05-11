@@ -105,21 +105,15 @@ export class ProductWorkspaceSnapshotResolver {
     currentPeriod?: { start: string; end: string } | null;
     schemaVersion: number;
   }) {
-    // Try the stored snapshot first (correct cluster count, instant read).
-    // Falls back to SQL once wb_clusters is clean after a sync run.
+    // Always use SQL fast path when a date range is provided.
+    // After the structure sync runs deactivateStaleActiveClusters, wb_clusters
+    // reflects the correct active set and the SQL query is always fresh:
+    // - source_kind / is_active via wb_clusters + wb_cluster_actions override
+    // - bids via wb_cluster_bids JOIN (COALESCE with catalog prices)
+    // Stored snapshots (wb_product_workspace_campaign_rows) are no longer read
+    // because they can carry stale sourceKind/isActive values from before a
+    // cluster was excluded, causing excluded rows to appear in the active filter.
     if (input.currentPeriod) {
-      const storedRows = await this.productWorkspaceRepository.getWorkspaceCampaignRows({
-        nmId: input.nmId,
-        startDate: input.currentPeriod.start,
-        endDate: input.currentPeriod.end,
-        schemaVersion: input.schemaVersion,
-        advertId: input.advertId,
-      });
-      if (storedRows) {
-        return storedRows;
-      }
-
-      // Snapshot not materialized yet — use SQL fast path.
       const sqlRows = await this.wbClustersRepository.getProductWorkspaceCampaignRowsSQL(
         input.nmId,
         input.advertId,

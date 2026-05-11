@@ -49,7 +49,7 @@ type NormQueryBidRow = {
 
 export interface WbClustersSnapshotReadContext {
   logger: Pick<Logger, "warn">;
-  wbClustersRepository: Pick<WbClustersRepository, "lookupProductClusters" | "getLiveClusterBidsByClusterName">;
+  wbClustersRepository: Pick<WbClustersRepository, "lookupProductClusters">;
   productAdvertisingReadRepository: Pick<
     ProductAdvertisingReadRepository,
     | "getProductAdvertisingSheet"
