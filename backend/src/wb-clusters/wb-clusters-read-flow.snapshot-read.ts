@@ -354,11 +354,46 @@ export async function getProductAdvertisingWorkspaceClusterTable(
     } as ProductAdvertisingWorkspaceClusterTableResponse;
   }
 
+  // Overlay live bid fields from wb_cluster_bids on top of the snapshot rows.
+  // The stored snapshot has the correct cluster count, but bid values may be stale
+  // if the user changed a bid since the snapshot was written.
+  // wb_cluster_bids always has the latest bid; this merge keeps bids fresh.
+  // Once wb_clusters is cleaned after a sync, we can drop the snapshot entirely
+  // and always read from SQL (which already JOINs wb_cluster_bids).
+  const liveBidMap = await self.wbClustersRepository
+    .getLiveClusterBidsByClusterName(nmId, advertId)
+    .catch(() => new Map<string, {
+      bid: number | null;
+      bidSyncStatus: import("./types/product-advertising-workspace.types").ProductAdvertisingWorkspaceClusterRow["bidSyncStatus"];
+      bidConfirmedAt: string | null;
+      bidRetryAt: string | null;
+      bidLastError: string | null;
+    }>());
+  const refreshedRows = liveBidMap.size > 0
+    ? storedRows.payload.rows.map((row) => {
+        const liveBid = liveBidMap.get(
+          (row.canonicalNormQuery ?? row.clusterName ?? "").trim().toLowerCase(),
+        );
+        // Only overlay when wb_cluster_bids has a non-null bid for this cluster.
+        // bid=null entries are placeholders; displayed bid comes from
+        // cp.search_bid / cp.min_search_bid baked into the snapshot.
+        if (!liveBid || liveBid.bid === null) return row;
+        return {
+          ...row,
+          bid: liveBid.bid,
+          bidSyncStatus: liveBid.bidSyncStatus,
+          bidConfirmedAt: liveBid.bidConfirmedAt,
+          bidRetryAt: liveBid.bidRetryAt,
+          bidLastError: liveBid.bidLastError,
+        };
+      })
+    : storedRows.payload.rows;
+
   // Always attach a fresh querySearchIndex from DB so the frontend can filter
   // locally without PATH B. Cached per (nmId, advertId, cacheVersion) — DB hit
   // only on the first request per sync cycle, instant from cache afterwards.
   const querySearchIndex = await getOrBuildQuerySearchIndex(self, nmId, advertId);
-  const snapshotForResponse = { ...storedRows.payload, querySearchIndex };
+  const snapshotForResponse = { ...storedRows.payload, rows: refreshedRows, querySearchIndex };
   const searchStr = input?.search ?? "";
 
   const storedRowsResponse = {

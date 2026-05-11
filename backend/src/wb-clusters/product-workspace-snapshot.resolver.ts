@@ -105,11 +105,21 @@ export class ProductWorkspaceSnapshotResolver {
     currentPeriod?: { start: string; end: string } | null;
     schemaVersion: number;
   }) {
-    // Always use SQL fast path when a date range is provided.
-    // wb_clusters is now kept clean (stale clusters deactivated on each sync),
-    // so the SQL result reflects the correct current state including fresh bids
-    // from wb_cluster_bids — no stored snapshot needed.
+    // Try the stored snapshot first (correct cluster count, instant read).
+    // Falls back to SQL once wb_clusters is clean after a sync run.
     if (input.currentPeriod) {
+      const storedRows = await this.productWorkspaceRepository.getWorkspaceCampaignRows({
+        nmId: input.nmId,
+        startDate: input.currentPeriod.start,
+        endDate: input.currentPeriod.end,
+        schemaVersion: input.schemaVersion,
+        advertId: input.advertId,
+      });
+      if (storedRows) {
+        return storedRows;
+      }
+
+      // Snapshot not materialized yet — use SQL fast path.
       const sqlRows = await this.wbClustersRepository.getProductWorkspaceCampaignRowsSQL(
         input.nmId,
         input.advertId,
