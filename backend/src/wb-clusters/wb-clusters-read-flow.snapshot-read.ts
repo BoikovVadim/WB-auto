@@ -169,14 +169,6 @@ export async function getProductAdvertisingWorkspaceBundle(
     endDate?: string;
   },
 ): Promise<ProductAdvertisingWorkspaceBundleResponse> {
-  // Response-level cache: same (nmId, startDate, endDate) → instant reply.
-  const bundleResponseCacheKey = [nmId, input?.startDate ?? "", input?.endDate ?? ""].join(":");
-  // Кэш bundle отключён вместе с кэшем cluster-table.
-  // const cachedBundle = self.productAdvertisingWorkspaceBundleResponseCache.get(bundleResponseCacheKey);
-  // if (cachedBundle && Date.now() < cachedBundle.expiresAtMs) {
-  //   return cachedBundle.response;
-  // }
-
   const workspace = await getProductAdvertisingWorkspace(self, nmId, input);
 
   type ClusterTable = Awaited<ReturnType<typeof getProductAdvertisingWorkspaceClusterTable>>;
@@ -188,12 +180,7 @@ export async function getProductAdvertisingWorkspaceBundle(
       workspace.initialClusterTable as unknown as ClusterTable;
   }
 
-  const bundleResponse: ProductAdvertisingWorkspaceBundleResponse = { workspace, clusterTables };
-  self.productAdvertisingWorkspaceBundleResponseCache.set(bundleResponseCacheKey, {
-    expiresAtMs: Date.now() + self.productAdvertisingWorkspaceBundleResponseCacheTtlMs,
-    response: bundleResponse,
-  });
-  return bundleResponse;
+  return { workspace, clusterTables } as ProductAdvertisingWorkspaceBundleResponse;
 }
 
 function createEmptyWorkspaceClusterQueriesSnapshot() {
@@ -219,25 +206,6 @@ export async function getProductAdvertisingWorkspaceClusterTable(
     pageSize?: number;
   },
 ) {
-  // Response-level cache: same (nmId, advertId, period, params) → instant reply.
-  // Keyed without search/filters so prefetch always hits the UI's cache key too.
-  const responseCacheKey = [
-    nmId,
-    advertId,
-    input?.startDate ?? "",
-    input?.endDate ?? "",
-    input?.sortKey ?? "spend",
-    input?.sortDirection ?? "desc",
-    input?.page ?? 1,
-    input?.pageSize ?? 200,
-  ].join(":");
-  // Кэш cluster-table отключён: каждый запрос читает актуальные данные из БД.
-  // Ставки и статусы кластеров меняются часто; кэш вызывал стойкие расхождения
-  // между БД и UI (ставки сбрасывались, статус не обновлялся до истечения TTL).
-  // const cachedResponse = self.productAdvertisingClusterTableResponseCache.get(responseCacheKey);
-  // if (cachedResponse && Date.now() < cachedResponse.expiresAtMs) {
-  //   return cachedResponse.response;
-  // }
 
   const currentPeriod =
     input?.startDate && input?.endDate
@@ -319,11 +287,6 @@ export async function getProductAdvertisingWorkspaceClusterTable(
           },
         };
 
-        self.productAdvertisingClusterTableResponseCache.set(responseCacheKey, {
-          expiresAtMs: Date.now() + self.productAdvertisingClusterTableResponseCacheTtlMs,
-          response: sqlFastPathResponse,
-        });
-
         return sqlFastPathResponse;
       }
     }
@@ -353,10 +316,6 @@ export async function getProductAdvertisingWorkspaceClusterTable(
             | undefined) ?? "desc",
         page: input?.page ?? 1,
         pageSize: input?.pageSize ?? 200,
-      });
-      self.productAdvertisingClusterTableResponseCache.set(responseCacheKey, {
-        expiresAtMs: Date.now() + self.productAdvertisingClusterTableResponseCacheTtlMs,
-        response: fallbackResponse,
       });
       return fallbackResponse;
     }
@@ -428,10 +387,6 @@ export async function getProductAdvertisingWorkspaceClusterTable(
       materializationStatus: "materialized",
     },
   } as ProductAdvertisingWorkspaceClusterTableResponse;
-  self.productAdvertisingClusterTableResponseCache.set(responseCacheKey, {
-    expiresAtMs: Date.now() + self.productAdvertisingClusterTableResponseCacheTtlMs,
-    response: storedRowsResponse,
-  });
   return storedRowsResponse;
 }
 
@@ -739,19 +694,7 @@ export function invalidateProductAdvertisingSheetCaches(self: WbClustersSnapshot
       self.productAdvertisingSheetReadModelCache as Map<string, unknown>,
     ],
   });
-  // Also invalidate the cluster-table and bundle response caches for this nmId.
-  // Keys are prefixed with "{nmId}:" so a prefix scan is enough.
   const prefix = `${nmId}:`;
-  for (const key of self.productAdvertisingClusterTableResponseCache.keys()) {
-    if (key.startsWith(prefix)) {
-      self.productAdvertisingClusterTableResponseCache.delete(key);
-    }
-  }
-  for (const key of self.productAdvertisingWorkspaceBundleResponseCache.keys()) {
-    if (key.startsWith(prefix)) {
-      self.productAdvertisingWorkspaceBundleResponseCache.delete(key);
-    }
-  }
   for (const key of self.productAdvertisingWorkspaceResponseCache.keys()) {
     if (key.startsWith(prefix)) {
       self.productAdvertisingWorkspaceResponseCache.delete(key);

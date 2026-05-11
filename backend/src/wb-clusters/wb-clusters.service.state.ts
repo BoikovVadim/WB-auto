@@ -71,22 +71,6 @@ export abstract class WbClustersServiceState {
     Promise<ProductAdvertisingSheetResponse>
   >();
   protected readonly productSnapshotWarmupState = new Map<string, ProductSnapshotWarmupState>();
-  // Кеш финального ответа getProductAdvertisingWorkspaceClusterTable для конкретной
-  // РК + период. Позволяет мгновенно отвечать на повторные запросы (e.g. браузер
-  // переключился обратно на ту же кампанию). TTL 3 мин — достаточно для сессии,
-  // безопасно: sync инвалидирует через invalidateProductAdvertisingClusterTableResponseCache.
-  // 30 entries cover all visible campaigns across 2-3 simultaneously open products.
-  protected readonly productAdvertisingClusterTableResponseCache = new BoundedLruMap<
-    string,
-    {
-      expiresAtMs: number;
-      response: import("./types/product-advertising-workspace.types").ProductAdvertisingWorkspaceClusterTableResponse;
-    }
-  >(30);
-  // 20 min: covers one full sync cycle (10 min) with a comfortable buffer.
-  // Invalidated on sync via invalidateProductAdvertisingSheetCaches.
-  protected readonly productAdvertisingClusterTableResponseCacheTtlMs = 20 * 60 * 1000;
-
   // Response-level cache for the /workspace endpoint (workspace shell, no cluster tables).
   // Keyed by nmId:startDate:endDate. Short TTL (3 min) — workspace shell is cheap to rebuild
   // but caching avoids repeated DB reads when the user rapidly switches products.
@@ -100,19 +84,6 @@ export abstract class WbClustersServiceState {
     }
   >(15);
   protected readonly productAdvertisingWorkspaceResponseCacheTtlMs = 3 * 60 * 1000;
-
-  // Response-level cache for the workspace-bundle endpoint (workspace + all campaign tables).
-  // After a cold Path-B build the bundle is reused for 20 min so switching products in the
-  // same tab never waits. Invalidated per nmId on sync.
-  // 15 entries: bundle includes workspace + cluster table; limit avoids large heap.
-  protected readonly productAdvertisingWorkspaceBundleResponseCache = new BoundedLruMap<
-    string,
-    {
-      expiresAtMs: number;
-      response: import("./types/product-advertising-workspace.types").ProductAdvertisingWorkspaceBundleResponse;
-    }
-  >(15);
-  protected readonly productAdvertisingWorkspaceBundleResponseCacheTtlMs = 20 * 60 * 1000;
 
   // Query search index cache: built from wb_cabinet_cluster_queries + wb_cluster_queries
   // per (nmId, advertId, cacheVersion). Used to populate querySearchIndex in cluster table
@@ -191,9 +162,7 @@ export abstract class WbClustersServiceState {
   protected pruneInMemoryCaches(): void {
     this.pruneExpiredEntries(this.productAdvertisingSheetJamCache);
     this.pruneExpiredEntries(this.productAdvertisingSheetSnapshotCache);
-    this.pruneExpiredEntries(this.productAdvertisingClusterTableResponseCache);
     this.pruneExpiredEntries(this.productAdvertisingWorkspaceResponseCache);
-    this.pruneExpiredEntries(this.productAdvertisingWorkspaceBundleResponseCache);
     this.pruneExpiredEntries(this.productAdvertisingSheetReadModelCache);
     this.pruneExpiredEntries(this.querySearchIndexCache);
   }

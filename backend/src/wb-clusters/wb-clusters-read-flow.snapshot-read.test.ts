@@ -172,8 +172,6 @@ describe("wb-clusters snapshot read flow", () => {
       productAdvertisingWorkspaceReadService: {
         normalizeWorkspaceClusterNumericFilters: vi.fn().mockReturnValue(createEmptyNumericFilters()),
       },
-      productAdvertisingClusterTableResponseCache: new Map(),
-      productAdvertisingClusterTableResponseCacheTtlMs: 180_000,
     };
 
     const result = await getProductAdvertisingWorkspaceClusterTable(
