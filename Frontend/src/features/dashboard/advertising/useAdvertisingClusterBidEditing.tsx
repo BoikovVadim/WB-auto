@@ -156,11 +156,11 @@ export function useAdvertisingClusterBidEditing(input: {
           target: "detail",
           invalidateCaches: false,
         });
-        // Quick workspace polls so the checkmark (✓) appears as soon as the backend
-        // write-pass confirms the bid (~750 ms after save).  The polling hook already
-        // runs every 6 s, but these two early probes cut the visible delay to ~1-4 s.
-        window.setTimeout(() => void onReloadSheet({ target: "workspace" }), 1_500);
-        window.setTimeout(() => void onReloadSheet({ target: "workspace" }), 4_000);
+        // После write-pass бэкенд инвалидирует кэш cluster-table.
+        // target:"detail" перезапрашивает таблицу (и workspace), чтобы показать
+        // новый bid_sync_status и галочку ✓ сразу после подтверждения на WB.
+        window.setTimeout(() => void onReloadSheet({ target: "detail" }), 1_500);
+        window.setTimeout(() => void onReloadSheet({ target: "detail" }), 4_000);
       } catch (requestError) {
         restoreProductAdvertisingDetailCacheSnapshot({
           nmId,

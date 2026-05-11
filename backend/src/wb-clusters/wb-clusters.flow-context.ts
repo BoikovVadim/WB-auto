@@ -247,6 +247,7 @@ export interface WbClustersWriteLanesContext {
   getManualBidInteractiveRemainingMs(): number;
   activateManualBidInteractiveWindow(reason: string, durationMs: number): void;
   isRecoverablePromotionError(error: unknown): boolean;
+  invalidateProductAdvertisingSheetCaches(nmId: number): void;
   normalizeAdvertisingText(value: string): string;
   normalizeNormQueryBidsFromWb(
     bids: NormQueryBidRow[],

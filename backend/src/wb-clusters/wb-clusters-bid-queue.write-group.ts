@@ -141,6 +141,8 @@ export abstract class WbClustersBidQueueWriteGroupHandler extends WbClustersBidQ
         statsRowsUpserted: 0,
         errorMessage: "WB accepted the bid update; marked confirmed locally.",
       });
+      // Инвалидируем кэш чтобы следующий GET вернул статус "confirmed" и новую ставку.
+      runtime.invalidateSheetCaches(group.nmId);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown cluster bid queue processing error";

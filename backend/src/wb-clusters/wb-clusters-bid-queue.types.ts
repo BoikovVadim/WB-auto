@@ -55,6 +55,8 @@ export type BidQueueRuntime = {
   activateManualBidInteractiveWindow: (reason: string, durationMs: number) => void;
   isRecoverablePromotionError: (error: unknown) => boolean;
   normalizeAdvertisingText: (value: string) => string;
+  /** Инвалидирует кэш cluster-table и workspace для товара после изменения ставки. */
+  invalidateSheetCaches: (nmId: number) => void;
   normalizeNormQueryBidsFromWb: (
     bids: Array<{
       advert_id: number;

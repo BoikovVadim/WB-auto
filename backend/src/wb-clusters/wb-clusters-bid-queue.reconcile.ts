@@ -196,6 +196,8 @@ export abstract class WbClustersBidQueueReconcile extends WbClustersBidQueueWrit
         statsRowsUpserted: 0,
         errorMessage: null,
       });
+      // Инвалидируем кэш после подтверждения от WB — следующий GET вернёт "confirmed".
+      runtime.invalidateSheetCaches(group.nmId);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown cluster bid reconcile error";

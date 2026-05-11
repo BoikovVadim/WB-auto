@@ -149,6 +149,7 @@ export async function processClusterBidWritePass(
         self.activateManualBidInteractiveWindow(queueReason, durationMs),
       isRecoverablePromotionError: (error: unknown) => self.isRecoverablePromotionError(error),
       normalizeAdvertisingText: (value: string) => self.normalizeAdvertisingText(value),
+      invalidateSheetCaches: (nmId: number) => self.invalidateProductAdvertisingSheetCaches(nmId),
       normalizeNormQueryBidsFromWb: (bids: any[]) => self.normalizeNormQueryBidsFromWb(bids),
     })
     .finally(() => {
@@ -204,6 +205,7 @@ export async function processClusterBidReconcilePass(self: WbClustersWriteLanesC
         self.activateManualBidInteractiveWindow(queueReason, durationMs),
       isRecoverablePromotionError: (error: unknown) => self.isRecoverablePromotionError(error),
       normalizeAdvertisingText: (value: string) => self.normalizeAdvertisingText(value),
+      invalidateSheetCaches: (nmId: number) => self.invalidateProductAdvertisingSheetCaches(nmId),
       normalizeNormQueryBidsFromWb: (bids: any[]) => self.normalizeNormQueryBidsFromWb(bids),
     })
     .finally(() => {
