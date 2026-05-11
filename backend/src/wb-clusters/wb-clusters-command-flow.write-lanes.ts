@@ -182,6 +182,7 @@ export async function processClusterActionWritePass(
         self.activateManualBidInteractiveWindow(queueReason, durationMs),
       isRecoverablePromotionError: (error: unknown) => self.isRecoverablePromotionError(error),
       normalizeAdvertisingText: (value: string) => self.normalizeAdvertisingText(value),
+      invalidateSheetCaches: (nmId: number) => self.invalidateProductAdvertisingSheetCaches(nmId),
     })
     .finally(() => {
       self.actionQueuePassPromise = null;

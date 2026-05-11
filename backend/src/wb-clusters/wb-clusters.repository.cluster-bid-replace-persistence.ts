@@ -59,7 +59,7 @@ export abstract class WbClustersRepositoryClusterBidReplacePersistence extends W
               FROM ${this.tableName("wb_cluster_bids")}
               WHERE advert_id = $1
                 AND nm_id = $2
-                AND COALESCE(bid_sync_status, 'confirmed') <> 'confirmed'
+                AND bid IS NOT NULL
             `,
             [item.advertId, item.nmId],
           );

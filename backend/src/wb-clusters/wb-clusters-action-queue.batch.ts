@@ -128,6 +128,10 @@ export abstract class WbClustersActionQueueBatch extends WbClustersActionQueuePr
         })),
       );
       await this.wbClustersRepository.completeClusterActionJobs(allJobIds);
+      // Инвалидируем кэш чтобы следующий GET вернул новый статус кластера ("excluded"/"active").
+      for (const nmId of new Set(groups.map((g) => g.nmId))) {
+        runtime.invalidateSheetCaches(nmId);
+      }
       await this.wbClustersRepository.saveRawArchive({
         syncRunId,
         archiveType: "normquery-minus-set-result",

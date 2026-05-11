@@ -116,6 +116,9 @@ export async function applyProductClusterAction(
     errorMessage: "Изменение статуса кластеров поставлено в очередь на отправку в WB.",
   });
 
+  // Инвалидируем кэш cluster-table чтобы следующий GET вернул обновлённый статус кластера.
+  invalidateProductAdvertisingSheetCaches(self, nmId);
+
   self.activateManualBidInteractiveWindow(
     "manual-cluster-action",
     self.manualBidInteractiveWindowMs,

@@ -52,5 +52,7 @@ export type ActionQueueRuntime = {
   activateManualBidInteractiveWindow: (reason: string, durationMs: number) => void;
   isRecoverablePromotionError: (error: unknown) => boolean;
   normalizeAdvertisingText: (value: string) => string;
+  /** Инвалидирует кэш cluster-table и workspace для товара после изменения статуса кластера. */
+  invalidateSheetCaches: (nmId: number) => void;
 };
 
