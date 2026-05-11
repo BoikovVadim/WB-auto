@@ -1,5 +1,7 @@
 import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
 
+import { invalidateProductAdvertisingSheetCaches } from "./wb-clusters-read-flow.snapshot-read";
+
 type WbClustersService = any;
 
 export async function applyProductClusterAction(
@@ -243,6 +245,10 @@ export async function applyProductClusterBids(
       bid_last_error: null,
     })),
   );
+
+  // Инвалидируем кэш cluster-table и workspace для этого товара, чтобы
+  // следующий GET вернул свежие данные с новой ставкой (не 20-минутный кэш).
+  invalidateProductAdvertisingSheetCaches(self, nmId);
 
   const queuedJob = await self.wbClustersRepository.createClusterBidJob({
     advertId,
