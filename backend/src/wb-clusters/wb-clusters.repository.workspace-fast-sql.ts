@@ -259,6 +259,64 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
   }
 
   /**
+   * Читает актуальные ставки из wb_cluster_bids для конкретной кампании.
+   * Используется для наложения свежих bid-данных поверх сохранённого снэпшота
+   * (который может содержать устаревшие ставки, но корректный набор кластеров).
+   * Возвращает map: cluster_name.trim().toLowerCase() → bid-поля.
+   */
+  async getLiveClusterBidsByClusterName(
+    nmId: number,
+    advertId: number,
+  ): Promise<Map<string, {
+    bid: number | null;
+    bidSyncStatus: import("./wb-clusters.types").ClusterBidSyncStatus | null;
+    bidConfirmedAt: string | null;
+    bidRetryAt: string | null;
+    bidLastError: string | null;
+  }>> {
+    await this.ensureSchemaOrThrow();
+    const pool = this.getPool();
+    const result = await pool.query<{
+      cluster_name: string;
+      bid: string | null;
+      bid_sync_status: import("./wb-clusters.types").ClusterBidSyncStatus | null;
+      bid_confirmed_at: string | null;
+      bid_retry_at: string | null;
+      bid_last_error: string | null;
+    }>(
+      `
+        SELECT
+          cluster_name,
+          bid::text AS bid,
+          bid_sync_status,
+          bid_confirmed_at::text AS bid_confirmed_at,
+          bid_retry_at::text     AS bid_retry_at,
+          bid_last_error
+        FROM ${this.tableName("wb_cluster_bids")}
+        WHERE nm_id = $1 AND advert_id = $2
+      `,
+      [nmId, advertId],
+    );
+    const map = new Map<string, {
+      bid: number | null;
+      bidSyncStatus: import("./wb-clusters.types").ClusterBidSyncStatus | null;
+      bidConfirmedAt: string | null;
+      bidRetryAt: string | null;
+      bidLastError: string | null;
+    }>();
+    for (const row of result.rows) {
+      map.set(row.cluster_name.trim().toLowerCase(), {
+        bid: row.bid !== null ? Number(row.bid) : null,
+        bidSyncStatus: row.bid_sync_status,
+        bidConfirmedAt: row.bid_confirmed_at,
+        bidRetryAt: row.bid_retry_at,
+        bidLastError: row.bid_last_error,
+      });
+    }
+    return map;
+  }
+
+  /**
    * SQL-direct fast path для workspace shell — строит полный заголовок рабочего
    * пространства (кампании, даты, суммарные метрики) одним CTE-запросом к PostgreSQL.
    * Работает для ЛЮБОГО диапазона дат без предварительной материализации.

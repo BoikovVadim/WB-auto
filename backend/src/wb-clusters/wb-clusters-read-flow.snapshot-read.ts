@@ -354,11 +354,42 @@ export async function getProductAdvertisingWorkspaceClusterTable(
     } as ProductAdvertisingWorkspaceClusterTableResponse;
   }
 
+  // Overlay live bid fields from wb_cluster_bids onto the stored snapshot rows.
+  // The stored snapshot (from PATH B) has the correct cluster set, but bid values
+  // may be stale if the user changed a bid since the snapshot was built.
+  // wb_cluster_bids always reflects the latest bid; this merge makes bids fresh
+  // without regenerating the snapshot (which would lose the correct cluster count).
+  const liveBidMap = await self.wbClustersRepository
+    .getLiveClusterBidsByClusterName(nmId, advertId)
+    .catch(() => new Map<string, {
+      bid: number | null;
+      bidSyncStatus: import("./types/product-advertising-workspace.types").ProductAdvertisingWorkspaceClusterRow["bidSyncStatus"];
+      bidConfirmedAt: string | null;
+      bidRetryAt: string | null;
+      bidLastError: string | null;
+    }>());
+  const refreshedRows = liveBidMap.size > 0
+    ? storedRows.payload.rows.map((row) => {
+        const liveBid = liveBidMap.get(
+          (row.canonicalNormQuery ?? row.clusterName ?? "").trim().toLowerCase(),
+        );
+        if (!liveBid) return row;
+        return {
+          ...row,
+          bid: liveBid.bid,
+          bidSyncStatus: liveBid.bidSyncStatus,
+          bidConfirmedAt: liveBid.bidConfirmedAt,
+          bidRetryAt: liveBid.bidRetryAt,
+          bidLastError: liveBid.bidLastError,
+        };
+      })
+    : storedRows.payload.rows;
+
   // Always attach a fresh querySearchIndex from DB so the frontend can filter
   // locally without PATH B. Cached per (nmId, advertId, cacheVersion) — DB hit
   // only on the first request per sync cycle, instant from cache afterwards.
   const querySearchIndex = await getOrBuildQuerySearchIndex(self, nmId, advertId);
-  const snapshotForResponse = { ...storedRows.payload, querySearchIndex };
+  const snapshotForResponse = { ...storedRows.payload, rows: refreshedRows, querySearchIndex };
   const searchStr = input?.search ?? "";
 
   const storedRowsResponse = {
@@ -707,10 +738,6 @@ export function invalidateProductAdvertisingSheetCaches(self: WbClustersSnapshot
       self.querySearchIndexCache.delete(key);
     }
   }
-  // Удаляем сохранённые строки кластеров из wb_product_workspace_campaign_rows.
-  // resolveWorkspaceCampaignRows возвращает их напрямую (минуя wb_cluster_bids),
-  // поэтому без удаления re-fetch после смены ставки вернёт устаревший bid из снэпшота.
-  void self.productWorkspaceSnapshotResolver.invalidateWorkspaceCampaignRows(nmId).catch(() => null);
 }
 
 export function resolveProductAdvertisingSheetSnapshotCacheTtlMs(
