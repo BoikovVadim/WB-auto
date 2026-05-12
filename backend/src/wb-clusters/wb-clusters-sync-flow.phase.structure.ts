@@ -40,6 +40,14 @@ export async function runStructureSyncPhase(self: WbClustersService, syncRunId: 
     syncRunId,
     saveRawArchives: (batch) => self.wbClustersRepository.saveRawArchives(batch),
   });
+  // One-pass cleanup: remove 'excluded' entries that have a matching 'active'
+  // entry for the same cluster name. Fixes duplicates accumulated from prior
+  // syncs where deactivateStaleActiveClusters was not running the excluded pass.
+  const dedupCount = await self.wbClustersRepository.deduplicateClustersBySourceKind();
+  if (dedupCount > 0) {
+    warningMessages.push(`deduplicateClustersBySourceKind: removed ${dedupCount} stale excluded entries`);
+  }
+
   const storedInventory: StoredCampaignInventoryEntry[] =
     await self.wbClustersRepository.getStoredCampaignInventory();
   const cursorState = await self.wbClustersRepository.getSyncCursorState("structure");

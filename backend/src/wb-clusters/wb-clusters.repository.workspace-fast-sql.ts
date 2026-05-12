@@ -29,6 +29,7 @@ interface WorkspaceFastSqlRow {
   bid_type: string | null;
   currency: string | null;
   cluster_name: string;
+  normalized_cluster_name: string;
   canonical_norm_query: string;
   source_kind: ClusterSourceKind;
   is_active: boolean | null;
@@ -113,6 +114,7 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
         cam.bid_type,
         COALESCE(pm.currency, cam.currency)                          AS currency,
         c.cluster_name,
+        c.normalized_cluster_name,
         COALESCE(b.cluster_name, c.cluster_name)                     AS canonical_norm_query,
         CASE
           WHEN a.action_key IS NOT NULL THEN
@@ -197,7 +199,24 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
 
     const n = (v: string | null): number | null => (v !== null ? Number(v) : null);
 
-    const rows: ProductAdvertisingWorkspaceClusterRow[] = result.rows.map((row) => ({
+    // Deduplicate rows by (advert_id, normalized_cluster_name), preferring
+    // 'active' over 'excluded' over everything else. This guards against the
+    // case where wb_clusters contains both an 'active' and an 'excluded' entry
+    // for the same cluster (e.g. after a status transition was not fully cleaned
+    // up yet by deactivateStaleActiveClusters).
+    const sourceKindRank = (sk: ClusterSourceKind | null): number =>
+      sk === "active" ? 0 : sk === "excluded" ? 1 : 2;
+    const dedupMap = new Map<string, (typeof result.rows)[0]>();
+    for (const row of result.rows) {
+      const key = `${row.advert_id ?? ""}:${row.normalized_cluster_name}`;
+      const existing = dedupMap.get(key);
+      if (!existing || sourceKindRank(row.source_kind) < sourceKindRank(existing.source_kind)) {
+        dedupMap.set(key, row);
+      }
+    }
+    const dedupedRows = Array.from(dedupMap.values());
+
+    const rows: ProductAdvertisingWorkspaceClusterRow[] = dedupedRows.map((row) => ({
       clusterKey: buildWorkspaceClusterKey(
         row.advert_id !== null ? Number(row.advert_id) : null,
         row.cluster_name,

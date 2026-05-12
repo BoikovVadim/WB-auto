@@ -204,11 +204,9 @@ export async function refreshCampaignProductSlice(
           .filter((row) => Boolean(row.clusterName));
 
         if (rows.length > 0) {
-          statsRowsUpserted += await self.wbClustersRepository.replaceClusterDailyStats({
+          statsRowsUpserted += await self.wbClustersRepository.upsertClusterDailyStats({
             advertId: item.advertId,
             nmId: item.nmId,
-            from: input.statsPeriod.from,
-            to: input.statsPeriod.to,
             rows,
           });
         }

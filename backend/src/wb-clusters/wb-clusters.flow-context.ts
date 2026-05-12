@@ -294,7 +294,7 @@ export interface WbClustersStatsSyncContext {
     | "saveRawArchives"
     | "getStoredCampaignInventory"
     | "getSyncCursorState"
-    | "replaceClusterDailyStats"
+    | "upsertClusterDailyStats"
     | "upsertClusterStatsBulk"
   >;
   wbPromotionApiClient: Pick<

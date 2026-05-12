@@ -52,20 +52,42 @@ export function maxDefinedNumber(self: WbClustersService, ...values: Array<numbe
   return Math.max(...definedValues);
 }
 
+/**
+ * Regular stats sync period: yesterday + today (2 days).
+ *
+ * Historical data grows indefinitely in wb_cluster_daily_stats — each day
+ * is written once and never deleted. The regular 10-minute sync only needs
+ * to refresh the most recent two days:
+ *   - today:     intraday accumulation (WB aggregates throughout the day)
+ *   - yesterday: final finalization pass (after WB closes the previous day)
+ *
+ * For initial historical backfill use getStatsBackfillPeriod().
+ */
 export function getStatsPeriod(self: WbClustersService) {
   const today = new Date();
   const end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const start = new Date(end.getTime() - 1 * 24 * 60 * 60 * 1000); // yesterday
 
-  // Target: same calendar day one month back (e.g. May 10 → April 10).
-  // WB stats API enforces a strict 30-day inclusive limit, so the range
-  // [start, end] must never exceed 29 days apart (30 days inclusive).
+  return {
+    from: self.toIsoDate(start),
+    to: self.toIsoDate(end),
+  };
+}
+
+/**
+ * Full historical backfill period: last 30 days.
+ * Used for first-time seeding or manual re-sync of history.
+ */
+export function getStatsBackfillPeriod(self: WbClustersService) {
+  const today = new Date();
+  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
   const lastDayOfPrevMonth = new Date(end.getFullYear(), end.getMonth(), 0).getDate();
   const startDay = Math.min(end.getDate(), lastDayOfPrevMonth);
   const prevMonth = end.getMonth() === 0 ? 11 : end.getMonth() - 1;
   const prevYear = end.getMonth() === 0 ? end.getFullYear() - 1 : end.getFullYear();
   const calendarMonthStart = new Date(prevYear, prevMonth, startDay);
 
-  // Cap: ensure the range is at most 30 days inclusive (≤ 29-day span).
   const maxSpanMs = 29 * 24 * 60 * 60 * 1000;
   const start =
     end.getTime() - calendarMonthStart.getTime() > maxSpanMs

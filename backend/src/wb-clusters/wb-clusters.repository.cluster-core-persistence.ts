@@ -145,6 +145,36 @@ export abstract class WbClustersRepositoryClusterCorePersistence extends WbClust
   }
 
   /**
+   * Убирает дубли из wb_clusters одноразовой чисткой: если для одного
+   * (advert_id, nm_id, normalized_cluster_name) существуют одновременно
+   * 'active' и 'excluded' записи, 'excluded' переводится в 'stats'.
+   * Вызывается один раз в начале структурной фазы.
+   */
+  async deduplicateClustersBySourceKind(): Promise<number> {
+    await this.ensureSchemaOrThrow();
+    const pool = this.getPool();
+    const result = await pool.query<{ count: string }>(
+      `
+        WITH stale AS (
+          UPDATE ${this.tableName("wb_clusters")} AS c
+          SET source_kind = 'stats', is_active = NULL, synced_at = NOW()
+          WHERE c.source_kind = 'excluded'
+            AND EXISTS (
+              SELECT 1 FROM ${this.tableName("wb_clusters")} c2
+              WHERE c2.advert_id = c.advert_id
+                AND c2.nm_id    = c.nm_id
+                AND c2.normalized_cluster_name = c.normalized_cluster_name
+                AND c2.source_kind = 'active'
+            )
+          RETURNING 1
+        )
+        SELECT COUNT(*)::text AS count FROM stale
+      `,
+    );
+    return Number(result.rows[0]?.count ?? 0);
+  }
+
+  /**
    * После синка помечает кластеры, которых WB больше не возвращает в своём
    * источнике, как source_kind='stats', is_active=NULL. Убирает их из рабочего
    * пространства, сохраняя для исторических wb_cluster_daily_stats.

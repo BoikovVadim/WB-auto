@@ -152,11 +152,9 @@ export async function runStatsSyncPhase(self: WbClustersStatsSyncContext, syncRu
         .filter((row) => row.clusterName.length > 0);
 
       if (rows.length > 0) {
-        statsRowsUpserted += await self.wbClustersRepository.replaceClusterDailyStats({
+        statsRowsUpserted += await self.wbClustersRepository.upsertClusterDailyStats({
           advertId: item.advertId,
           nmId: item.nmId,
-          from: statsPeriod.from,
-          to: statsPeriod.to,
           rows,
         });
       }
