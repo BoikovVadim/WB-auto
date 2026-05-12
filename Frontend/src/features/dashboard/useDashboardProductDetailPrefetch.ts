@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import {
   fetchProductAdvertisingWorkspaceBundle,
 } from "../../api/syncClientAdvertisingRead";
+import { clearWorkspaceScrollForProduct } from "./advertising/ProductAdvertisingWorkspacePane";
 import { resolveProductAdvertisingDateRangeForProductOpen } from "./advertising/productAdvertisingDateRangeState";
 import {
   advertisingUxBudgetsMs,
@@ -75,6 +76,9 @@ export function useDashboardProductDetailPrefetch(input: {
         advertisingUxBudgetsMs.repeatProductOpen,
       );
       void prefetchProductWorkspaceDetail(product.nmId, requestInput);
+      // Always start at top when navigating from the list so all campaign cards
+      // are visible. Page refresh keeps the scroll (position not cleared here).
+      clearWorkspaceScrollForProduct(product.nmId);
     }
 
     setProductAdvertisingDateRange(nextDateRange);

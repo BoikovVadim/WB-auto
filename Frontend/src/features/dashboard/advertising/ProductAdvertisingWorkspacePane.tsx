@@ -31,6 +31,20 @@ function loadWorkspaceScroll(nmId: number | null): number {
   }
 }
 
+/**
+ * Clears the saved scroll position for a product.
+ * Call this when navigating TO a product from the product list so the view
+ * always starts at the top (showing all campaigns). On page refresh the
+ * position is NOT cleared, so the user returns to where they were.
+ */
+export function clearWorkspaceScrollForProduct(nmId: number | null) {
+  try {
+    sessionStorage.removeItem(workspaceScrollKey(nmId));
+  } catch {
+    // ignore
+  }
+}
+
 export function ProductAdvertisingWorkspacePane(props: {
   nmId: number | null;
   vendorCode: string;
