@@ -99,7 +99,8 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
 
   async runStatsHistoricalBackfill(): Promise<{ accepted: boolean; message: string; period: { from: string; to: string } }> {
     const period = this.getStatsBackfillPeriod();
-    const syncRunId = `stats-backfill-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    // Create a proper DB sync run so wb_cluster_raw_archive FK is satisfied
+    const syncRunId = await this.wbClustersRepository.createSyncRun("manual");
     // Run in background — returns immediately, backfill runs async
     this.runStatsBackfillPhase(syncRunId)
       .then((result) => {
