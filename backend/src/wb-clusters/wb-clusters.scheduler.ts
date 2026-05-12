@@ -69,15 +69,6 @@ export class WbClustersScheduler implements OnModuleInit {
     await this.wbClustersService.handleScheduledJamSync();
   }
 
-  // Daily stats finalization at 01:00 Moscow (22:00 UTC).
-  // WB closes the previous Moscow calendar day at ~21:00 UTC. Running an
-  // extra sync 60 minutes after that ensures finalized daily stats land in
-  // the DB even if the regular 10-minute sync happened to fail around midnight.
-  @Cron("0 0 22 * * *")
-  async handleDayCloseStatsSync() {
-    await this.wbClustersService.handleScheduledSync();
-  }
-
   // Re-sync vendor codes from WB Content API once a day at 07:00 Moscow (04:00 UTC).
   @Cron("0 0 4 * * *")
   async handleVendorCodeSync() {
