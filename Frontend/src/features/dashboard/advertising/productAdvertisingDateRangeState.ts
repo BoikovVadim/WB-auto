@@ -18,16 +18,6 @@ function normalizeExplicitDateRange(input: {
   const start = input.persistedStartDate ?? input.persistedEndDate;
   const end = input.persistedEndDate ?? input.persistedStartDate;
 
-  // A single-day range was never a user choice — it was the old backend
-  // default leaking into storage. Treat it as absent so "week" applies.
-  if (
-    start &&
-    end &&
-    formatCalendarDateValue(start) === formatCalendarDateValue(end)
-  ) {
-    return null;
-  }
-
   return { start, end };
 }
 

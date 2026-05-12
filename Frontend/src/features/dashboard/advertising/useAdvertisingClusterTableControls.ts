@@ -13,6 +13,33 @@ import {
 } from "./model";
 
 const SORT_SESSION_KEY = "wb-advertising-sort-state";
+const STATUS_FILTER_SESSION_KEY = "wb-advertising-status-filter";
+
+function readStoredStatusFilter(): AdvertisingClusterStatusFilter | null {
+  try {
+    const raw = window.sessionStorage.getItem(STATUS_FILTER_SESSION_KEY);
+    if (raw === "active" || raw === "excluded" || raw === "all") return raw;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function writeStoredStatusFilter(value: AdvertisingClusterStatusFilter) {
+  try {
+    window.sessionStorage.setItem(STATUS_FILTER_SESSION_KEY, value);
+  } catch {
+    // ignore
+  }
+}
+
+function clearStoredStatusFilter() {
+  try {
+    window.sessionStorage.removeItem(STATUS_FILTER_SESSION_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 function readStoredSortState(): { key: AdvertisingClusterSortKey; direction: AdvertisingClusterSortDirection } | null {
   try {
@@ -62,7 +89,12 @@ export function useAdvertisingClusterTableControls(input: {
     createAdvertisingClusterNumericFilters(),
   );
   const [statusFilter, setStatusFilter] =
-    useState<AdvertisingClusterStatusFilter>("all");
+    useState<AdvertisingClusterStatusFilter>(() => readStoredStatusFilter() ?? "active");
+
+  const setStatusFilterPersisted = useCallback((value: AdvertisingClusterStatusFilter) => {
+    writeStoredStatusFilter(value);
+    setStatusFilter(value);
+  }, []);
   const [sortState, setSortState] = useState<{
     key: AdvertisingClusterSortKey;
     direction: AdvertisingClusterSortDirection;
@@ -73,9 +105,11 @@ export function useAdvertisingClusterTableControls(input: {
   useEffect(() => {
     const isNowInDetail = input.selectedCampaignAdvertId !== null;
     if (wasInDetailRef.current && !isNowInDetail) {
-      // Exited product detail → reset to default and clear storage
+      // Exited product detail → reset to defaults and clear storage
       setSortState(DEFAULT_SORT_STATE);
       clearStoredSortState();
+      setStatusFilter("active");
+      clearStoredStatusFilter();
     }
     wasInDetailRef.current = isNowInDetail;
   }, [input.selectedCampaignAdvertId]);
@@ -132,7 +166,7 @@ export function useAdvertisingClusterTableControls(input: {
     setClusterSearch,
     numericFilters,
     statusFilter,
-    setStatusFilter,
+    setStatusFilter: setStatusFilterPersisted,
     sortState,
     deferredClusterSearch,
     page,
