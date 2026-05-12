@@ -87,6 +87,12 @@ export class WbClustersController {
     return this.wbClustersService.runSync(body.trigger ?? "manual", body.mode ?? "full");
   }
 
+  @Post("stats/backfill")
+  @UseGuards(WbClustersWriteGuard)
+  runStatsHistoricalBackfill() {
+    return this.wbClustersService.runStatsHistoricalBackfill();
+  }
+
   @Post("products/:nmId/lookup")
   lookupProductClusters(
     @Param("nmId", ParseIntPipe) nmId: number,

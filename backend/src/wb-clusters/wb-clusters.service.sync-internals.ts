@@ -172,6 +172,14 @@ export abstract class WbClustersServiceSyncInternals extends WbClustersServiceCo
     );
   }
 
+  protected async runStatsBackfillPhase(syncRunId: string): Promise<SyncPhaseResult> {
+    return wb_clusters_sync_flow.runStatsSyncPhase(
+      this as unknown as WbClustersStatsSyncContext,
+      syncRunId,
+      { overridePeriod: this.getStatsBackfillPeriod() },
+    );
+  }
+
   protected async updatePhaseCursorState(
     phase: ClusterSyncPhase,
     advertId: number,
@@ -193,6 +201,10 @@ export abstract class WbClustersServiceSyncInternals extends WbClustersServiceCo
 
   protected getStatsPeriod() {
     return wb_clusters_sync_flow.getStatsPeriod(this);
+  }
+
+  protected getStatsBackfillPeriod() {
+    return wb_clusters_sync_flow.getStatsBackfillPeriod(this);
   }
 
   protected toIsoDate(date: Date) {

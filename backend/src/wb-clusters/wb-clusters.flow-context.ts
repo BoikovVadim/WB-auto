@@ -302,6 +302,7 @@ export interface WbClustersStatsSyncContext {
     "getDailyNormQueryStats" | "getNormQueryStats"
   >;
   normQueryReadChunkSize: number;
+  statsNormQueryChunkSize: number;
   getStatsPeriod(): StatsPeriod;
   chunkArray<T>(items: T[], chunkSize: number): T[][];
   tryApiStep<T>(

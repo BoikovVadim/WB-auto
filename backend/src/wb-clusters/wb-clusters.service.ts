@@ -97,6 +97,27 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     return wb_clusters_sync_flow.runSync(this, trigger, mode) as Promise<WbClustersSyncStartResponse>;
   }
 
+  async runStatsHistoricalBackfill(): Promise<{ accepted: boolean; message: string; period: { from: string; to: string } }> {
+    const period = this.getStatsBackfillPeriod();
+    const syncRunId = `stats-backfill-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    // Run in background — returns immediately, backfill runs async
+    this.runStatsBackfillPhase(syncRunId)
+      .then((result) => {
+        this.logger.log(
+          `Stats backfill completed: ${result.statsRowsUpserted} rows upserted, ` +
+          `${result.warningMessages.length} warnings, period ${period.from}–${period.to}`,
+        );
+      })
+      .catch((err: Error) => {
+        this.logger.error(`Stats backfill failed: ${err.message}`);
+      });
+    return {
+      accepted: true,
+      message: `Stats backfill started for period ${period.from} – ${period.to}. Runs in background (~2-3 min).`,
+      period,
+    };
+  }
+
   async lookupProductClusters(
     nmId: number,
     queries: string[],

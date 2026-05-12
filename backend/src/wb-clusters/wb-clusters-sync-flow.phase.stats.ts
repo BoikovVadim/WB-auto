@@ -41,7 +41,11 @@ type DailyClusterStatRow = {
   currency: string | null;
 };
 
-export async function runStatsSyncPhase(self: WbClustersStatsSyncContext, syncRunId: string) {
+export async function runStatsSyncPhase(
+  self: WbClustersStatsSyncContext,
+  syncRunId: string,
+  options?: { overridePeriod?: { from: string; to: string } },
+) {
   const warningMessages: string[] = [];
   let campaignsSeen = 0;
   let campaignsSynced = 0;
@@ -52,7 +56,7 @@ export async function runStatsSyncPhase(self: WbClustersStatsSyncContext, syncRu
     syncRunId,
     saveRawArchives: (batch) => self.wbClustersRepository.saveRawArchives(batch),
   });
-  const statsPeriod = self.getStatsPeriod();
+  const statsPeriod = options?.overridePeriod ?? self.getStatsPeriod();
   const storedInventory: StoredCampaignInventoryEntry[] = (
     await self.wbClustersRepository.getStoredCampaignInventory()
   ).filter((item: StoredCampaignInventoryEntry) => item.products.length > 0);
@@ -107,7 +111,7 @@ export async function runStatsSyncPhase(self: WbClustersStatsSyncContext, syncRu
 
   for (const chunk of self.chunkArray(
     globalDailyItems,
-    self.normQueryReadChunkSize,
+    self.statsNormQueryChunkSize,
   ) as DailyItem[][]) {
     const dailyStatsResponse: PromotionDailyNormQueryStatsResponse | null =
       await self.tryApiStep(
@@ -164,7 +168,7 @@ export async function runStatsSyncPhase(self: WbClustersStatsSyncContext, syncRu
   if (phaseCompleted) {
     for (const chunk of self.chunkArray(
       globalAggregateItems,
-      self.normQueryReadChunkSize,
+      self.statsNormQueryChunkSize,
     ) as AggregateItem[][]) {
       const statsResponse: PromotionNormQueryStatsResponse | null = await self.tryApiStep(
         `aggregate cluster stats chunk (${chunk[0]?.advert_id ?? 0}...${chunk[chunk.length - 1]?.advert_id ?? 0})`,

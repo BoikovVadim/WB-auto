@@ -112,6 +112,9 @@ export abstract class WbClustersServiceState {
   protected readonly productAdvertisingSheetJamCacheTtlMs = 10 * 60 * 1000;
   protected readonly productAdvertisingSheetSnapshotCacheTtlMs = 65 * 60 * 1000;
   protected readonly normQueryReadChunkSize = 100;
+  // Stats endpoint accepts larger batches than list/bids/minus.
+  // 200 items per request cuts the request count ~2× vs 100.
+  protected readonly statsNormQueryChunkSize = 200;
   protected readonly maxBidJobsPerPass = 200;
   protected readonly maxActionJobsPerPass = 200;
   protected readonly maxActionGroupsPerBatch = 50;
