@@ -53,6 +53,21 @@ export function maxDefinedNumber(self: WbClustersService, ...values: Array<numbe
 }
 
 /**
+ * Format a Date as YYYY-MM-DD using LOCAL time components.
+ *
+ * toISOString() always returns UTC, so on a Moscow-timezone server
+ * (TZ=Europe/Moscow) midnight local = 21:00 UTC of the previous day,
+ * which shifts every date string one day back. Using local getters
+ * produces the correct calendar date that WB API expects.
+ */
+function toLocalDateStr(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/**
  * Regular stats sync period: yesterday + today (2 days).
  *
  * Historical data grows indefinitely in wb_cluster_daily_stats — each day
@@ -63,14 +78,13 @@ export function maxDefinedNumber(self: WbClustersService, ...values: Array<numbe
  *
  * For initial historical backfill use getStatsBackfillPeriod().
  */
-export function getStatsPeriod(self: WbClustersService) {
+export function getStatsPeriod(_self: WbClustersService) {
   const today = new Date();
-  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const start = new Date(end.getTime() - 1 * 24 * 60 * 60 * 1000); // yesterday
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
 
   return {
-    from: self.toIsoDate(start),
-    to: self.toIsoDate(end),
+    from: toLocalDateStr(yesterday),
+    to: toLocalDateStr(today),
   };
 }
 
@@ -78,25 +92,28 @@ export function getStatsPeriod(self: WbClustersService) {
  * Full historical backfill period: last 30 days.
  * Used for first-time seeding or manual re-sync of history.
  */
-export function getStatsBackfillPeriod(self: WbClustersService) {
+export function getStatsBackfillPeriod(_self: WbClustersService) {
   const today = new Date();
-  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
-  const lastDayOfPrevMonth = new Date(end.getFullYear(), end.getMonth(), 0).getDate();
-  const startDay = Math.min(end.getDate(), lastDayOfPrevMonth);
-  const prevMonth = end.getMonth() === 0 ? 11 : end.getMonth() - 1;
-  const prevYear = end.getMonth() === 0 ? end.getFullYear() - 1 : end.getFullYear();
+  // Target: same calendar day one month back (e.g. May 12 → April 12).
+  // WB stats API enforces a strict 30-day inclusive limit.
+  const lastDayOfPrevMonth = new Date(today.getFullYear(), today.getMonth(), 0).getDate();
+  const startDay = Math.min(today.getDate(), lastDayOfPrevMonth);
+  const prevMonth = today.getMonth() === 0 ? 11 : today.getMonth() - 1;
+  const prevYear = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
   const calendarMonthStart = new Date(prevYear, prevMonth, startDay);
 
-  const maxSpanMs = 29 * 24 * 60 * 60 * 1000;
+  // Cap: ensure the range is at most 30 days inclusive (≤ 29-day span).
+  const maxSpanDays = 29;
+  const spanDays = Math.round((today.getTime() - calendarMonthStart.getTime()) / 86_400_000);
   const start =
-    end.getTime() - calendarMonthStart.getTime() > maxSpanMs
-      ? new Date(end.getTime() - maxSpanMs)
+    spanDays > maxSpanDays
+      ? new Date(today.getFullYear(), today.getMonth(), today.getDate() - maxSpanDays)
       : calendarMonthStart;
 
   return {
-    from: self.toIsoDate(start),
-    to: self.toIsoDate(end),
+    from: toLocalDateStr(start),
+    to: toLocalDateStr(today),
   };
 }
 
