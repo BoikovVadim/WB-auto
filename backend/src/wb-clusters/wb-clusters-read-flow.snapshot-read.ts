@@ -174,8 +174,36 @@ export async function getProductAdvertisingWorkspaceBundle(
   type ClusterTable = Awaited<ReturnType<typeof getProductAdvertisingWorkspaceClusterTable>>;
   const clusterTables: Record<string, ClusterTable> = {};
 
-  // Include the initial cluster table already embedded in the workspace shell (free, no extra DB hit).
-  if (workspace.initialClusterTable) {
+  // Fetch ALL campaign tables in parallel — one DB read per campaign, all concurrent.
+  // This turns N individual HTTP round-trips into a single request, making campaign
+  // switching and date changes instantaneous on the frontend.
+  const campaignTabs = workspace.campaignTabs ?? [];
+  if (campaignTabs.length > 0) {
+    const tableEntries = await Promise.all(
+      campaignTabs.map(async (tab) => {
+        const table = await getProductAdvertisingWorkspaceClusterTable(
+          self,
+          nmId,
+          tab.advertId,
+          {
+            startDate: input?.startDate,
+            endDate: input?.endDate,
+            status: "all",
+            search: "",
+            sortKey: "spend",
+            sortDirection: "desc",
+            page: 1,
+            pageSize: 5000,
+          },
+        ).catch(() => null);
+        return [String(tab.advertId), table] as const;
+      }),
+    );
+    for (const [advertIdStr, table] of tableEntries) {
+      if (table) clusterTables[advertIdStr] = table;
+    }
+  } else if (workspace.initialClusterTable) {
+    // Fallback: workspace has no campaignTabs but has an initial table (edge case).
     clusterTables[String(workspace.initialClusterTable.advertId)] =
       workspace.initialClusterTable as unknown as ClusterTable;
   }

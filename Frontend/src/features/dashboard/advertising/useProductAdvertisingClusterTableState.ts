@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo } from "react";
 
-import { fetchProductAdvertisingWorkspaceClusterTable } from "../../../api/syncClientAdvertisingRead";
+import {
+  fetchProductAdvertisingWorkspaceBundle,
+} from "../../../api/syncClientAdvertisingRead";
 import type {
   ProductAdvertisingWorkspaceResponse,
 } from "../../../api/syncClient";
@@ -135,33 +137,16 @@ export function useProductAdvertisingClusterTableState(input: {
     workspace?.initialClusterTable,
     workspace?.range,
   ]);
-  // Фоновый prefetch таблиц для ВСЕХ остальных кампаний товара при входе/смене дат.
-  // Гарантирует мгновенное переключение между РК: к моменту клика данные уже в кеше.
-  // Использует АКТУАЛЬНЫЙ clusterTableRequestInput (с учётом выбранного пользователем
-  // диапазона дат), а не дефолтный период воркспейса.
-  // Stable string key: re-runs only when the actual set of advertIds or the date
-  // range changes, not on every re-render that recreates the campaignSummaries array.
-  const campaignAdvertIdsKey = useMemo(
-    () => campaignSummaries.map((c) => c.advertId).sort().join(","),
-    [campaignSummaries],
-  );
+  // Один bundle-запрос загружает workspace + таблицы ВСЕХ РК за один round-trip.
+  // Backend выполняет все DB-читаемые параллельно и отдаёт один ответ.
+  // Это заменяет прежние N отдельных HTTP-запросов (по одному на РК) — теперь
+  // переключение между РК и смена дат мгновенны, так как данные уже в кеше.
   const clusterTableRequestInputKey = JSON.stringify(clusterTableRequestInput);
   useEffect(() => {
-    if (!nmId || !clusterTableRequestInput || !campaignSummaries.length) return;
-
-    for (const campaign of campaignSummaries) {
-      if (campaign.advertId === selectedCampaign?.advertId) continue;
-      void fetchProductAdvertisingWorkspaceClusterTable({
-        nmId,
-        advertId: campaign.advertId,
-        requestInput: clusterTableRequestInput,
-        sortKey: "spend",
-        sortDirection: "desc",
-        pageSize: 5000,
-      }).catch(() => null);
-    }
+    if (!nmId || !clusterTableRequestInput) return;
+    void fetchProductAdvertisingWorkspaceBundle(nmId, clusterTableRequestInput).catch(() => null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nmId, clusterTableRequestInputKey, campaignAdvertIdsKey, selectedCampaign?.advertId]);
+  }, [nmId, clusterTableRequestInputKey]);
 
   const {
     productAdvertisingClusterTable,
