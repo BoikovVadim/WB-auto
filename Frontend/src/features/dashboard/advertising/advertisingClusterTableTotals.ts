@@ -2,6 +2,7 @@ import type {
   ProductAdvertisingWorkspaceClusterRow,
   ProductAdvertisingWorkspaceClusterTableTotals,
 } from "../../../api/syncClient";
+import { getAdvertisingCpoOrSpend } from "./advertisingModelMetrics";
 
 export function getEmptyAdvertisingClusterTotals(currency: string | null) {
   return {
@@ -118,7 +119,7 @@ export function computeClusterTotalsFromRows(
     cpc: perUnit(spend, clicks),
     cpm:
       spend !== null && views !== null && views > 0 ? (spend / views) * 1000 : null,
-    cpo: perUnit(spend, orders),
+    cpo: getAdvertisingCpoOrSpend(spend, orders),
     viewToOrder: ratio(orders, views),
     spend,
     currency,

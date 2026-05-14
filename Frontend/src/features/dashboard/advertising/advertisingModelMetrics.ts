@@ -42,6 +42,20 @@ export function getAdvertisingMoneyPerAction(
   return spend / actions;
 }
 
+/**
+ * CPO с фоллбэком на spend.
+ * Если заказов нет, возвращает полную сумму расходов, чтобы пользователь
+ * видел, сколько потрачено при нулевой конверсии, а не пустую ячейку.
+ */
+export function getAdvertisingCpoOrSpend(
+  spend: number | null,
+  orders: number | null,
+): number | null {
+  if (spend === null) return null;
+  if (orders !== null && orders > 0) return spend / orders;
+  return spend > 0 ? spend : null;
+}
+
 export function getAdvertisingCostPerThousand(
   spend: number | null,
   views: number | null,
@@ -122,7 +136,7 @@ export function readAdvertisingNumericValue(
   }
 
   if (key === "cpo") {
-    return getAdvertisingMoneyPerAction(row.spend, getAdvertisingOrderedItems(row));
+    return getAdvertisingCpoOrSpend(row.spend, getAdvertisingOrderedItems(row));
   }
 
   if (key === "viewToOrder") {

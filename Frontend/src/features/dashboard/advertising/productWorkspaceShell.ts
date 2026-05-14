@@ -10,6 +10,7 @@ import type {
 import {
   averageAdvertisingValues,
   getAdvertisingCostPerThousand,
+  getAdvertisingCpoOrSpend,
   getAdvertisingMoneyPerAction,
   getAdvertisingOrderedItems,
   getAdvertisingRatio,
@@ -360,7 +361,7 @@ function buildWorkspaceShellCampaignTabs(
         cto: getAdvertisingRatio(tab.totals.orders, tab.totals.addToCart),
         cpc: getAdvertisingMoneyPerAction(tab.totals.spend, tab.totals.clicks),
         cpm: getAdvertisingCostPerThousand(tab.totals.spend, tab.totals.views),
-        cpo: getAdvertisingMoneyPerAction(tab.totals.spend, tab.totals.orders),
+        cpo: getAdvertisingCpoOrSpend(tab.totals.spend, tab.totals.orders),
         viewToOrder: getAdvertisingRatio(tab.totals.orders, tab.totals.views),
       },
     }))

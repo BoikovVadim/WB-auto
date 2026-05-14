@@ -18,7 +18,7 @@ import {
   type AdvertisingClusterSortKey,
 } from "./clusterTableView";
 import {
-  getAdvertisingMoneyPerAction,
+  getAdvertisingCpoOrSpend,
   getAdvertisingOrderedItems,
 } from "./model";
 import { ratio } from "./advertisingClusterTableLayout";
@@ -210,7 +210,7 @@ export function renderAdvertisingGroupCell(input: {
       return formatNullableNumber(row.cpm);
     case "cpo":
       return formatMoneyValue(
-        getAdvertisingMoneyPerAction(row.spend, getAdvertisingOrderedItems(row)),
+        getAdvertisingCpoOrSpend(row.spend, getAdvertisingOrderedItems(row)),
         row.currency,
       );
     case "viewToOrder":
