@@ -79,14 +79,17 @@ export function ProductAdvertisingWorkspacePane(props: {
         </div>
       );
     }
-    return (
-      <div className="wb-products-page">
-        <ProductAdvertisingWorkspaceState
-          title={ui.campaignOverviewTitle}
-          message="Загружаем данные кампаний…"
-        />
-      </div>
-    );
+    if (props.isWorkspaceLoading) {
+      return (
+        <div className="wb-products-page">
+          <ProductAdvertisingWorkspaceState
+            title={ui.campaignOverviewTitle}
+            message="Загружаем данные кампаний…"
+          />
+        </div>
+      );
+    }
+    return null;
   }
 
   return <ProductAdvertisingWorkspaceContent {...props} />;
