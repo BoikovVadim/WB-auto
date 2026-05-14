@@ -192,6 +192,7 @@ export function ProductAdvertisingClusterOverview(
             <ProductAdvertisingDateFilter
               dateRange={props.dateRange}
               bounds={props.clusterDailyStatsBounds}
+              allowAllPast
               onDateRangeChange={props.onDateRangeChange}
               onPresetHover={props.onPresetHover}
             />
