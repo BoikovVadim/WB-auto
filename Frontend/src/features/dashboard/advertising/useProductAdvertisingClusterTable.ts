@@ -82,6 +82,10 @@ export function useProductAdvertisingClusterTable(input: {
   const [isTableLoading, setIsTableLoading] = useState(false);
   const [isTableRefreshing, setIsTableRefreshing] = useState(false);
 
+  // Отслеживаем изменение refreshKey между рендерами — нужно отличать
+  // оптимистичный патч кеша (не стреляем HTTP) от реальной инвалидации (стреляем).
+  const prevRefreshKeyRef = useRef<number | undefined>(refreshKey);
+
   // Ref хранит последние fetch-параметры — нужен внутри эффекта без добавления
   // объектов requestInput/numericFilters/bootstrapTable в deps (они приводили к
   // бесконечным перезапускам при смене ссылки с теми же значениями).
@@ -134,6 +138,8 @@ export function useProductAdvertisingClusterTable(input: {
       prevNmIdRef.current !== nmId || prevAdvertIdRef.current !== advertId;
     prevNmIdRef.current = nmId;
     prevAdvertIdRef.current = advertId;
+    const refreshKeyChanged = prevRefreshKeyRef.current !== refreshKey;
+    prevRefreshKeyRef.current = refreshKey;
     setTable((currentValue) => {
       if (cachedTable) return cachedTable;
       if (currentBootstrap) return currentBootstrap;
@@ -228,7 +234,15 @@ export function useProductAdvertisingClusterTable(input: {
         });
     };
 
-    doFetch();
+    // Оптимистичный патч кеша: refreshKey сменился, но cacheKey не изменился
+    // и в памяти уже есть свежие данные (только что записанные патчем).
+    // Сетевой запрос в этом случае вернул бы старое состояние сервера и откатил
+    // бы оптимистичный UI — пропускаем его. Второй onReloadSheet (после завершения
+    // API-вызова) очистит кеш, и тогда эффект отправит запрос за актуальными данными.
+    const isOptimisticCacheRead = refreshKeyChanged && !cacheKeyChanged && cachedTable !== null;
+    if (!isOptimisticCacheRead) {
+      doFetch();
+    }
 
     return () => {
       isCancelled = true;
