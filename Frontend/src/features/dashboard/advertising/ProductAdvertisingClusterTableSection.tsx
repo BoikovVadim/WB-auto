@@ -140,16 +140,34 @@ export function ProductAdvertisingClusterTableSection(
     props.isClusterTableLoading &&
     props.visibleClusterRows.length === 0;
 
+  // How many rows exist for the current status filter (server-side, before text search).
+  const countForCurrentFilter =
+    props.statusFilter === "active"
+      ? props.clusterFilterCounts.active
+      : props.statusFilter === "excluded"
+        ? props.clusterFilterCounts.excluded
+        : props.clusterFilterCounts.all;
+
+  // Rows exist for this status filter but text search hid them all.
+  const isSearchHidingAllRows =
+    countForCurrentFilter > 0 && props.visibleClusterRows.length === 0;
+
   return (
     <>
       <ProductAdvertisingClusterOverview {...props} />
       {props.selectedCampaignAdvertId !== null ? (
-        props.visibleClusterRows.length > 0 ? (
+        props.visibleClusterRows.length > 0 || isSearchHidingAllRows ? (
           <div
             className="wb-advertising-cluster-table-wrap"
             style={props.isClusterTableRefreshing ? { opacity: 0.45, pointerEvents: "none", transition: "opacity 0.15s" } : { transition: "opacity 0.15s" }}
           >
-            <ProductAdvertisingClusterDataTable {...props} />
+            {isSearchHidingAllRows ? (
+              <p className="wb-empty-copy" style={{ paddingTop: 24 }}>
+                {ui.noClustersForSearch}
+              </p>
+            ) : (
+              <ProductAdvertisingClusterDataTable {...props} />
+            )}
           </div>
         ) : showSkeleton ? (
           <ClusterTableSkeleton />
