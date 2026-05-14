@@ -173,8 +173,16 @@ export abstract class WbClustersRepositoryBase {
     nmId: number,
     clusterName: string,
     sourceKind: ClusterSourceKind,
+    advertId?: number | null,
   ) {
-    return `${nmId}:${sourceKind}:${this.normalizeAdvertisingIdentity(clusterName)}`;
+    const normalized = this.normalizeAdvertisingIdentity(clusterName);
+    // Stats clusters are product-scoped (shared across campaigns).
+    // Active/excluded clusters are campaign-scoped to prevent cross-campaign key collisions
+    // when multiple campaigns for the same product share cluster names.
+    if (sourceKind === "stats" || advertId == null) {
+      return `${nmId}:${sourceKind}:${normalized}`;
+    }
+    return `${nmId}:${advertId}:${sourceKind}:${normalized}`;
   }
 
   protected buildScopedTextKey(advertId: number, nmId: number, text: string) {

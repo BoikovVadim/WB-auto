@@ -145,6 +145,34 @@ export function getClusterWriteBackfillStatements({
   ];
 }
 
+/**
+ * Migrates cluster_key format for active/excluded clusters to include advertId.
+ * Old format: "{nmId}:{sourceKind}:{normalizedName}"
+ * New format: "{nmId}:{advertId}:{sourceKind}:{normalizedName}"
+ *
+ * Clusters without advert_id (orphaned) and the old-format active/excluded entries
+ * are deleted here. They will be re-populated by the next sync cycle (≤10 min).
+ * Stats clusters are product-scoped and retain their old format — no change needed.
+ */
+export function getClusterKeyMigrationStatements({
+  tableName,
+}: WbClustersSchemaContext): string[] {
+  return [
+    // Delete old active/excluded clusters whose cluster_key does NOT include advertId.
+    // Old keys look like "{nmId}:active:{name}" or "{nmId}:excluded:{name}",
+    // new keys look like "{nmId}:{advertId}:active:{name}".
+    // A reliable heuristic: old keys start with "{nmId}:active:" or "{nmId}:excluded:".
+    `
+      DELETE FROM ${tableName("wb_clusters")}
+      WHERE source_kind IN ('active', 'excluded')
+        AND (
+          cluster_key ~ '^[0-9]+:active:'
+          OR cluster_key ~ '^[0-9]+:excluded:'
+        )
+    `,
+  ];
+}
+
 export function getSnapshotAlterStatements({
   tableName,
 }: WbClustersSchemaContext): string[] {

@@ -4,6 +4,7 @@ import {
   getCampaignAlterStatements,
   getCampaignProductAlterStatements,
   getCatalogAlterStatements,
+  getClusterKeyMigrationStatements,
   getClusterStatsAlterStatements,
   getClusterWriteAlterStatements,
   getClusterWriteBackfillStatements,
@@ -39,6 +40,7 @@ export async function initializeWbClustersSchema(input: {
   await executeSchemaStatements(context, getCampaignAlterStatements(context));
   await executeSchemaStatements(context, getCampaignProductAlterStatements(context));
   await executeSchemaStatements(context, getClusterCoreCreateStatements(context));
+  await executeSchemaStatements(context, getClusterKeyMigrationStatements(context));
   await executeSchemaStatements(context, getClusterStatsAlterStatements(context));
   await executeSchemaStatements(context, getClusterQueueCreateStatements(context));
   await executeSchemaStatements(context, getClusterWriteAlterStatements(context));

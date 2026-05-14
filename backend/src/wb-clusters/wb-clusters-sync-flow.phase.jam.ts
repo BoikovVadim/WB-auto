@@ -1,6 +1,21 @@
+import { HttpException, HttpStatus } from "@nestjs/common";
+
 import { loadProductSearchTextsRangeByNmId } from "../wb-sync/product-search-texts-range";
 
 type WbClustersService = any;
+
+/**
+ * Result of a single JAM day sync attempt.
+ *
+ * 'synced'          — data fetched and stored successfully.
+ * 'quota_exhausted' — WB returned HTTP 429; the account-wide daily quota is
+ *                     exhausted.  Callers should stop immediately and wait
+ *                     for the quota to reset (00:05 UTC = 03:05 MSK).
+ * 'error'           — transient WB error (502/503/504).  The current date is
+ *                     put on a 65-min cooldown; callers may continue with
+ *                     other products or dates.
+ */
+type JamSyncResult = "synced" | "quota_exhausted" | "error";
 
 /**
  * JAM sync strategy — per-day snapshots, two tracks:
@@ -69,7 +84,16 @@ export async function runJamSyncPhase(
 
             for (const date of missingDates) {
               const result = await syncOneDayJam(self, nmId, date, warningMessages);
-              if (result) refreshed = true;
+              if (result) {
+                refreshed = true;
+              } else {
+                // WB returned 429 or transient error for this date.
+                // Stop immediately — remaining dates for this nmId will also be
+                // rejected since WB enforces a per-nmId rate limit window.
+                // By stopping here we avoid logging all remaining dates on a 65-min
+                // cooldown, preserving them for the next eligible retry cycle.
+                break;
+              }
             }
           }
         } catch (err) {
@@ -103,51 +127,84 @@ async function syncOneDayJam(
   nmId: number,
   date: string,
   warningMessages: string[],
-): Promise<boolean> {
+): Promise<JamSyncResult> {
   const period = self.normalizeAdvertisingSheetJamRange(date, date);
 
-  // Log the attempt BEFORE the API call so the timestamp reflects when WB's
-  // rate-limit cooldown starts, preventing retries within the 65-minute window.
-  await self.wbClustersRepository.logJamAttempt(nmId, date);
+  try {
+    const rows = await loadProductSearchTextsRangeByNmId({
+      nmId,
+      currentPeriod: period,
+      request: (body: Record<string, unknown>) =>
+        self.wbApiClient.requestJam({
+          method: "POST",
+          path: "/api/v2/search-report/product/search-texts",
+          retryAttempts: 0,
+          body,
+        }),
+      preferredTopOrderBy: "openCard",
+      topOrderByCount: 2,
+      limit: 30,
+    });
 
-  const result = await self.tryApiStep(
-    `Jam search-texts nm ${nmId} (${date})`,
-    async () => {
-      const rows = await loadProductSearchTextsRangeByNmId({
-        nmId,
-        currentPeriod: period,
-        request: (body: Record<string, unknown>) =>
-          self.wbApiClient.requestJam({
-            method: "POST",
-            path: "/api/v2/search-report/product/search-texts",
-            retryAttempts: 0,
-            body,
-          }),
-        preferredTopOrderBy: "openCard",
-        topOrderByCount: 2,
-        limit: 30,
-      });
+    const deduplicatedRows = self.deduplicateProductAdvertisingSearchTexts(rows);
+    await self.wbClustersRepository.replaceStoredProductSearchTextRange({
+      nmId,
+      startDate: period.start,
+      endDate: period.end,
+      rows: deduplicatedRows,
+    });
 
-      const deduplicatedRows = self.deduplicateProductAdvertisingSearchTexts(rows);
-      await self.wbClustersRepository.replaceStoredProductSearchTextRange({
-        nmId,
-        startDate: period.start,
-        endDate: period.end,
-        rows: deduplicatedRows,
-      });
+    // Clear only the JAM overlay cache so the next sheet read serves fresh
+    // search-text data. We intentionally avoid a full invalidation (which
+    // would bump cacheVersion and force querySearchIndex rebuilds on every
+    // cluster table request while the backfill is running).
+    self.clearJamSearchTextCacheForNmId(nmId);
 
-      // Clear only the JAM overlay cache so the next sheet read serves fresh
-      // search-text data. We intentionally avoid a full invalidation (which
-      // would bump cacheVersion and force querySearchIndex rebuilds on every
-      // cluster table request while the backfill is running).
-      self.clearJamSearchTextCacheForNmId(nmId);
+    return "synced";
+  } catch (error) {
+    if (!(error instanceof HttpException)) {
+      throw error; // non-recoverable (DB error, unhandled exception, etc.)
+    }
 
-      return nmId;
-    },
-    warningMessages,
-  );
+    const status = error.getStatus();
+    const isRecoverable =
+      status === HttpStatus.TOO_MANY_REQUESTS ||
+      status === HttpStatus.BAD_GATEWAY ||
+      status === HttpStatus.SERVICE_UNAVAILABLE ||
+      status === HttpStatus.GATEWAY_TIMEOUT;
 
-  return result !== null;
+    if (!isRecoverable) {
+      throw error;
+    }
+
+    // Log the attempt AFTER the WB rejection so the 65-min cooldown window
+    // is anchored to when WB actually refused us. On success we skip logging
+    // because the snapshot's existence makes findMissingDailyJamDates skip
+    // this (nmId, date) pair automatically.
+    await self.wbClustersRepository.logJamAttempt(nmId, date);
+
+    const warning = `Jam search-texts nm ${nmId} (${date}): ${self.describeError(error)}`;
+    self.logger.warn(warning);
+    self.pushWarning(warningMessages, warning);
+
+    // Distinguish quota exhaustion (429) from transient infrastructure errors
+    // so callers can decide whether to stop entirely or just skip this slot.
+    return status === HttpStatus.TOO_MANY_REQUESTS ? "quota_exhausted" : "error";
+  }
+}
+
+/**
+ * Calculates milliseconds until the next WB daily quota reset.
+ * WB resets at 00:00 UTC; we add a 5-minute buffer → 00:05 UTC (03:05 MSK).
+ */
+function msUntilWbQuotaReset(): number {
+  const now = new Date();
+  const reset = new Date(now);
+  reset.setUTCHours(0, 5, 0, 0);
+  if (reset <= now) {
+    reset.setUTCDate(reset.getUTCDate() + 1);
+  }
+  return reset.getTime() - now.getTime();
 }
 
 function getTodayDateStr(self: WbClustersService): string {
@@ -204,8 +261,16 @@ export async function runJamFinalizeYesterday(
   for (let i = 0; i < uniqueNmIds.length; i++) {
     const nmId = uniqueNmIds[i];
     try {
-      const synced = await syncOneDayJam(self, nmId, yesterday, warningMessages);
-      if (synced) finalized++;
+      const result = await syncOneDayJam(self, nmId, yesterday, warningMessages);
+      if (result === "synced") {
+        finalized++;
+      } else if (result === "quota_exhausted") {
+        self.logger.warn(
+          `JAM finalize-yesterday: WB quota exhausted at product ${i + 1}/${uniqueNmIds.length}. ` +
+          `Stopping — finalized ${finalized} so far.`,
+        );
+        break;
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       warningMessages.push(`JAM finalize-yesterday nm ${nmId}: ${msg}`);
@@ -277,17 +342,29 @@ export async function runJamTodayLoop(
         `(${activeNmIds.length} active RK first, ${passiveNmIds.length} others).`,
       );
 
+      let cycleQuotaExhausted = false;
       for (const nmId of orderedNmIds) {
         if (signal.stopped) break;
         try {
-          await syncOneDayJam(self, nmId, today, warnings);
+          const result = await syncOneDayJam(self, nmId, today, warnings);
+          if (result === "quota_exhausted") {
+            cycleQuotaExhausted = true;
+            break;
+          }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           warnings.push(`JAM today nm ${nmId}: ${msg}`);
         }
       }
 
-      if (warnings.length > 0) {
+      if (cycleQuotaExhausted) {
+        const sleepMs = msUntilWbQuotaReset();
+        self.logger.warn(
+          `JAM today-loop #${cycleCount}: WB quota exhausted mid-cycle. ` +
+          `Pausing ${Math.round(sleepMs / 60_000)} min until reset.`,
+        );
+        await delay(sleepMs);
+      } else if (warnings.length > 0) {
         self.logger.warn(
           `JAM today-loop #${cycleCount}: done with ${warnings.length} warnings: ` +
           warnings.slice(0, 5).join("; "),
@@ -339,14 +416,20 @@ function generateAllLookbackDates(self: WbClustersService, lookbackDays: number)
  *   By re-fetching every date unconditionally we guarantee every historical day
  *   contains the fully finalized WB numbers.
  *
- * Stop: the loop exits after ONE complete pass (all products × all dates done).
+ * Stop: the loop exits after two consecutive full rounds find nothing new.
  * Ongoing freshness is maintained by:
- *   • today-loop — keeps the current day current
  *   • nightly finalize-yesterday — finalizes the previous day at 01:00 MSK
  *   • nightly gap-fill — fills any date that still has no snapshot at all
  *
- * Rate: bounded by WB_JAM_MIN_INTERVAL_MS (6 s).  Serial queue — throughput
- * never exceeds 600 req/hr (WB quota is 700 req/hr for this endpoint).
+ * Iteration order: DATE-OUTER × PRODUCT-INNER.
+ *   WB enforces ~1 successful fetch per nmId per 65 min. The old order
+ *   (product-outer × date-inner) hit 429 on date2 for every product and left
+ *   all remaining dates un-filled until the next 65-min window.
+ *   With date-outer order: we fetch date1 for ALL products first, then date2
+ *   for all products. By the time we start date2 for nmId1, all other nmIds
+ *   have been processed (~312 × 6 s ≈ 31 min), which is close enough to the
+ *   65-min WB window to avoid most throttle hits. Any remaining 429s are
+ *   skipped and re-attempted in the next date round.
  */
 export async function runJamBackfillLoop(
   self: WbClustersService,
@@ -355,58 +438,117 @@ export async function runJamBackfillLoop(
   // Give DB, schema-init, and the warmup queue time to settle before starting.
   await delay(5 * 60 * 1000);
 
-  const orderedNmIds = await self.wbClustersRepository.getJamBackfillQueue();
-  if (orderedNmIds.length === 0) {
+  let nmIds = await self.wbClustersRepository.getJamBackfillQueue();
+  if (nmIds.length === 0) {
     self.logger.log("JAM backfill-loop: no products found, exiting.");
     return;
   }
 
-  const allDates = generateAllLookbackDates(self, JAM_LOOKBACK_DAYS);
-
-  self.logger.log(
-    `JAM backfill-loop: starting full-overwrite pass for ${orderedNmIds.length} products × ` +
-    `${allDates.length} dates (${allDates[0]} → ${allDates[allDates.length - 1]}).`,
-  );
-
   let totalDatesSynced = 0;
-  let totalWarnings = 0;
+  let passCount = 0;
+  let consecutiveEmptyPasses = 0;
 
-  for (let i = 0; i < orderedNmIds.length; i++) {
-    if (signal.stopped) break;
+  // Outer while: automatically resumes after WB daily quota resets.
+  // Each pass is a full DATE-OUTER × PRODUCT-INNER sweep.
+  while (!signal.stopped) {
+    passCount++;
 
-    const nmId = orderedNmIds[i];
-    const productWarnings: string[] = [];
-    let productSynced = 0;
+    // Re-generate date window each pass so new dates enter the window over time.
+    const allDates = generateAllLookbackDates(self, JAM_LOOKBACK_DAYS);
 
-    for (const date of allDates) {
+    self.logger.log(
+      `JAM backfill-loop: pass ${passCount} — ${nmIds.length} products × ` +
+      `${allDates.length} dates (${allDates[0]} → ${allDates[allDates.length - 1]}).`,
+    );
+
+    let passSynced = 0;
+    let passWarnings = 0;
+    let quotaExhausted = false;
+
+    // DATE-OUTER: process date[0] for all products, then date[1] for all, etc.
+    // Each nmId gets ~31 min rest between consecutive fetches
+    // (312 products × 6 s), staying inside WB's per-nmId rate limit.
+    dateLoop: for (const date of allDates) {
       if (signal.stopped) break;
-      try {
-        const synced = await syncOneDayJam(self, nmId, date, productWarnings);
-        if (synced) {
-          productSynced++;
-          totalDatesSynced++;
+
+      let roundSynced = 0;
+      let roundWarnings = 0;
+
+      for (let i = 0; i < nmIds.length; i++) {
+        if (signal.stopped) break;
+
+        const nmId = nmIds[i];
+        const productWarnings: string[] = [];
+
+        try {
+          // Skip dates recently rejected — preserves daily quota for slots
+          // that are genuinely past the 65-min per-nmId cooldown.
+          const recentlyAttempted = await self.wbClustersRepository.wasJamAttemptedRecently(nmId, date);
+          if (recentlyAttempted) continue;
+
+          const result = await syncOneDayJam(self, nmId, date, productWarnings);
+
+          if (result === "synced") {
+            roundSynced++;
+            passSynced++;
+            totalDatesSynced++;
+          } else if (result === "quota_exhausted") {
+            // WB returned 429 — account-wide daily quota is exhausted.
+            // Stop immediately; any further attempt burns quota for nothing.
+            quotaExhausted = true;
+            break dateLoop;
+          }
+          // 'error' (502/503/504) → continue; transient, try next product.
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          productWarnings.push(`${date} nm ${nmId}: ${msg}`);
         }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        productWarnings.push(`${date}: ${msg}`);
+
+        roundWarnings += productWarnings.length;
       }
+
+      passWarnings += roundWarnings;
+
+      self.logger.log(
+        `JAM backfill-loop pass ${passCount}: date ${date} — ${roundSynced} synced, ` +
+        `${roundWarnings} skipped/warned. Total so far: ${totalDatesSynced}.`,
+      );
     }
 
-    totalWarnings += productWarnings.length;
-
-    // Log progress every 10 products
-    if ((i + 1) % 10 === 0 || i + 1 === orderedNmIds.length) {
-      self.logger.log(
-        `JAM backfill-loop: ${i + 1}/${orderedNmIds.length} products done. ` +
-        `Total dates synced: ${totalDatesSynced}. Warnings: ${totalWarnings}.`,
+    if (quotaExhausted) {
+      const sleepMs = msUntilWbQuotaReset();
+      const resetAt = new Date(Date.now() + sleepMs).toISOString();
+      self.logger.warn(
+        `JAM backfill-loop pass ${passCount}: WB daily quota exhausted after ${passSynced} syncs. ` +
+        `Sleeping ${Math.round(sleepMs / 60_000)} min until quota resets at ${resetAt}.`,
       );
+      await delay(sleepMs);
+      // Re-fetch product list so any newly added products are included.
+      nmIds = await self.wbClustersRepository.getJamBackfillQueue();
+      consecutiveEmptyPasses = 0;
+      continue; // Start next pass from the beginning of the date window.
+    }
+
+    self.logger.log(
+      `JAM backfill-loop pass ${passCount}: done — ${passSynced} synced, ` +
+      `${passWarnings} warnings. Total all passes: ${totalDatesSynced}.`,
+    );
+
+    if (passSynced === 0) {
+      consecutiveEmptyPasses++;
+      if (consecutiveEmptyPasses >= 2) {
+        self.logger.log(
+          "JAM backfill-loop: two consecutive empty passes — all products fully covered. Exiting.",
+        );
+        break;
+      }
+    } else {
+      consecutiveEmptyPasses = 0;
     }
   }
 
   self.logger.log(
-    `JAM backfill-loop: full-overwrite pass complete. ` +
-    `${totalDatesSynced} dates synced across ${orderedNmIds.length} products. ` +
-    `${totalWarnings} warnings total. ` +
-    `Ongoing freshness handled by today-loop + nightly cron.`,
+    `JAM backfill-loop: complete. ` +
+    `${totalDatesSynced} total dates synced across all passes.`,
   );
 }

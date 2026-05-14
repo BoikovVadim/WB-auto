@@ -19,6 +19,7 @@ export abstract class WbClustersRepositoryClusterCorePersistence extends WbClust
       input.nmId,
       input.clusterName,
       input.sourceKind,
+      input.advertId,
     );
 
     await pool.query(
@@ -75,7 +76,7 @@ export abstract class WbClustersRepositoryClusterCorePersistence extends WbClust
     const deduplicatedInputs = Array.from(
       new Map(
         inputs.map((input) => [
-          this.buildClusterKey(input.nmId, input.clusterName, input.sourceKind),
+          this.buildClusterKey(input.nmId, input.clusterName, input.sourceKind, input.advertId),
           input,
         ]),
       ).values(),
@@ -130,7 +131,7 @@ export abstract class WbClustersRepositoryClusterCorePersistence extends WbClust
       `,
       [
         deduplicatedInputs.map((input) =>
-          this.buildClusterKey(input.nmId, input.clusterName, input.sourceKind),
+          this.buildClusterKey(input.nmId, input.clusterName, input.sourceKind, input.advertId),
         ),
         deduplicatedInputs.map((input) => input.advertId),
         deduplicatedInputs.map((input) => input.nmId),
@@ -145,19 +146,20 @@ export abstract class WbClustersRepositoryClusterCorePersistence extends WbClust
   }
 
   /**
-   * Убирает дубли из wb_clusters одноразовой чисткой: если для одного
+   * Убирает дубли из wb_clusters: если для одного
    * (advert_id, nm_id, normalized_cluster_name) существуют одновременно
-   * 'active' и 'excluded' записи, 'excluded' переводится в 'stats'.
-   * Вызывается один раз в начале структурной фазы.
+   * 'active' и 'excluded' записи (WB баг), 'excluded' запись удаляется.
+   * С campaign-scoped cluster_key такая ситуация крайне маловероятна,
+   * но функция оставлена как защитный барьер.
    */
   async deduplicateClustersBySourceKind(): Promise<number> {
     await this.ensureSchemaOrThrow();
     const pool = this.getPool();
     const result = await pool.query<{ count: string }>(
       `
-        WITH stale AS (
-          UPDATE ${this.tableName("wb_clusters")} AS c
-          SET source_kind = 'stats', is_active = NULL, synced_at = NOW()
+        WITH duplicates AS (
+          SELECT c.cluster_key
+          FROM ${this.tableName("wb_clusters")} c
           WHERE c.source_kind = 'excluded'
             AND EXISTS (
               SELECT 1 FROM ${this.tableName("wb_clusters")} c2
@@ -166,6 +168,10 @@ export abstract class WbClustersRepositoryClusterCorePersistence extends WbClust
                 AND c2.normalized_cluster_name = c.normalized_cluster_name
                 AND c2.source_kind = 'active'
             )
+        ),
+        stale AS (
+          DELETE FROM ${this.tableName("wb_clusters")}
+          WHERE cluster_key IN (SELECT cluster_key FROM duplicates)
           RETURNING 1
         )
         SELECT COUNT(*)::text AS count FROM stale
@@ -175,16 +181,16 @@ export abstract class WbClustersRepositoryClusterCorePersistence extends WbClust
   }
 
   /**
-   * После синка помечает кластеры, которых WB больше не возвращает в своём
-   * источнике, как source_kind='stats', is_active=NULL. Убирает их из рабочего
-   * пространства, сохраняя для исторических wb_cluster_daily_stats.
+   * После синка удаляет кластеры кампании, которых WB больше не возвращает.
    *
-   * Два прохода, чтобы устранить дубликаты при переходе кластера между списками:
-   *   1. Старые 'active' записи, которых нет в текущем active-списке WB → 'stats'.
-   *      Обрабатывает переход active→excluded и выбывшие кластеры.
-   *   2. Старые 'excluded' записи, которых нет в текущем excluded-списке WB → 'stats'.
-   *      Обрабатывает переход excluded→active: иначе в wb_clusters существуют ОБЕ
-   *      записи для одного normalized_cluster_name, JOIN возвращает дубликаты.
+   * С момента перехода на campaign-scoped cluster_key (включает advertId),
+   * safe to DELETE: исторические данные хранятся в wb_cluster_daily_stats
+   * (собственный PK, не ссылается на wb_clusters.cluster_key) и в product-scoped
+   * wb_cluster_stats (ключ {nmId}:stats:{name}, не затрагивается).
+   *
+   * Два прохода, чтобы устранить конфликты при переходе кластера между списками:
+   *   1. Старые 'active' записи, которых нет в текущем active-списке WB → DELETE.
+   *   2. Старые 'excluded' записи, которых нет в текущем excluded-списке WB → DELETE.
    */
   async deactivateStaleActiveClusters(
     items: Array<{
@@ -200,11 +206,10 @@ export abstract class WbClustersRepositoryClusterCorePersistence extends WbClust
     for (const item of items) {
       const normalizedActive = item.activeClusterNames.map((n) => this.normalizeQuery(n));
       const normalizedExcluded = (item.excludedClusterNames ?? []).map((n) => this.normalizeQuery(n));
-      // Pass 1: deactivate stale 'active' entries (not in current WB active list).
+      // Pass 1: remove stale 'active' entries (not in current WB active list).
       await pool.query(
         `
-          UPDATE ${this.tableName("wb_clusters")}
-          SET source_kind = 'stats', is_active = NULL, synced_at = NOW()
+          DELETE FROM ${this.tableName("wb_clusters")}
           WHERE advert_id = $1
             AND nm_id = $2
             AND source_kind = 'active'
@@ -212,12 +217,10 @@ export abstract class WbClustersRepositoryClusterCorePersistence extends WbClust
         `,
         [item.advertId, item.nmId, normalizedActive],
       );
-      // Pass 2: deactivate stale 'excluded' entries (not in current WB excluded list).
-      // Prevents duplicates when a cluster moves from excluded back to active.
+      // Pass 2: remove stale 'excluded' entries (not in current WB excluded list).
       await pool.query(
         `
-          UPDATE ${this.tableName("wb_clusters")}
-          SET source_kind = 'stats', is_active = NULL, synced_at = NOW()
+          DELETE FROM ${this.tableName("wb_clusters")}
           WHERE advert_id = $1
             AND nm_id = $2
             AND source_kind = 'excluded'
