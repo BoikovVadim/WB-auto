@@ -41,9 +41,7 @@ export async function applyProductClusterAction(
   const mutationContext = await self.wbClustersRepository.getProductAdvertisingMutationContext({
     nmId,
     advertId,
-    normalizedClusterNames: uniqueClusterNames.map((item) =>
-      self.normalizeAdvertisingText(item),
-    ),
+    normalizedClusterNames: uniqueClusterNames,
   });
   const campaign = mutationContext.campaign;
   if (!campaign) {
@@ -185,9 +183,7 @@ export async function applyProductClusterBids(
   const mutationContext = await self.wbClustersRepository.getProductAdvertisingMutationContext({
     nmId,
     advertId,
-    normalizedClusterNames: normalizedInput.map((item) =>
-      self.normalizeAdvertisingText(item.clusterName),
-    ),
+    normalizedClusterNames: normalizedInput.map((item) => item.clusterName),
   });
   const campaign = mutationContext.campaign;
   if (!campaign) {

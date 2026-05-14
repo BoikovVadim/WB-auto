@@ -23,7 +23,7 @@ export abstract class WbClustersRepositoryAdvertisingMutationRead extends WbClus
     const normalizedClusterNames = Array.from(
       new Set(
         input.normalizedClusterNames
-          .map((item) => item.trim())
+          .map((item) => this.normalizeQuery(item.trim()))
           .filter((item) => item.length > 0),
       ),
     );
