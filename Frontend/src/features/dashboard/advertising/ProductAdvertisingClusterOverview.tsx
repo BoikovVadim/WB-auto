@@ -24,6 +24,7 @@ function getCampaignTypeLabel(campaignType: number | null | undefined): string |
 
 function getBidTypeLabel(bidType: string | null): string | null {
   if (bidType === "manual") return "Ручная";
+  if (bidType === "unified") return "Единая";
   if (bidType === "auto") return "Авто";
   if (bidType === "auction") return "Аукцион";
   return null;
