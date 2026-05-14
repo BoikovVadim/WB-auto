@@ -28,6 +28,7 @@ export function buildWorkspaceCampaignTabs(
     tabs.set(campaign.advertId, {
       advertId: campaign.advertId,
       campaignName: campaign.name,
+      campaignType: campaign.campaignType,
       campaignStatus: campaign.campaignStatus,
       paymentType: campaign.paymentType,
       bidType: campaign.bidType,
@@ -48,6 +49,7 @@ export function buildWorkspaceCampaignTabs(
       currentTab = {
         advertId: row.advertId,
         campaignName: row.campaignName,
+        campaignType: row.campaignType ?? null,
         campaignStatus: row.campaignStatus,
         paymentType: row.paymentType,
         bidType: row.bidType,
@@ -61,6 +63,7 @@ export function buildWorkspaceCampaignTabs(
 
     currentTab.rowsCount += 1;
     currentTab.campaignName = currentTab.campaignName ?? row.campaignName;
+    currentTab.campaignType = currentTab.campaignType ?? row.campaignType ?? null;
     currentTab.campaignStatus = currentTab.campaignStatus ?? row.campaignStatus;
     currentTab.paymentType = currentTab.paymentType ?? row.paymentType;
     currentTab.bidType = currentTab.bidType ?? row.bidType;

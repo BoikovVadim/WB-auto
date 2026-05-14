@@ -27,6 +27,7 @@ export function isProductAdvertisingWorkspaceCampaignTab(
     isRecord(value) &&
     typeof value.advertId === "number" &&
     isNullableNonEmptyString(value.campaignName) &&
+    isNullableNumber(value.campaignType) &&
     isNullableNumber(value.campaignStatus) &&
     isNullableNonEmptyString(value.paymentType) &&
     isNullableNonEmptyString(value.bidType) &&

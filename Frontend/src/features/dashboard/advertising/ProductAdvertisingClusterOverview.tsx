@@ -9,6 +9,26 @@ import {
 } from "./clusterTableView";
 import { formatAdvertisingCampaignStatus } from "./model";
 
+const CAMPAIGN_TYPE_LABEL: Record<number, string> = {
+  4: "Каталог",
+  5: "Карточка",
+  6: "Поиск",
+  7: "Рекомендации",
+  8: "Авто",
+  9: "Поиск+Каталог",
+};
+
+function getCampaignTypeLabel(campaignType: number | null): string | null {
+  return campaignType !== null ? (CAMPAIGN_TYPE_LABEL[campaignType] ?? null) : null;
+}
+
+function getBidTypeLabel(bidType: string | null): string | null {
+  if (bidType === "manual") return "Ручная";
+  if (bidType === "auto") return "Авто";
+  if (bidType === "auction") return "Аукцион";
+  return null;
+}
+
 /**
  * Builds the correct WB campaign deep-link.
  * Format verified from real WB URLs:
@@ -113,8 +133,17 @@ export function ProductAdvertisingClusterOverview(
                 title={formatAdvertisingCampaignStatus(item.campaignStatus)}
                 style={{ flexShrink: 0 }}
               />
-              <span style={{ fontSize: "11px", fontWeight: 600, lineHeight: 1.3, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {getAdvertisingCampaignLabel(item)}
+              <span style={{ minWidth: 0, overflow: "hidden" }}>
+                <span style={{ display: "block", fontSize: "11px", fontWeight: 600, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {getAdvertisingCampaignLabel(item)}
+                </span>
+                {(getCampaignTypeLabel(item.campaignType) ?? getBidTypeLabel(item.bidType)) && (
+                  <span style={{ display: "block", fontSize: "10px", fontWeight: 400, lineHeight: 1.2, opacity: 0.6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {[getCampaignTypeLabel(item.campaignType), getBidTypeLabel(item.bidType)]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                )}
               </span>
             </button>
           </div>

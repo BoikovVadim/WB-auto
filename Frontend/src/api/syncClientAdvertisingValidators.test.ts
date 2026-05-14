@@ -219,6 +219,7 @@ function buildContractWorkspaceFixture(): ContractWorkspaceResponse {
       {
         advertId: 10,
         campaignName: "Campaign",
+        campaignType: 9,
         campaignStatus: 9,
         paymentType: "cpm",
         bidType: "manual",
@@ -247,6 +248,7 @@ function buildContractWorkspaceFixture(): ContractWorkspaceResponse {
     selectedCampaignSummary: {
       advertId: 10,
       campaignName: "Campaign",
+      campaignType: 9,
       campaignStatus: 9,
       paymentType: "cpm",
       bidType: "manual",

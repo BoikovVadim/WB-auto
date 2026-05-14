@@ -536,6 +536,7 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
       return {
         advertId: Number(row.advert_id),
         campaignName: row.campaign_name,
+        campaignType: row.campaign_type,
         campaignStatus: row.campaign_status,
         paymentType: row.payment_type,
         bidType: row.bid_type,

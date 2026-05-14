@@ -269,6 +269,7 @@ export abstract class WbClustersRepositoryCatalogStorage extends WbClustersRepos
     Array<{
       advertId: number;
       name: string | null;
+      campaignType: number | null;
       campaignStatus: number | null;
       paymentType: string | null;
       bidType: string | null;
@@ -281,6 +282,7 @@ export abstract class WbClustersRepositoryCatalogStorage extends WbClustersRepos
     const result = await pool.query<{
       advert_id: string;
       name: string | null;
+      campaign_type: number | null;
       campaign_status: number | null;
       payment_type: string | null;
       bid_type: string | null;
@@ -291,6 +293,7 @@ export abstract class WbClustersRepositoryCatalogStorage extends WbClustersRepos
         SELECT
           c.advert_id::text AS advert_id,
           c.name,
+          c.campaign_type,
           c.campaign_status,
           c.payment_type,
           c.bid_type,
@@ -310,6 +313,7 @@ export abstract class WbClustersRepositoryCatalogStorage extends WbClustersRepos
     return result.rows.map((row) => ({
       advertId: Number(row.advert_id),
       name: row.name,
+      campaignType: row.campaign_type,
       campaignStatus: row.campaign_status,
       paymentType: row.payment_type,
       bidType: row.bid_type,

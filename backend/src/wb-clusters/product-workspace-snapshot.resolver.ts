@@ -312,6 +312,7 @@ export class ProductWorkspaceSnapshotResolver {
     const campaignTabs: ProductAdvertisingWorkspaceCampaignTab[] = campaigns.map((c) => ({
       advertId: c.advertId,
       campaignName: c.name,
+      campaignType: c.campaignType,
       campaignStatus: c.campaignStatus,
       paymentType: c.paymentType,
       bidType: c.bidType,
