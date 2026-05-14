@@ -55,6 +55,22 @@ export const ProductAdvertisingClusterTableHeader = forwardRef<
         tableWrap.querySelectorAll<HTMLElement>(".wb-advertising-column-cell--cluster"),
       );
 
+      // Sticky cells to the RIGHT of the cluster column (bid + anything between them).
+      // Their style.left must shift by widthDelta during drag, otherwise a white gap
+      // appears between the cluster column and the bid column when narrowing.
+      const clusterStickyLeft =
+        clusterCells.length > 0 ? (parseFloat(clusterCells[0].style.left || "0") || 0) : 0;
+      const afterClusterStickyCells = Array.from(
+        tableWrap.querySelectorAll<HTMLElement>(".wb-advertising-column--sticky"),
+      ).filter((el) => {
+        if (el.classList.contains("wb-advertising-column-cell--cluster")) return false;
+        const left = parseFloat(el.style.left || "");
+        return Number.isFinite(left) && left > clusterStickyLeft;
+      });
+      const afterClusterInitialLefts = afterClusterStickyCells.map((el) =>
+        parseFloat(el.style.left || "0"),
+      );
+
       // Capture all table elements and their current pixel widths.
       const tables = Array.from(tableWrap.querySelectorAll<HTMLTableElement>("table"));
       const initialTableWidths = tables.map((t) => t.offsetWidth);
@@ -67,6 +83,8 @@ export const ProductAdvertisingClusterTableHeader = forwardRef<
           Math.max(CLUSTER_NAME_RESIZE_MIN, Math.round(dragStateRef.current.startWidth + delta)),
         );
         const widthPx = `${String(newWidth)}px`;
+        const widthDelta = newWidth - dragStateRef.current.startWidth;
+
         for (const col of clusterCols) {
           col.style.width = widthPx;
           col.style.minWidth = widthPx;
@@ -76,7 +94,11 @@ export const ProductAdvertisingClusterTableHeader = forwardRef<
         for (const cell of clusterCells) {
           cell.style.maxWidth = widthPx;
         }
-        const widthDelta = newWidth - dragStateRef.current.startWidth;
+        // Shift sticky columns to the right of the cluster (bid, etc.) so they
+        // stay flush with the cluster right edge and no white gap appears.
+        afterClusterStickyCells.forEach((cell, i) => {
+          cell.style.left = `${String(afterClusterInitialLefts[i] + widthDelta)}px`;
+        });
         tables.forEach((table, i) => {
           table.style.width = `${String(initialTableWidths[i] + widthDelta)}px`;
         });
@@ -91,6 +113,7 @@ export const ProductAdvertisingClusterTableHeader = forwardRef<
         );
         dragStateRef.current = null;
         // Clear inline maxWidth before React re-renders (avoids stale inline styles).
+        // React will restore correct style.left for sticky cells via stickyOffsets.
         for (const cell of clusterCells) {
           cell.style.maxWidth = "";
         }
