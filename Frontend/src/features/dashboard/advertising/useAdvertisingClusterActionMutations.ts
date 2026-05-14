@@ -80,9 +80,15 @@ export function useAdvertisingClusterActionMutations(input: {
           response,
         });
         onClearSelectedClusterKeys();
+        // invalidateCaches: false — кеш уже корректно пропатчен response-патчем
+        // (кластер переведён в desired-статус, actionSyncStatus: queued/confirmed).
+        // Очистка кеша + сетевой запрос вернули бы старый снапшот с сервера
+        // (sync job ещё не применил действие) и откатили бы UI назад.
+        // Следующий fetch произойдёт при смене дат / кампании / ручном reload.
         void onReloadSheet({
           advertId: selectedCampaignAdvertId,
           target: "detail",
+          invalidateCaches: false,
         });
       } catch (requestError) {
         restoreProductAdvertisingDetailCacheSnapshot({
