@@ -88,6 +88,22 @@ export abstract class WbClustersServiceReadInternals extends WbClustersServiceSt
     );
   }
 
+  /**
+   * Clears only the JAM search-text overlay cache for a specific product.
+   * Unlike invalidateProductAdvertisingSheetCaches, this does NOT bump
+   * cacheVersion — so querySearchIndex entries stay valid and no extra DB
+   * queries are triggered on the next cluster table request.
+   * Use this after a single JAM day sync where only overlay freshness matters.
+   */
+  protected clearJamSearchTextCacheForNmId(nmId: number) {
+    const prefix = `${String(nmId)}:`;
+    for (const key of this.productAdvertisingSheetJamCache.keys()) {
+      if (key.startsWith(prefix)) {
+        this.productAdvertisingSheetJamCache.delete(key);
+      }
+    }
+  }
+
   protected scheduleProductAdvertisingSheetWarmup(
     nmIds: number[],
     reason: string,

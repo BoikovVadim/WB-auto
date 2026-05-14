@@ -27,10 +27,103 @@ const CLUSTER_TABLE_ENTRY_SESSION_PREFIX = "wb-clt-v1:";
 // work session; the server-side snapshot TTL is also 20 min so stale risk is low.
 const CLUSTER_TABLE_ENTRY_SESSION_TTL_MS = 4 * 60 * 60 * 1000;
 
+// ─── Per-key localStorage cache for cluster table ────────────────────────────
+// Supplements sessionStorage: survives tab close / browser restart so the first
+// product open after a new session is instant (stale-while-revalidate).
+// Shorter TTL (20 min) than session (4 h) to limit stale bid/action exposure.
+// Max 20 entries with LRU eviction (same ceiling as the workspace LS cache).
+const CLUSTER_TABLE_LS_KEY = "wb-clt-ls-v1";
+const CLUSTER_TABLE_LS_TTL_MS = 20 * 60 * 1000;
+const CLUSTER_TABLE_LS_MAX_ENTRIES = 20;
+
 type PersistedClusterTableEntry = {
   savedAt: number;
   table: ProductAdvertisingWorkspaceClusterTableResponse;
 };
+
+type PersistedClusterTableLsMap = {
+  schemaVersion: number;
+  entries: Array<{ key: string; savedAt: number; table: ProductAdvertisingWorkspaceClusterTableResponse }>;
+};
+
+const CLUSTER_TABLE_LS_SCHEMA_VERSION = 1;
+
+let clusterTableLsCache: Map<string, PersistedClusterTableEntry> | null = null;
+
+function getOrLoadClusterTableLsCache(): Map<string, PersistedClusterTableEntry> {
+  if (clusterTableLsCache !== null) return clusterTableLsCache;
+  clusterTableLsCache = new Map();
+  if (!isWindowAvailable()) return clusterTableLsCache;
+  try {
+    const raw = window.localStorage.getItem(CLUSTER_TABLE_LS_KEY);
+    if (!raw) return clusterTableLsCache;
+    const parsed = JSON.parse(raw) as PersistedClusterTableLsMap;
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      parsed.schemaVersion !== CLUSTER_TABLE_LS_SCHEMA_VERSION ||
+      !Array.isArray(parsed.entries)
+    ) {
+      window.localStorage.removeItem(CLUSTER_TABLE_LS_KEY);
+      return clusterTableLsCache;
+    }
+    const now = Date.now();
+    for (const e of parsed.entries) {
+      if (e && typeof e.key === "string" && now - e.savedAt <= CLUSTER_TABLE_LS_TTL_MS) {
+        clusterTableLsCache.set(e.key, { savedAt: e.savedAt, table: e.table });
+      }
+    }
+  } catch {
+    try { window.localStorage.removeItem(CLUSTER_TABLE_LS_KEY); } catch { /* ignore */ }
+  }
+  return clusterTableLsCache;
+}
+
+function writeClusterTableLsCache(map: Map<string, PersistedClusterTableEntry>): void {
+  if (!isWindowAvailable()) return;
+  const entries = [...map.entries()].map(([key, e]) => ({ key, savedAt: e.savedAt, table: e.table }));
+  entries.sort((a, b) => a.savedAt - b.savedAt);
+  const payload: PersistedClusterTableLsMap = {
+    schemaVersion: CLUSTER_TABLE_LS_SCHEMA_VERSION,
+    entries,
+  };
+  try {
+    window.localStorage.setItem(CLUSTER_TABLE_LS_KEY, JSON.stringify(payload));
+  } catch {
+    try {
+      const trimmed = entries.slice(-Math.floor(CLUSTER_TABLE_LS_MAX_ENTRIES / 2));
+      window.localStorage.setItem(
+        CLUSTER_TABLE_LS_KEY,
+        JSON.stringify({ schemaVersion: CLUSTER_TABLE_LS_SCHEMA_VERSION, entries: trimmed }),
+      );
+    } catch { /* ignore */ }
+  }
+}
+
+function saveClusterTableEntryToLs(key: string, value: ProductAdvertisingWorkspaceClusterTableResponse): void {
+  const map = getOrLoadClusterTableLsCache();
+  const now = Date.now();
+  map.set(key, { savedAt: now, table: value });
+  if (map.size > CLUSTER_TABLE_LS_MAX_ENTRIES) {
+    const sorted = [...map.entries()].sort((a, b) => a[1].savedAt - b[1].savedAt);
+    for (let i = 0; i < map.size - CLUSTER_TABLE_LS_MAX_ENTRIES; i++) {
+      map.delete(sorted[i][0]);
+    }
+  }
+  writeClusterTableLsCache(map);
+}
+
+function loadClusterTableEntryFromLs(key: string): ProductAdvertisingWorkspaceClusterTableResponse | null {
+  const map = getOrLoadClusterTableLsCache();
+  const entry = map.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.savedAt > CLUSTER_TABLE_LS_TTL_MS) {
+    map.delete(key);
+    writeClusterTableLsCache(map);
+    return null;
+  }
+  return entry.table;
+}
 
 // Detects the "default" cache key shape:
 // "...:nmId:advertId:start:end:::null:spend:desc:1:5000"
@@ -182,22 +275,35 @@ export function cacheProductWorkspaceClusterTable(
   value: ProductAdvertisingWorkspaceClusterTableResponse,
 ) {
   productWorkspaceClusterTableMemoryCache.set(key, value);
-  // Persist default-view responses so the next page refresh is instant.
+  // Persist default-view responses so the next session/page-refresh is instant.
   if (isDefaultClusterTableKey(key)) {
     saveClusterTableEntryToSession(key, value);
+    // Also write to localStorage (survives tab close, 20-min TTL) so the very
+    // first product open after a new browser session skips the 100-500 ms fetch.
+    saveClusterTableEntryToLs(key, value);
   }
 }
 
 export function getCachedProductWorkspaceClusterTable(key: string) {
   const memHit = productWorkspaceClusterTableMemoryCache.get(key) ?? null;
   if (memHit) return memHit;
-  // Fallback: sessionStorage (survives page refresh, TTL 4 h).
+  // Tier 2: sessionStorage (survives F5 within the same tab, TTL 4 h).
   const sessionHit = loadClusterTableEntryFromSession(key);
   if (sessionHit) {
-    // Warm memory cache so subsequent synchronous reads are free.
     productWorkspaceClusterTableMemoryCache.set(key, sessionHit);
+    return sessionHit;
   }
-  return sessionHit;
+  // Tier 3: localStorage (survives tab close / browser restart, TTL 20 min).
+  // Stale-while-revalidate: serves old table immediately; background fetch
+  // updates it and sets isTableRefreshing = false when the response arrives.
+  if (isDefaultClusterTableKey(key)) {
+    const lsHit = loadClusterTableEntryFromLs(key);
+    if (lsHit) {
+      productWorkspaceClusterTableMemoryCache.set(key, lsHit);
+      return lsHit;
+    }
+  }
+  return null;
 }
 
 export function invalidateCachedProductWorkspaceClusterTable(key: string) {

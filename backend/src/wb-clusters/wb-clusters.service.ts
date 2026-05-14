@@ -333,6 +333,71 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     return wb_clusters_sync_flow.handleJamBackfill(this);
   }
 
+  async handleJamSyncForNmId(nmId: number) {
+    if (
+      !this.wbClustersRepository.isConfigured() ||
+      this.wbRuntimeConfigService.getPromotionTokenSource() === "missing"
+    ) {
+      return { accepted: false, reason: "not_configured", nmId };
+    }
+
+    // Fire-and-forget — runs in background so nginx timeout does not kill the sync.
+    const warnings: string[] = [];
+    void this.runJamSyncForNmIds([nmId], warnings)
+      .then(() => {
+        if (warnings.length > 0) {
+          this.logger.warn(`JAM sync nm ${nmId} finished with ${warnings.length} warnings: ${warnings.slice(0, 3).join("; ")}`);
+        } else {
+          this.logger.log(`JAM sync nm ${nmId} finished OK.`);
+        }
+      })
+      .catch((err: Error) => {
+        this.logger.error(`JAM sync nm ${nmId} failed: ${err.message}`);
+      });
+
+    return { accepted: true, nmId, message: "JAM sync started in background. Check /jam/snapshot/:nmId in ~3 minutes." };
+  }
+
+  async getJamBackfillQueueStatus() {
+    return this.wbClustersRepository.getJamBackfillQueueStatus();
+  }
+
+  async getJamSnapshotDetails(nmId: number) {
+    return this.wbClustersRepository.getJamSnapshotDetails(nmId);
+  }
+
+  async getRawJamRows(opts: { nmId?: number; dateFrom?: string; dateTo?: string; limit?: number }) {
+    return this.wbClustersRepository.getRawJamRows(opts);
+  }
+
+  async getRawCampaigns(limit: number) {
+    return this.wbClustersRepository.getRawCampaigns(limit);
+  }
+
+  async getRawCampaignProducts(opts: { nmId?: number; limit: number }) {
+    return this.wbClustersRepository.getRawCampaignProducts(opts);
+  }
+
+  async getRawSyncRuns(limit: number) {
+    return this.wbClustersRepository.getRawSyncRuns(limit);
+  }
+
+  async getRawClusterStats(opts: { nmId?: number; limit: number }) {
+    return this.wbClustersRepository.getRawClusterStats(opts);
+  }
+
+  async getRawDailyStats(opts: { nmId?: number; limit: number }) {
+    return this.wbClustersRepository.getRawDailyStats(opts);
+  }
+
+  async getRawMinusPhrases(opts: { nmId?: number; limit: number }) {
+    return this.wbClustersRepository.getRawMinusPhrases(opts);
+  }
+
+  async getRawQueryFrequencies(limit: number) {
+    return this.wbClustersRepository.getRawQueryFrequencies(limit);
+  }
+
   handleCachePrune() {
     this.pruneInMemoryCaches();
   }

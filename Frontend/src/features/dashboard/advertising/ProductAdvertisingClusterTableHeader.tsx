@@ -238,14 +238,24 @@ export const ProductAdvertisingClusterTableHeader = forwardRef<
                 style={getAdvertisingStickyStyle(stickyOffsets, key)}
               >
                 {filterKind === "search" ? (
-                  <input
-                    className="wb-data-table__column-filter"
-                    type="search"
-                    value={tableProps.clusterSearch}
-                    onChange={(event) => tableProps.onClusterSearchChange(event.target.value)}
-                    placeholder={label}
-                    aria-label={`Поиск по столбцу ${label}`}
-                  />
+                  <div className="wb-data-table__column-filter-dual-search">
+                    <input
+                      className="wb-data-table__column-filter"
+                      type="search"
+                      value={tableProps.clusterNameSearch}
+                      onChange={(event) => tableProps.onClusterNameSearchChange(event.target.value)}
+                      placeholder="Кластер"
+                      aria-label="Поиск по названию кластера"
+                    />
+                    <input
+                      className="wb-data-table__column-filter"
+                      type="search"
+                      value={tableProps.clusterSearch}
+                      onChange={(event) => tableProps.onClusterSearchChange(event.target.value)}
+                      placeholder="Запрос"
+                      aria-label="Поиск по запросам"
+                    />
+                  </div>
                 ) : filterKind === "number" && isAdvertisingNumericFilterKey(key) ? (
                   <div className="wb-data-table__column-filter-range">
                     <input

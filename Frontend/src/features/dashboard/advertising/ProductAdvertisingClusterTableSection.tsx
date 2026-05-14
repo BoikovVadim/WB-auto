@@ -82,6 +82,8 @@ export type ProductAdvertisingClusterTableSectionProps = {
   onToggleSelectAllClusterGroups: () => void;
   clusterSearch: string;
   onClusterSearchChange: (value: string) => void;
+  clusterNameSearch: string;
+  onClusterNameSearchChange: (value: string) => void;
   numericFilters: NumericFilters;
   onNumericFilterChange: (
     key: AdvertisingClusterNumericFilterKey,

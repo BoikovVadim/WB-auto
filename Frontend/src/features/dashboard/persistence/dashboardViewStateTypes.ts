@@ -1,6 +1,17 @@
 import type { SyncEntity } from "../../../api/syncClient";
 
-export type DashboardSection = "exports" | "method" | "products";
+export type DashboardSection =
+  | "exports"
+  | "method"
+  | "products"
+  | "jam"
+  | "catalog"
+  | "campaigns"
+  | "sync-runs"
+  | "cluster-stats"
+  | "daily-stats"
+  | "minus-phrases"
+  | "query-frequencies";
 export type ProductsMode = "list" | "detail";
 
 export type DashboardViewState = {
@@ -30,7 +41,19 @@ export function createDefaultDashboardViewState(): DashboardViewState {
 }
 
 export function isDashboardSection(value: unknown): value is DashboardSection {
-  return value === "exports" || value === "method" || value === "products";
+  return (
+    value === "exports" ||
+    value === "method" ||
+    value === "products" ||
+    value === "jam" ||
+    value === "catalog" ||
+    value === "campaigns" ||
+    value === "sync-runs" ||
+    value === "cluster-stats" ||
+    value === "daily-stats" ||
+    value === "minus-phrases" ||
+    value === "query-frequencies"
+  );
 }
 
 export function isProductsMode(value: unknown): value is ProductsMode {

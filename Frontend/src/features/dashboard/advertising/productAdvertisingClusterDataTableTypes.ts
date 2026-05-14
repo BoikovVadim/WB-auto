@@ -17,6 +17,8 @@ export type ProductAdvertisingClusterDataTableProps = Pick<
   | "onToggleSelectAllClusterGroups"
   | "clusterSearch"
   | "onClusterSearchChange"
+  | "clusterNameSearch"
+  | "onClusterNameSearchChange"
   | "numericFilters"
   | "onNumericFilterChange"
   | "onApplyNumericFilter"

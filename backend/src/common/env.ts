@@ -142,9 +142,11 @@ export const appEnv = {
   ),
   wbApiTimeoutMs: parsePositiveIntegerEnv("WB_API_TIMEOUT_MS", "45000", 1),
   wbApiMinIntervalMs: parsePositiveIntegerEnv("WB_API_MIN_INTERVAL_MS", "21000"),
-  // WB /api/v2/search-report/product/search-texts allows ~5 req/sec.
-  // Default 200 ms keeps us safely under that limit.
-  wbJamMinIntervalMs: parsePositiveIntegerEnv("WB_JAM_MIN_INTERVAL_MS", "200"),
+  // WB /api/v2/search-report/product/search-texts has an account-wide quota of
+  // ~700 req/hr. 6 000 ms gives ~600 req/hr — safely under the limit.
+  // Do NOT reduce below ~5 200 ms (≈ 692 req/hr) or WB will return 429s and
+  // trigger a 60-second back-off that makes the backfill take much longer.
+  wbJamMinIntervalMs: parsePositiveIntegerEnv("WB_JAM_MIN_INTERVAL_MS", "6000"),
   wbApiRetryAttempts: parsePositiveIntegerEnv("WB_API_RETRY_ATTEMPTS", "2"),
   wbApiRetryBaseDelayMs: parsePositiveIntegerEnv("WB_API_RETRY_BASE_DELAY_MS", "2000"),
   wbApiRetryMaxDelayMs: parsePositiveIntegerEnv("WB_API_RETRY_MAX_DELAY_MS", "8000"),
@@ -231,14 +233,27 @@ export const appEnv = {
     "WB_PROMOTION_ENABLE_MONTHLY_FREQUENCY_IN_FULL_SYNC",
     "true",
   ),
+  // JAM today-only refresh runs as part of every full sync.
+  // The 65-minute per-(nmId,date) cooldown in wasJamAttemptedRecently prevents
+  // actual WB calls more than once per hour; subsequent sync cycles are near-instant
+  // (only DB cooldown checks). Historical 30-day backfill is handled by the
+  // separate 6-hour JAM cron (WB_PROMOTION_JAM_SYNC_CRON).
   wbPromotionEnableJamInFullSync: parseBooleanEnv(
     "WB_PROMOTION_ENABLE_JAM_IN_FULL_SYNC",
-    "false",
+    "true",
   ),
   wbPromotionJamSyncEnabled: parseBooleanEnv("WB_PROMOTION_JAM_SYNC_ENABLED", "true"),
+  // Set to false to prevent the one-time backfill loop from starting on boot.
+  // Useful when debugging a specific nmId manually via POST /jam/sync/:nmId.
+  wbPromotionJamBackfillLoopEnabled: parseBooleanEnv("WB_PROMOTION_JAM_BACKFILL_LOOP_ENABLED", "true"),
+  // Runs once a day at 03:00 UTC (06:00 MSK) to finalize the previous day's JAM
+  // search-text snapshots for all known nmIds.  By 06:00 MSK WB's API returns
+  // fully closed daily numbers for the previous calendar day.
+  // Historical per-day snapshots are never deleted — they accumulate in
+  // wb_product_search_text_range_snapshots for any-range historical analysis.
   wbPromotionJamSyncCron:
-    getOptionalEnv("WB_PROMOTION_JAM_SYNC_CRON", "0 */6 * * *").trim() ||
-    "0 */6 * * *",
+    getOptionalEnv("WB_PROMOTION_JAM_SYNC_CRON", "0 3 * * *").trim() ||
+    "0 3 * * *",
   wbCabinetEnabled: parseBooleanEnv("WB_CABINET_ENABLED", "false"),
   wbCabinetCmpBaseUrl: getOptionalUrlEnv(
     "WB_CABINET_CMP_BASE_URL",

@@ -174,4 +174,30 @@ export abstract class WbClustersRepositorySyncRunWrite extends WbClustersReposit
     );
   }
 
+  /**
+   * Deletes raw WB API archive payloads older than `keepDays` calendar days (default: 14).
+   * Only the JSONB blobs in wb_cluster_raw_archive are deleted — the parent
+   * wb_cluster_sync_runs rows are preserved forever so the sync audit log never shrinks.
+   * Raw archives are large ephemeral data (campaign lists, stats snapshots) that are
+   * never needed after the data has been normalized into wb_cluster_daily_stats.
+   * Returns the number of archive rows deleted.
+   */
+  async pruneOldRawArchives(keepDays = 14): Promise<{ archivesDeleted: number }> {
+    if (!this.isConfigured()) {
+      return { archivesDeleted: 0 };
+    }
+    const pool = this.getPool();
+    const result = await pool.query<{ count: string }>(
+      `
+        WITH deleted AS (
+          DELETE FROM ${this.tableName("wb_cluster_raw_archive")}
+          WHERE created_at < NOW() - INTERVAL '${keepDays} days'
+          RETURNING 1
+        )
+        SELECT COUNT(*)::text AS count FROM deleted
+      `,
+    );
+    return { archivesDeleted: Number(result.rows[0]?.count ?? 0) };
+  }
+
 }

@@ -408,6 +408,14 @@ export function WbDashboard() {
         setActiveSection("exports");
         setSelectedMethodEntity(null);
       }}
+      onOpenJamSection={() => setActiveSection("jam")}
+      onOpenCatalogSection={() => setActiveSection("catalog")}
+      onOpenCampaignsSection={() => setActiveSection("campaigns")}
+      onOpenSyncRunsSection={() => setActiveSection("sync-runs")}
+      onOpenClusterStatsSection={() => setActiveSection("cluster-stats")}
+      onOpenDailyStatsSection={() => setActiveSection("daily-stats")}
+      onOpenMinusPhrasesSection={() => setActiveSection("minus-phrases")}
+      onOpenQueryFrequenciesSection={() => setActiveSection("query-frequencies")}
       onOpenProductsSection={() => {
         setSelectedCatalogVendorCode(null);
         void openProductsWorkspace();

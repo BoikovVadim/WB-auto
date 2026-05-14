@@ -130,14 +130,21 @@ export async function runSync(
     runInventorySyncPhase: (currentSyncRunId) => self.runInventorySyncPhase(currentSyncRunId),
     runStructureSyncPhase: (currentSyncRunId) => self.runStructureSyncPhase(currentSyncRunId),
     runStatsSyncPhase: (currentSyncRunId) => self.runStatsSyncPhase(currentSyncRunId),
-    runJamSyncForNmIds: (nmIds, warningMessages) => self.runJamSyncForNmIds(nmIds, warningMessages),
+    runJamSyncForNmIds: async (_nmIds, _warningMessages) => {
+      // No-op: today's JAM data is handled by the dedicated continuous loop
+      // (runJamTodayLoop) started at module init.  Historical gap-fill (yesterday
+      // and older) is handled by the nightly cron (handleScheduledJamSync, 01:00 MSK).
+      // Running JAM inside the 10-minute advertising sync was superseded when the
+      // continuous loop was introduced — duplicating the fetch here would send
+      // double the requests to WB within the same 65-minute cooldown window.
+    },
     recordPhaseTelemetry: (phase, campaignsSynced, elapsedMs) =>
       recordSyncPhaseTelemetry(self.syncPhaseTelemetry[phase], campaignsSynced, elapsedMs),
     materializeProductAdvertisingSheets: (_nmIds, _reason) => {
       // Post-sync bulk materialization is intentionally disabled.
       // The SQL-direct fast path handles any date range directly from
       // wb_cluster_daily_stats in < 150 ms — no pre-materialization is needed.
-      // Running PATH B for all 371+ products after every 10-minute sync was
+      // Running PATH B for all 431+ products after every 10-minute sync was
       // the root cause of 90%+ CPU spikes, OOM crashes (Node heap grows to 1.5 GB),
       // and 10+ second user-facing latency.
       // The nightly precompute cron (22:30 MSK) keeps DB snapshots warm overnight.
@@ -227,13 +234,40 @@ export async function handleScheduledJamSync(self: WbClustersService) {
   const job = (async () => {
     try {
       self.logger.log("Starting scheduled JAM sync.");
+
+      // Prune raw WB API archive payloads (ephemeral JSONB blobs, not business data).
+      // JAM per-day snapshots and sync run audit rows are kept forever so historical
+      // analysis across any date range remains possible.
+      try {
+        const archivePruned = await self.wbClustersRepository.pruneOldRawArchives();
+        if (archivePruned.archivesDeleted > 0) {
+          self.logger.log(
+            `Nightly DB prune: deleted ${archivePruned.archivesDeleted} raw WB API archive entries older than 14 days.`,
+          );
+        }
+      } catch (pruneError) {
+        const msg = pruneError instanceof Error ? pruneError.message : String(pruneError);
+        self.logger.warn(`Nightly raw-archive prune failed (non-fatal): ${msg}`);
+      }
+
       const nmIds = await self.wbClustersRepository.getAllKnownNmIds();
       if (nmIds.length === 0) {
         self.logger.log("Scheduled JAM sync: no nmIds found, skipping.");
         return;
       }
       const warningMessages: string[] = [];
+
+      // Step 1: finalize yesterday unconditionally.
+      // The today-loop saves intraday snapshots throughout the day.  After
+      // midnight those snapshots are stale partials.  We force-refresh them
+      // here so yesterday's data reflects the fully finalized WB numbers.
+      await self.finalizeJamYesterday(nmIds, warningMessages);
+
+      // Step 2: gap-fill any historical dates that have no snapshot yet.
+      // findMissingDailyJamDates only returns dates with NO snapshot, so
+      // yesterday (just finalized above) is correctly skipped here.
       await self.runJamSyncForNmIds(nmIds, warningMessages);
+
       self.logger.log(
         `Scheduled JAM sync completed for ${nmIds.length} nmIds. Warnings: ${warningMessages.length}.`,
       );

@@ -73,18 +73,6 @@ export abstract class WbClustersServiceState {
   protected readonly productSnapshotWarmupState = new Map<string, ProductSnapshotWarmupState>();
   // Response-level cache for the /workspace endpoint (workspace shell, no cluster tables).
   // Keyed by nmId:startDate:endDate. Short TTL (3 min) — workspace shell is cheap to rebuild
-  // but caching avoids repeated DB reads when the user rapidly switches products.
-  // Invalidated per nmId on sync.
-  // 15 entries: covers the user switching between products during a session.
-  protected readonly productAdvertisingWorkspaceResponseCache = new BoundedLruMap<
-    string,
-    {
-      expiresAtMs: number;
-      response: import("./wb-clusters.types").ProductAdvertisingWorkspaceResponse;
-    }
-  >(15);
-  protected readonly productAdvertisingWorkspaceResponseCacheTtlMs = 3 * 60 * 1000;
-
   // Query search index cache: built from wb_cabinet_cluster_queries + wb_cluster_queries
   // per (nmId, advertId, cacheVersion). Used to populate querySearchIndex in cluster table
   // responses without PATH B. Cache version auto-invalidates on sync.
@@ -125,6 +113,10 @@ export abstract class WbClustersServiceState {
   protected syncInFlight: Promise<WbClustersSyncRunSummary> | null = null;
   protected currentSyncRunId: string | null = null;
   protected jamSyncInFlight: Promise<void> | null = null;
+  /** Shared signal passed to runJamTodayLoop. Set stopped=true to exit gracefully. */
+  protected readonly jamTodayLoopSignal: { stopped: boolean } = { stopped: false };
+  /** Shared signal passed to runJamBackfillLoop. Set stopped=true to exit gracefully. */
+  protected readonly jamBackfillLoopSignal: { stopped: boolean } = { stopped: false };
   protected readonly productRefreshInFlight = new Map<
     number,
     {
@@ -164,7 +156,6 @@ export abstract class WbClustersServiceState {
   protected pruneInMemoryCaches(): void {
     this.pruneExpiredEntries(this.productAdvertisingSheetJamCache);
     this.pruneExpiredEntries(this.productAdvertisingSheetSnapshotCache);
-    this.pruneExpiredEntries(this.productAdvertisingWorkspaceResponseCache);
     this.pruneExpiredEntries(this.productAdvertisingSheetReadModelCache);
     this.pruneExpiredEntries(this.querySearchIndexCache);
   }

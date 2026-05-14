@@ -147,6 +147,8 @@ export function useProductAdvertisingClusterSectionState(input: {
     onToggleSelectAllClusterGroups: tableState.toggleSelectAllClusterGroups,
     clusterSearch: tableState.clusterSearch,
     onClusterSearchChange: tableState.setClusterSearch,
+    clusterNameSearch: tableState.clusterNameSearch,
+    onClusterNameSearchChange: tableState.setClusterNameSearch,
     numericFilters: tableState.numericFilters,
     onNumericFilterChange: tableState.handleNumericFilterChange,
     onApplyNumericFilter: tableState.applyNumericFilter,

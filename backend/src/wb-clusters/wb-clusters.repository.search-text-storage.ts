@@ -367,6 +367,47 @@ export abstract class WbClustersRepositorySearchTextStorage extends WbClustersRe
     return result.rows.map((r) => r.missing_date);
   }
 
+  /**
+   * Deletes per-day JAM snapshots and attempt-log entries that are older than
+   * `keepDays` calendar days (default: 35 — 5-day buffer above the 30-day lookback).
+   * Rows in wb_product_search_text_range_rows are cascade-deleted by FK.
+   * Returns the number of snapshots deleted.
+   */
+  async pruneOldJamData(keepDays = 35): Promise<{ snapshotsDeleted: number; attemptsDeleted: number }> {
+    if (!this.isConfigured()) {
+      return { snapshotsDeleted: 0, attemptsDeleted: 0 };
+    }
+    const pool = this.getPool();
+    const cutoff = `NOW() - INTERVAL '${keepDays} days'`;
+
+    const snapshotResult = await pool.query<{ count: string }>(
+      `
+        WITH deleted AS (
+          DELETE FROM ${this.tableName("wb_product_search_text_range_snapshots")}
+          WHERE end_date < (${cutoff})::date
+          RETURNING 1
+        )
+        SELECT COUNT(*)::text AS count FROM deleted
+      `,
+    );
+
+    const attemptResult = await pool.query<{ count: string }>(
+      `
+        WITH deleted AS (
+          DELETE FROM ${this.tableName("wb_jam_attempt_log")}
+          WHERE last_attempted_at < ${cutoff}
+          RETURNING 1
+        )
+        SELECT COUNT(*)::text AS count FROM deleted
+      `,
+    );
+
+    return {
+      snapshotsDeleted: Number(snapshotResult.rows[0]?.count ?? 0),
+      attemptsDeleted: Number(attemptResult.rows[0]?.count ?? 0),
+    };
+  }
+
   async deleteStoredProductSearchTextRangesForNmIds(nmIds: number[]) {
     if (nmIds.length === 0) {
       return;

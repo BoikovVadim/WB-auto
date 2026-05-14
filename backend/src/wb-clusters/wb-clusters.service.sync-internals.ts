@@ -153,8 +153,37 @@ export abstract class WbClustersServiceSyncInternals extends WbClustersServiceCo
     return wb_clusters_sync_flow.isCabinetSessionReady(this);
   }
 
-  protected async runJamSyncForNmIds(nmIds: number[], warningMessages: string[]) {
-    return wb_clusters_sync_flow.runJamSyncPhase(this, nmIds, warningMessages);
+  protected async runJamSyncForNmIds(
+    nmIds: number[],
+    warningMessages: string[],
+    options?: { todayOnly?: boolean },
+  ) {
+    return wb_clusters_sync_flow.runJamSyncPhase(this, nmIds, warningMessages, options);
+  }
+
+  protected async finalizeJamYesterday(nmIds: number[], warningMessages: string[]) {
+    return wb_clusters_sync_flow.runJamFinalizeYesterday(this, nmIds, warningMessages);
+  }
+
+  /**
+   * Starts the continuous JAM today-loop in the background.
+   * Returns a promise that resolves only when the loop is stopped via
+   * jamTodayLoopSignal.stopped = true (i.e. never during normal operation).
+   * Call once from onModuleInit; do not await — fire-and-forget.
+   */
+  startJamTodayLoop(): Promise<void> {
+    return wb_clusters_sync_flow.runJamTodayLoop(this, this.jamTodayLoopSignal);
+  }
+
+  /**
+   * Starts the one-time JAM backfill loop in the background.
+   * Fills all 30 historical days per product (active-RK A→Z first, then all
+   * others A→Z) before moving to the next product.  Stops automatically when
+   * two consecutive passes find nothing left to sync.
+   * Call once from onModuleInit; do not await — fire-and-forget.
+   */
+  startJamBackfillLoop(): Promise<void> {
+    return wb_clusters_sync_flow.runJamBackfillLoop(this, this.jamBackfillLoopSignal);
   }
 
   protected async runInventorySyncPhase(syncRunId: string): Promise<SyncPhaseResult> {

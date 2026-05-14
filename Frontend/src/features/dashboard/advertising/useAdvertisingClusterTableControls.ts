@@ -85,6 +85,7 @@ export function useAdvertisingClusterTableControls(input: {
   tableRefreshKey: number;
 }) {
   const [clusterSearch, setClusterSearch] = useState("");
+  const [clusterNameSearch, setClusterNameSearch] = useState("");
   const [numericFilters, setNumericFilters] = useState<AdvertisingClusterNumericFilters>(() =>
     createAdvertisingClusterNumericFilters(),
   );
@@ -117,6 +118,7 @@ export function useAdvertisingClusterTableControls(input: {
   const pageSize = 5000;
 
   const deferredClusterSearch = useDeferredValue(clusterSearch);
+  const deferredClusterNameSearch = useDeferredValue(clusterNameSearch);
 
   useEffect(() => {
     setPage(1);
@@ -164,6 +166,9 @@ export function useAdvertisingClusterTableControls(input: {
   return {
     clusterSearch,
     setClusterSearch,
+    clusterNameSearch,
+    setClusterNameSearch,
+    deferredClusterNameSearch,
     numericFilters,
     statusFilter,
     setStatusFilter: setStatusFilterPersisted,

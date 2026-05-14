@@ -1443,6 +1443,11 @@ input {
   text-align: center;
 }
 
+.wb-data-table__column-filter-dual-search {
+  display: grid;
+  gap: 4px;
+}
+
 .wb-data-table__column-filter-range {
   display: grid;
   gap: 4px;

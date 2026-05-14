@@ -75,10 +75,26 @@ export class WbClustersController {
     });
   }
 
+  @Get("jam/backfill-queue")
+  getJamBackfillQueueStatus() {
+    return this.wbClustersService.getJamBackfillQueueStatus();
+  }
+
+  @Get("jam/snapshot/:nmId")
+  getJamSnapshotDetails(@Param("nmId", ParseIntPipe) nmId: number) {
+    return this.wbClustersService.getJamSnapshotDetails(nmId);
+  }
+
   @Post("jam/backfill")
   @UseGuards(WbClustersWriteGuard)
   handleJamBackfill() {
     return this.wbClustersService.handleJamBackfill();
+  }
+
+  @Post("jam/sync/:nmId")
+  @UseGuards(WbClustersWriteGuard)
+  handleJamSyncForNmId(@Param("nmId", ParseIntPipe) nmId: number) {
+    return this.wbClustersService.handleJamSyncForNmId(nmId);
   }
 
   @Post("sync")
@@ -167,6 +183,85 @@ export class WbClustersController {
       sortKey: query.sortKey,
       sortDirection: query.sortDirection,
     });
+  }
+
+  @Get("raw/jam-rows")
+  getRawJamRows(
+    @Query("nmId") nmId?: string,
+    @Query("dateFrom") dateFrom?: string,
+    @Query("dateTo") dateTo?: string,
+    @Query("limit") limit?: string,
+  ) {
+    const parsedNmId = nmId != null ? Number(nmId) : undefined;
+    // When nmId is provided we return ALL rows for that product (no artificial cap).
+    // Without nmId the result set can be huge, so we apply a safety cap of 2000.
+    const resolvedLimit =
+      parsedNmId != null ? undefined : Math.min(Number(limit) || 2000, 2000);
+    return this.wbClustersService.getRawJamRows({
+      nmId: parsedNmId,
+      dateFrom: dateFrom || undefined,
+      dateTo: dateTo || undefined,
+      limit: resolvedLimit,
+    });
+  }
+
+  @Get("raw/campaigns")
+  getRawCampaigns(@Query("limit") limit?: string) {
+    return this.wbClustersService.getRawCampaigns(Math.min(Number(limit) || 500, 2000));
+  }
+
+  @Get("raw/campaign-products")
+  getRawCampaignProducts(
+    @Query("nmId") nmId?: string,
+    @Query("limit") limit?: string,
+  ) {
+    return this.wbClustersService.getRawCampaignProducts({
+      nmId: nmId != null ? Number(nmId) : undefined,
+      limit: Math.min(Number(limit) || 500, 2000),
+    });
+  }
+
+  @Get("raw/sync-runs")
+  getRawSyncRuns(@Query("limit") limit?: string) {
+    return this.wbClustersService.getRawSyncRuns(Math.min(Number(limit) || 100, 500));
+  }
+
+  @Get("raw/cluster-stats")
+  getRawClusterStats(
+    @Query("nmId") nmId?: string,
+    @Query("limit") limit?: string,
+  ) {
+    return this.wbClustersService.getRawClusterStats({
+      nmId: nmId != null ? Number(nmId) : undefined,
+      limit: Math.min(Number(limit) || 500, 2000),
+    });
+  }
+
+  @Get("raw/daily-stats")
+  getRawDailyStats(
+    @Query("nmId") nmId?: string,
+    @Query("limit") limit?: string,
+  ) {
+    return this.wbClustersService.getRawDailyStats({
+      nmId: nmId != null ? Number(nmId) : undefined,
+      limit: Math.min(Number(limit) || 1000, 5000),
+    });
+  }
+
+  @Get("raw/minus-phrases")
+  getRawMinusPhrases(
+    @Query("nmId") nmId?: string,
+    @Query("limit") limit?: string,
+  ) {
+    return this.wbClustersService.getRawMinusPhrases({
+      nmId: nmId != null ? Number(nmId) : undefined,
+      limit: Math.min(Number(limit) || 1000, 5000),
+    });
+  }
+
+  @Get("raw/query-frequencies")
+  getRawQueryFrequencies(@Query("limit") limit?: string) {
+    return this.wbClustersService.getRawQueryFrequencies(Math.min(Number(limit) || 1000, 5000));
   }
 
   @Get("products/catalog")

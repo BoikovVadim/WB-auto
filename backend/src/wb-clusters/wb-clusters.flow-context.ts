@@ -92,8 +92,6 @@ export interface WbClustersSnapshotReadContext {
   productAdvertisingSheetJamCacheTtlMs: number;
   productAdvertisingSheetSnapshotCacheTtlMs: number;
   querySearchIndexCache: Map<string, { expiresAtMs: number; value: Record<string, string[]> }>;
-  productAdvertisingWorkspaceResponseCache: Map<string, { expiresAtMs: number; response: import("./wb-clusters.types").ProductAdvertisingWorkspaceResponse }>;
-  productAdvertisingWorkspaceResponseCacheTtlMs: number;
   normalizeAdvertisingSheetJamRange(startDate: string, endDate: string): ProductWarmupPeriod;
   normalizeAdvertisingText(value: string): string;
   withEmptyJamMetrics(sheet: ProductAdvertisingSheetResponse): ProductAdvertisingSheetResponse;

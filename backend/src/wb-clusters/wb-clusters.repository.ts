@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 
-import { WbClustersRepositoryWorkspaceSnapshotStorage } from "./wb-clusters.repository.workspace-snapshot-storage";
+import { WbClustersRepositoryRawDataRead } from "./wb-clusters.repository.raw-data-read";
 
 export type {
   PreferredProductAdvertisingSnapshotSummaryRecord,
@@ -9,5 +9,16 @@ export type {
   StoredProductAdvertisingSheetSnapshotRecord,
 } from "./wb-clusters.repository.types";
 
+export type {
+  RawJamRow,
+  RawCampaignRow,
+  RawCampaignProductRow,
+  RawSyncRunRow,
+  RawClusterStatRow,
+  RawDailyStatRow,
+  RawMinusPhraseRow,
+  RawQueryFrequencyRow,
+} from "./wb-clusters.repository.raw-data-read";
+
 @Injectable()
-export class WbClustersRepository extends WbClustersRepositoryWorkspaceSnapshotStorage {}
+export class WbClustersRepository extends WbClustersRepositoryRawDataRead {}

@@ -214,7 +214,11 @@ export function isAdvertisingStatDateWithinRange(value: string, range: Advertisi
   return currentValue >= Math.min(safeStart, safeEnd) && currentValue <= Math.max(safeStart, safeEnd);
 }
 
-export function isAdvertisingCalendarDayDisabled(day: Date, _bounds: AdvertisingDateBounds) {
+export function isAdvertisingCalendarDayDisabled(
+  day: Date,
+  _bounds: AdvertisingDateBounds,
+  allowAllPast = false,
+) {
   const normalizedDay = getStartOfCalendarDay(day).getTime();
   const today = getStartOfCalendarDay(new Date());
 
@@ -223,12 +227,16 @@ export function isAdvertisingCalendarDayDisabled(day: Date, _bounds: Advertising
     return true;
   }
 
-  // Минимальная доступная дата — то же число прошлого месяца,
-  // с ограничением по последнему дню (31 мая → 30 апреля).
-  // Ровно совпадает с пресетом «месяц» и периодом скачивания статистики.
+  // JAM и другие полноисторические режимы — любые прошлые даты доступны.
+  if (allowAllPast) {
+    return false;
+  }
+
+  // Стандартное поведение рекламного фильтра: доступен последний календарный
+  // месяц — совпадает с периодом, за который WB отдаёт статистику.
+  // Минимальная дата — то же число прошлого месяца (31 мая → 30 апреля).
   const minDate = addCalendarMonthsPreservingDay(today, -1);
   const normalizedMin = getStartOfCalendarDay(minDate).getTime();
-
   return normalizedDay < normalizedMin;
 }
 

@@ -14,9 +14,17 @@ import type {
 } from "../../api/syncClient";
 import { ui } from "./copy";
 import { HeaderPill } from "./HeaderPill";
+import { DashboardCampaignsSection } from "./DashboardCampaignsSection";
+import { DashboardCatalogSection } from "./DashboardCatalogSection";
+import { DashboardClusterStatsSection } from "./DashboardClusterStatsSection";
+import { DashboardDailyStatsSection } from "./DashboardDailyStatsSection";
 import { DashboardExportsOverviewSection } from "./DashboardExportsOverviewSection";
+import { DashboardJamStatusSection } from "./DashboardJamStatusSection";
 import { DashboardMethodWorkspaceSection } from "./DashboardMethodWorkspaceSection";
+import { DashboardMinusPhrasesSection } from "./DashboardMinusPhrasesSection";
 import { DashboardProductsSection } from "./DashboardProductsSection";
+import { DashboardQueryFrequenciesSection } from "./DashboardQueryFrequenciesSection";
+import { DashboardSyncRunsSection } from "./DashboardSyncRunsSection";
 import type {
   DashboardProductOption,
   DashboardStatusNotice,
@@ -55,6 +63,14 @@ type WbDashboardShellProps = {
   error?: string | null;
   statusNotice: DashboardStatusNotice;
   onSetExportsSection: () => void;
+  onOpenJamSection: () => void;
+  onOpenCatalogSection: () => void;
+  onOpenCampaignsSection: () => void;
+  onOpenSyncRunsSection: () => void;
+  onOpenClusterStatsSection: () => void;
+  onOpenDailyStatsSection: () => void;
+  onOpenMinusPhrasesSection: () => void;
+  onOpenQueryFrequenciesSection: () => void;
   onOpenProductsSection: () => void;
   onPrefetchProductsSection: () => void;
   onRefresh: () => void;
@@ -108,6 +124,14 @@ export function WbDashboardShell({
   error,
   statusNotice,
   onSetExportsSection,
+  onOpenJamSection,
+  onOpenCatalogSection,
+  onOpenCampaignsSection,
+  onOpenSyncRunsSection,
+  onOpenClusterStatsSection,
+  onOpenDailyStatsSection,
+  onOpenMinusPhrasesSection,
+  onOpenQueryFrequenciesSection,
   onOpenProductsSection,
   onPrefetchProductsSection,
   onRefresh,
@@ -158,7 +182,23 @@ export function WbDashboardShell({
 
       <div className="wb-cabinet-main-wrap">
         <main className="wb-cabinet-content">
-          {activeSection === "exports" ? (
+          {activeSection === "jam" ? (
+            <DashboardJamStatusSection onBack={onSetExportsSection} />
+          ) : activeSection === "catalog" ? (
+            <DashboardCatalogSection onBack={onSetExportsSection} />
+          ) : activeSection === "campaigns" ? (
+            <DashboardCampaignsSection onBack={onSetExportsSection} />
+          ) : activeSection === "sync-runs" ? (
+            <DashboardSyncRunsSection onBack={onSetExportsSection} />
+          ) : activeSection === "cluster-stats" ? (
+            <DashboardClusterStatsSection onBack={onSetExportsSection} />
+          ) : activeSection === "daily-stats" ? (
+            <DashboardDailyStatsSection onBack={onSetExportsSection} />
+          ) : activeSection === "minus-phrases" ? (
+            <DashboardMinusPhrasesSection onBack={onSetExportsSection} />
+          ) : activeSection === "query-frequencies" ? (
+            <DashboardQueryFrequenciesSection onBack={onSetExportsSection} />
+          ) : activeSection === "exports" ? (
             <DashboardExportsOverviewSection
               health={health}
               integrationStatus={integrationStatus}
@@ -171,6 +211,14 @@ export function WbDashboardShell({
               onClearToken={onClearToken}
               onOpenMethod={onOpenMethod}
               onPrefetchMethod={onPrefetchMethod}
+              onOpenJam={onOpenJamSection}
+              onOpenCatalog={onOpenCatalogSection}
+              onOpenCampaigns={onOpenCampaignsSection}
+              onOpenSyncRuns={onOpenSyncRunsSection}
+              onOpenClusterStats={onOpenClusterStatsSection}
+              onOpenDailyStats={onOpenDailyStatsSection}
+              onOpenMinusPhrases={onOpenMinusPhrasesSection}
+              onOpenQueryFrequencies={onOpenQueryFrequenciesSection}
             />
           ) : activeSection === "products" ? (
             <DashboardProductsSection

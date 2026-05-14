@@ -35,7 +35,7 @@ type ProductOption = {
 };
 
 export function useDashboardProductsWorkspace(input: {
-  activeSection: "exports" | "method" | "products";
+  activeSection: "exports" | "method" | "products" | "jam" | "catalog" | "campaigns" | "sync-runs" | "cluster-stats" | "daily-stats" | "minus-phrases" | "query-frequencies";
   productsMode: "list" | "detail";
   currentProductExport: WbExportResponse | null;
   currentExportProducts: ProductOption[];

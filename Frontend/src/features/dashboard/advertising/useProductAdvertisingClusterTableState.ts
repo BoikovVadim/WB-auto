@@ -75,6 +75,9 @@ export function useProductAdvertisingClusterTableState(input: {
   const {
     clusterSearch,
     setClusterSearch,
+    clusterNameSearch,
+    setClusterNameSearch,
+    deferredClusterNameSearch,
     numericFilters,
     statusFilter,
     setStatusFilter,
@@ -186,13 +189,21 @@ export function useProductAdvertisingClusterTableState(input: {
         matchesAdvertisingNumericFilters(row, numericFilters, advertisingClusterNumericFilterKeys),
       );
     }
+    // Фильтр только по названию кластера (поле "Кластер") — применяется клиентски,
+    // независимо от бэкендного поиска clusterSearch (поле "Запрос").
+    if (deferredClusterNameSearch.trim()) {
+      const needle = deferredClusterNameSearch.trim().toLocaleLowerCase("ru");
+      rows = rows.filter((row) =>
+        row.clusterName.toLocaleLowerCase("ru").includes(needle),
+      );
+    }
     if (sortState.key !== "spend" || sortState.direction !== "desc") {
       rows = [...rows].sort((left, right) =>
         compareWorkspaceClusterRows(left, right, sortState.key, sortState.direction),
       );
     }
     return rows;
-  }, [allClusterRows, statusFilter, numericFilters, sortState.key, sortState.direction]);
+  }, [allClusterRows, statusFilter, numericFilters, deferredClusterNameSearch, sortState.key, sortState.direction]);
   const advertisingColumnWidths = useMemo(() => {
     const widths = buildAdvertisingClusterWidths(
       productAdvertisingClusterTable?.rows ?? visibleClusterRows,
@@ -340,6 +351,8 @@ export function useProductAdvertisingClusterTableState(input: {
     toggleSelectAllClusterGroups,
     clusterSearch,
     setClusterSearch,
+    clusterNameSearch,
+    setClusterNameSearch,
     numericFilters,
     handleNumericFilterChange,
     applyNumericFilter,

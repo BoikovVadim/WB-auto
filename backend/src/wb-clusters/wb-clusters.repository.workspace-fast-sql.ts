@@ -54,6 +54,12 @@ interface WorkspaceFastSqlRow {
   query_count: string | null;
   monthly_frequency: string | null;
   updated_at: string | null;
+  jam_query_count: string | null;
+  jam_frequency: string | null;
+  jam_clicks: string | null;
+  jam_add_to_cart: string | null;
+  jam_orders: string | null;
+  jam_avg_position: string | null;
 }
 
 /**
@@ -104,6 +110,36 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
         WHERE nm_id = $1
           AND advert_id = $2
         GROUP BY advert_id, LOWER(TRIM(cluster_name))
+      ),
+      jam_by_cluster AS (
+        SELECT
+          cq.advert_id,
+          LOWER(TRIM(cq.cluster_name))                                    AS norm_cluster_name,
+          COUNT(DISTINCT r.normalized_query_text)
+            FILTER (WHERE r.frequency IS NOT NULL)::text                  AS jam_query_count,
+          SUM(r.frequency)::text                                          AS jam_frequency,
+          SUM(r.open_card_current)::text                                  AS jam_clicks,
+          SUM(r.add_to_cart_current)::text                                AS jam_add_to_cart,
+          SUM(r.orders_current)::text                                     AS jam_orders,
+          (CASE
+            WHEN SUM(r.open_card_current) > 0
+              THEN SUM(r.avg_position_current * r.open_card_current)
+                     / SUM(r.open_card_current)
+            ELSE AVG(r.avg_position_current)
+          END)::text                                                      AS jam_avg_position
+        FROM ${this.tableName("wb_cabinet_cluster_queries")} cq
+        JOIN ${this.tableName("wb_product_search_text_range_snapshots")} s
+          ON s.nm_id = cq.nm_id
+        JOIN ${this.tableName("wb_product_search_text_range_rows")} r
+          ON r.snapshot_key = s.snapshot_key
+         AND r.normalized_query_text = cq.normalized_query_text
+        WHERE cq.nm_id     = $1
+          AND cq.advert_id = $2
+          AND s.nm_id      = $1
+          AND s.start_date >= $3::date
+          AND s.end_date   <= $4::date
+          AND s.start_date  = s.end_date
+        GROUP BY cq.advert_id, LOWER(TRIM(cq.cluster_name))
       )
       SELECT
         c.advert_id::text                                            AS advert_id,
@@ -161,7 +197,13 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
         a.action_last_error,
         qc.cnt                                                       AS query_count,
         COALESCE(f.monthly_frequency, cn_f.monthly_frequency)::text  AS monthly_frequency,
-        pm.updated_at                                                AS updated_at
+        pm.updated_at                                                AS updated_at,
+        jbc.jam_query_count,
+        jbc.jam_frequency,
+        jbc.jam_clicks,
+        jbc.jam_add_to_cart,
+        jbc.jam_orders,
+        jbc.jam_avg_position
       FROM ${this.tableName("wb_clusters")} c
       JOIN ${this.tableName("wb_campaign_products")} cp
         ON cp.advert_id = c.advert_id AND cp.nm_id = c.nm_id
@@ -185,6 +227,9 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
         ON f.normalized_query_text = c.normalized_cluster_name
       LEFT JOIN ${this.tableName("wb_search_query_frequencies")} cn_f
         ON cn_f.normalized_query_text = LOWER(TRIM(c.cluster_name))
+      LEFT JOIN jam_by_cluster jbc
+        ON jbc.advert_id = c.advert_id
+        AND jbc.norm_cluster_name = LOWER(TRIM(c.cluster_name))
       WHERE c.nm_id = $1
         AND c.advert_id = $2
         AND (
@@ -231,12 +276,12 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
       clusterName: row.cluster_name,
       canonicalNormQuery: row.canonical_norm_query,
       queryCount: n(row.query_count),
-      jamQueryCount: null,
-      jamFrequency: null,
-      jamClicks: null,
-      jamAddToCart: null,
-      jamOrders: null,
-      jamAvgPosition: null,
+      jamQueryCount: n(row.jam_query_count),
+      jamFrequency: n(row.jam_frequency),
+      jamClicks: n(row.jam_clicks),
+      jamAddToCart: n(row.jam_add_to_cart),
+      jamOrders: n(row.jam_orders),
+      jamAvgPosition: n(row.jam_avg_position),
       monthlyFrequency: n(row.monthly_frequency),
       sourceKind: row.source_kind,
       isActive: row.is_active,

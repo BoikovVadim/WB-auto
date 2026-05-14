@@ -28,6 +28,19 @@ export class WbClustersScheduler implements OnModuleInit {
         .triggerStartupWarmup()
         .catch((err: Error) => this.logger.warn(`Startup warmup error: ${err.message}`));
     }, 5 * 60 * 1000);
+
+    // One-time JAM backfill: fills all 30 historical days for each product
+    // sequentially (active-RK A→Z first, then all others A→Z), then stops.
+    // Ongoing "yesterday" freshness is handled by the nightly cron below.
+    // Internal 5-minute delay lets DB, schema-init, and warmup settle first.
+    // Disable via WB_PROMOTION_JAM_BACKFILL_LOOP_ENABLED=false for manual debugging.
+    if (appEnv.wbPromotionJamBackfillLoopEnabled) {
+      this.wbClustersService
+        .startJamBackfillLoop()
+        .catch((err: Error) => this.logger.error(`JAM backfill-loop crashed: ${err.message}`));
+    } else {
+      this.logger.log("JAM backfill loop disabled via WB_PROMOTION_JAM_BACKFILL_LOOP_ENABLED=false.");
+    }
   }
 
   // Single 5-second tick drives all three queue processors sequentially.

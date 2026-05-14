@@ -75,17 +75,6 @@ export async function getProductAdvertisingWorkspace(
     endDate?: string;
   },
 ) {
-  // Response-level cache: skip DB reads for the same (nmId, dates) within TTL.
-  // We serve cached workspace even during an in-flight refresh — the user's frontend
-  // polls every few minutes and will pick up the updated workspace on the next cycle.
-  // Bypassing the cache during every refresh caused 2-5 s latency on warm calls.
-  const workspaceResponseCacheKey = [nmId, input?.startDate ?? "", input?.endDate ?? ""].join(":");
-  const hasPendingRefresh = self.productRefreshInFlight.has(nmId);
-  const cachedWorkspace = self.productAdvertisingWorkspaceResponseCache.get(workspaceResponseCacheKey);
-  if (cachedWorkspace && Date.now() < cachedWorkspace.expiresAtMs) {
-    return cachedWorkspace.response;
-  }
-
   const currentRefresh = self.productRefreshInFlight.get(nmId);
   const currentPeriod =
     input?.startDate && input?.endDate
@@ -106,10 +95,6 @@ export async function getProductAdvertisingWorkspace(
     return workspace;
   }
 
-  // Fast path: use materialised campaign rows → single DB read, no extra sheet load.
-  // If rows are not yet stored, return the workspace shell immediately so the
-  // frontend can render the campaign tabs while it fetches the cluster table
-  // separately (a subsequent lightweight request).
   try {
     const storedRows = await self.productWorkspaceSnapshotResolver.resolveWorkspaceCampaignRows({
       nmId,
@@ -119,7 +104,7 @@ export async function getProductAdvertisingWorkspace(
     });
 
     if (storedRows) {
-      const workspaceWithTable = {
+      return {
         ...workspace,
         initialClusterTable: self.productAdvertisingWorkspaceReadService.buildClusterTableResponse({
           nmId,
@@ -133,31 +118,13 @@ export async function getProductAdvertisingWorkspace(
           pageSize: 5000,
         }),
       };
-      // Cache the workspace+initial-table response so repeated calls within the TTL
-      // skip the DB read. Skip cache when a refresh is in-flight.
-      if (!hasPendingRefresh) {
-        self.productAdvertisingWorkspaceResponseCache.set(workspaceResponseCacheKey, {
-          expiresAtMs: Date.now() + self.productAdvertisingWorkspaceResponseCacheTtlMs,
-          response: workspaceWithTable,
-        });
-      }
-      return workspaceWithTable;
     }
   } catch (error) {
     if (!(error instanceof ServiceUnavailableException)) {
       throw error;
     }
-    // Campaign rows not yet materialised — fall through and return shell only.
   }
 
-  // Cache the workspace shell (no initialClusterTable) so repeat requests
-  // within the same session skip DB reads entirely.
-  if (!hasPendingRefresh) {
-    self.productAdvertisingWorkspaceResponseCache.set(workspaceResponseCacheKey, {
-      expiresAtMs: Date.now() + self.productAdvertisingWorkspaceResponseCacheTtlMs,
-      response: workspace,
-    });
-  }
   return workspace;
 }
 
@@ -723,14 +690,9 @@ export function invalidateProductAdvertisingSheetCaches(self: WbClustersSnapshot
       self.productAdvertisingSheetReadModelCache as Map<string, unknown>,
     ],
   });
-  const prefix = `${nmId}:`;
-  for (const key of self.productAdvertisingWorkspaceResponseCache.keys()) {
-    if (key.startsWith(prefix)) {
-      self.productAdvertisingWorkspaceResponseCache.delete(key);
-    }
-  }
   // querySearchIndex is keyed by nmId:advertId:v{version}; since the version just
   // incremented above, old entries are now stale. Proactively delete them to free memory.
+  const prefix = `${nmId}:`;
   for (const key of self.querySearchIndexCache.keys()) {
     if (key.startsWith(prefix)) {
       self.querySearchIndexCache.delete(key);

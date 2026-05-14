@@ -22,6 +22,11 @@ type ProductAdvertisingDateFilterProps = {
   bounds: AdvertisingDateBounds;
   onDateRangeChange: (value: AdvertisingDateRange) => void;
   onPresetHover?: (preset: AdvertisingDatePreset) => void;
+  /**
+   * When true the calendar allows any past date with no minimum cutoff.
+   * Defaults to false (advertising behaviour: only the last calendar month).
+   */
+  allowAllPast?: boolean;
 };
 
 export function ProductAdvertisingDateFilter(props: ProductAdvertisingDateFilterProps) {
@@ -173,7 +178,11 @@ export function ProductAdvertisingDateFilter(props: ProductAdvertisingDateFilter
                         isSameCalendarDay(day, props.dateRange.end);
                       const isSelected = isSelectedStart || isSelectedEnd;
                       const isInRange = isCalendarDayWithinRange(day, props.dateRange);
-                      const isDisabled = isAdvertisingCalendarDayDisabled(day, props.bounds);
+                      const isDisabled = isAdvertisingCalendarDayDisabled(
+                        day,
+                        props.bounds,
+                        props.allowAllPast ?? false,
+                      );
 
                       return (
                         <button
