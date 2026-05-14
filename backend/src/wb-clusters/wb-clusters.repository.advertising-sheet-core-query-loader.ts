@@ -220,9 +220,9 @@ export abstract class WbClustersRepositoryAdvertisingSheetCoreQueryLoader extend
           ORDER BY
           COALESCE(c.advert_id, 0),
           CASE c.source_kind
-          WHEN 'active' THEN 0
-          WHEN 'stats' THEN 1
-          WHEN 'excluded' THEN 2
+          WHEN 'stats' THEN 0
+          WHEN 'excluded' THEN 1
+          WHEN 'active' THEN 2
           ELSE 3
           END,
           c.cluster_name

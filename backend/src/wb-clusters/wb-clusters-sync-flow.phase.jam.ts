@@ -71,7 +71,7 @@ export async function runJamSyncPhase(
             const todayAttempted = await self.wbClustersRepository.wasJamAttemptedRecently(nmId, today);
             if (!todayAttempted) {
               const result = await syncOneDayJam(self, nmId, today, warningMessages);
-              if (result) refreshed = true;
+              if (result === "synced") refreshed = true;
             }
           } else {
             // Nightly path: finalize yesterday + fill any recent gaps.
@@ -84,14 +84,12 @@ export async function runJamSyncPhase(
 
             for (const date of missingDates) {
               const result = await syncOneDayJam(self, nmId, date, warningMessages);
-              if (result) {
+              if (result === "synced") {
                 refreshed = true;
               } else {
-                // WB returned 429 or transient error for this date.
-                // Stop immediately — remaining dates for this nmId will also be
-                // rejected since WB enforces a per-nmId rate limit window.
-                // By stopping here we avoid logging all remaining dates on a 65-min
-                // cooldown, preserving them for the next eligible retry cycle.
+                // 'quota_exhausted': account-wide daily quota exhausted.
+                // 'error': per-nmId transient error; remaining dates will also fail.
+                // Either way, stop processing dates for this nmId immediately.
                 break;
               }
             }
@@ -121,6 +119,13 @@ const JAM_LOOKBACK_DAYS = 30;
  * Newest dates first — yesterday is always the top priority.
  */
 const MAX_DATES_PER_PRODUCT_PER_RUN = JAM_LOOKBACK_DAYS;
+
+/**
+ * WB enforces ~1 successful fetch per nmId per 65 minutes across ALL dates.
+ * The cooldown is per-nmId, not per-(nmId, date): if you successfully fetch
+ * date1 for nmId_X, fetching date2 for nmId_X within 65 min returns 429.
+ */
+const WB_JAM_NMID_COOLDOWN_MS = 65 * 60 * 1_000;
 
 async function syncOneDayJam(
   self: WbClustersService,
@@ -425,11 +430,11 @@ function generateAllLookbackDates(self: WbClustersService, lookbackDays: number)
  *   WB enforces ~1 successful fetch per nmId per 65 min. The old order
  *   (product-outer × date-inner) hit 429 on date2 for every product and left
  *   all remaining dates un-filled until the next 65-min window.
- *   With date-outer order: we fetch date1 for ALL products first, then date2
- *   for all products. By the time we start date2 for nmId1, all other nmIds
- *   have been processed (~312 × 6 s ≈ 31 min), which is close enough to the
- *   65-min WB window to avoid most throttle hits. Any remaining 429s are
- *   skipped and re-attempted in the next date round.
+ *   With date-outer order + in-memory per-nmId cooldown tracking: we fetch
+ *   date1 for ALL products, then date2 for all products that are past the
+ *   65-min cooldown, etc. Products within the cooldown window are silently
+ *   skipped. A 429 is only treated as account-wide quota exhaustion when the
+ *   nmId was definitely past its per-nmId window — so no false stops.
  */
 export async function runJamBackfillLoop(
   self: WbClustersService,
@@ -465,9 +470,18 @@ export async function runJamBackfillLoop(
     let passWarnings = 0;
     let quotaExhausted = false;
 
+    // In-memory per-nmId rate limit tracker for this pass.
+    // Tracks the last time we actually called WB for each nmId (regardless of
+    // date or result). A 429 is only treated as account-wide quota exhaustion
+    // when the nmId was NOT called within the last WB_JAM_NMID_COOLDOWN_MS —
+    // i.e., the per-nmId window has definitely cleared and WB still refused.
+    // Lost on restart, but the DB-backed wasJamAttemptedRecently catches
+    // failure-cooldowns across restarts.
+    const lastNmIdCallAt = new Map<number, number>();
+
     // DATE-OUTER: process date[0] for all products, then date[1] for all, etc.
-    // Each nmId gets ~31 min rest between consecutive fetches
-    // (312 products × 6 s), staying inside WB's per-nmId rate limit.
+    // Per-nmId cooldown (WB_JAM_NMID_COOLDOWN_MS) is enforced in-memory so
+    // we never send a request WB would reject as per-nmId rate-limited.
     dateLoop: for (const date of allDates) {
       if (signal.stopped) break;
 
@@ -481,20 +495,30 @@ export async function runJamBackfillLoop(
         const productWarnings: string[] = [];
 
         try {
-          // Skip dates recently rejected — preserves daily quota for slots
-          // that are genuinely past the 65-min per-nmId cooldown.
+          // In-memory per-nmId cooldown check (cross-date, within this pass).
+          // Skips the nmId silently if we called WB for it recently enough
+          // that a new WB request would be rejected as per-nmId rate-limited.
+          const lastCall = lastNmIdCallAt.get(nmId) ?? 0;
+          if (Date.now() - lastCall < WB_JAM_NMID_COOLDOWN_MS) continue;
+
+          // DB-backed check: skip if this (nmId, date) failed recently.
           const recentlyAttempted = await self.wbClustersRepository.wasJamAttemptedRecently(nmId, date);
           if (recentlyAttempted) continue;
 
           const result = await syncOneDayJam(self, nmId, date, productWarnings);
+
+          // Record the WB call time regardless of result so the in-memory
+          // per-nmId cooldown is respected for subsequent dates in this pass.
+          lastNmIdCallAt.set(nmId, Date.now());
 
           if (result === "synced") {
             roundSynced++;
             passSynced++;
             totalDatesSynced++;
           } else if (result === "quota_exhausted") {
-            // WB returned 429 — account-wide daily quota is exhausted.
-            // Stop immediately; any further attempt burns quota for nothing.
+            // We already verified the per-nmId window was clear before calling,
+            // so this 429 is definitively account-wide quota exhaustion —
+            // not a per-nmId rate limit. Stop the pass immediately.
             quotaExhausted = true;
             break dateLoop;
           }
