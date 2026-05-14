@@ -33,7 +33,11 @@ export function useAdvertisingCampaignSelection(
   nmId: number | null,
   workspace: ProductAdvertisingWorkspaceResponse | null,
 ) {
-  const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(null);
+  // Инициализируем немедленно из sessionStorage, чтобы не было мигания:
+  // первый рендер сразу видит правильную РК, useEffect не вызывает лишний setState.
+  const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(() =>
+    nmId !== null ? readStoredCampaignId(nmId) : null,
+  );
 
   // Фиксируем nmId на момент маунта компонента:
   // – если nmId не изменился с маунта → это обновление страницы → восстанавливаем из sessionStorage
