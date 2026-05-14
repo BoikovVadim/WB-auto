@@ -1148,7 +1148,7 @@ input {
   overflow-y: auto;
   overflow-x: hidden;
   overflow-anchor: none;
-  padding: 0 8px 0;
+  padding: 0 8px 24px;
   border-radius: 18px;
   background: #fff;
   border: 1px solid rgba(0, 0, 0, 0.05);
