@@ -72,9 +72,13 @@ export function useDashboardProductsWorkspace(input: {
     return [...productCatalogItems].sort((left, right) => {
       let result: number;
       if (input.productsSortKey === "name") {
-        // Побуквенное сравнение: "cage 107" < "cage 12" потому что '0' < '2' на позиции 7.
-        // "cage" < "cage 12" потому что короткое слово-префикс идёт первым.
-        result = left.vendorCode.localeCompare(right.vendorCode, "ru");
+        // Нормализуем разделители (-_/\) в пробел, чтобы "animal-cage" и "animal cage"
+        // сравнивались одинаково. Затем побуквенно:
+        //   "animal cage"     < "animal cage 107"  — более короткий префикс первым
+        //   "animal cage 107" < "animal cage 12"   — '0' < '2' на 7-й позиции
+        const normalize = (s: string) =>
+          s.trim().replace(/[-_/\\]+/g, " ").replace(/\s+/g, " ").toLocaleLowerCase("ru");
+        result = normalize(left.vendorCode).localeCompare(normalize(right.vendorCode), "ru");
       } else {
         const getCnt = (p: typeof left): number => {
           switch (input.productsSortKey) {
