@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ProductAdvertisingWorkspaceClusterRow } from "../../../api/syncClient";
 import { buildAdvertisingClusterGroupKey } from "./clusterTableView";
@@ -6,6 +6,12 @@ import { buildAdvertisingClusterGroupKey } from "./clusterTableView";
 export function useAdvertisingClusterGroupSelection(
   visibleClusterRows: ProductAdvertisingWorkspaceClusterRow[],
   availableClusterRows: ProductAdvertisingWorkspaceClusterRow[] = visibleClusterRows,
+  /**
+   * Ключ для полного сброса выделения — передаётся при смене товара или кампании.
+   * Поиск/фильтрация НЕ должны сбрасывать выделение: пользователь выбирает кластеры
+   * в одном поисковом контексте и ожидает, что они остаются выбранными при очистке поиска.
+   */
+  selectionResetKey?: string | null,
 ) {
   const [expandedClusterKeys, setExpandedClusterKeys] = useState<string[]>([]);
   const [selectedClusterKeys, setSelectedClusterKeys] = useState<string[]>([]);
@@ -30,6 +36,7 @@ export function useAdvertisingClusterGroupSelection(
     [selectedClusterKeySet, visibleClusterRows],
   );
 
+  // Свёрнутые кластеры чистим при смене фильтра/поиска — ок, раскрытие теряется при скролле.
   useEffect(() => {
     setExpandedClusterKeys((currentValue) => {
       const validKeys = new Set(availableClusterRowKeys);
@@ -40,13 +47,15 @@ export function useAdvertisingClusterGroupSelection(
     });
   }, [availableClusterRowKeys]);
 
+  // Выделение сбрасываем ТОЛЬКО при смене товара/кампании (selectionResetKey), но НЕ
+  // при изменении поиска или фильтра: пользователь должен выбрать кластеры, сузить поиск,
+  // снять отдельные галочки и после очистки поиска увидеть тот же набор выделенных строк.
+  const prevResetKeyRef = useRef(selectionResetKey);
   useEffect(() => {
-    setSelectedClusterKeys((currentValue) => {
-      const validKeys = new Set(availableClusterRowKeys);
-      const filtered = currentValue.filter((item) => validKeys.has(item));
-      return filtered.length === currentValue.length ? currentValue : filtered;
-    });
-  }, [availableClusterRowKeys]);
+    if (prevResetKeyRef.current === selectionResetKey) return;
+    prevResetKeyRef.current = selectionResetKey;
+    setSelectedClusterKeys([]);
+  }, [selectionResetKey]);
 
   const toggleClusterGroup = useCallback((groupKey: string) => {
     setExpandedClusterKeys((currentValue) =>

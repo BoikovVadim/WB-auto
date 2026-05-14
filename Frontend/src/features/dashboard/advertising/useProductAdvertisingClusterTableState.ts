@@ -210,6 +210,14 @@ export function useProductAdvertisingClusterTableState(input: {
     (isTableForCurrentCampaign ? productAdvertisingClusterTable?.filterCounts : null) ??
     { all: 0, active: 0, excluded: 0 };
   const isClusterTableLoading = isProductAdvertisingClusterTableLoading;
+  // Ключ сброса выделения: меняется только при смене товара или кампании.
+  // Поиск и фильтры НЕ должны сбрасывать галочки — пользователь выбирает кластеры,
+  // сужает поиск, снимает нужные галочки, и после очистки поиска видит тот же набор.
+  const selectionResetKey =
+    nmId != null && selectedCampaign != null
+      ? `${nmId}-${selectedCampaign.advertId}`
+      : null;
+
   const {
     expandedClusterKeys,
     selectedClusterKeys,
@@ -222,6 +230,7 @@ export function useProductAdvertisingClusterTableState(input: {
   } = useAdvertisingClusterGroupSelection(
     visibleClusterRows,
     productAdvertisingClusterTable?.rows ?? visibleClusterRows,
+    selectionResetKey,
   );
   const expandedClusterDescriptors = useMemo(
     () =>
