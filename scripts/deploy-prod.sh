@@ -231,10 +231,6 @@ if [[ -d "\$TMP_EXTRACT_DIR/backend/dist" ]]; then
   rm -rf "$REMOTE_DIR/backend/dist"
   cp -R "\$TMP_EXTRACT_DIR/backend/dist" "$REMOTE_DIR/backend/dist"
 fi
-if [[ -d "\$TMP_EXTRACT_DIR/Frontend/build" ]]; then
-  rm -rf "$REMOTE_DIR/Frontend/build"
-  cp -R "\$TMP_EXTRACT_DIR/Frontend/build" "$REMOTE_DIR/Frontend/build"
-fi
 if [[ -f "$REMOTE_DIR/shared/.env" ]]; then
   cp "$REMOTE_DIR/shared/.env" "$REMOTE_DIR/.env"
 fi
@@ -247,8 +243,17 @@ if command -v pg_ctlcluster >/dev/null 2>&1; then
   pg_ctlcluster 16 main start 2>/dev/null || true
 fi
 pm2 startOrReload ecosystem.config.js --only "$REMOTE_PM2_APP" --update-env
+# Wait for the backend to be healthy, then copy the new frontend bundle.
+# Copying frontend only after the backend is ready ensures the browser
+# detects the new bundle hash only when the API is already serving the
+# matching backend version — eliminating the race where the browser
+# auto-reloads into a restarting server and sees empty product data.
 for attempt in \$(seq 1 20); do
   if curl --fail --show-error --silent http://localhost:3300/api/health >/dev/null 2>&1; then
+    if [[ -d "\$TMP_EXTRACT_DIR/Frontend/build" ]]; then
+      rm -rf "$REMOTE_DIR/Frontend/build"
+      cp -R "\$TMP_EXTRACT_DIR/Frontend/build" "$REMOTE_DIR/Frontend/build"
+    fi
     exit 0
   fi
   sleep 2
