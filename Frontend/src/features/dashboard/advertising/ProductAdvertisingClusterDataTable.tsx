@@ -62,9 +62,11 @@ export function ProductAdvertisingClusterDataTable(
 
     const update = () => {
       const sectionH = section.clientHeight;
-      const sectionPaddingTop = parseFloat(getComputedStyle(section).paddingTop) || 0;
+      const cs = getComputedStyle(section);
+      const sectionPaddingTop = parseFloat(cs.paddingTop) || 0;
+      const sectionPaddingBottom = parseFloat(cs.paddingBottom) || 0;
       const toolbarH = toolbar.offsetHeight;
-      const h = sectionH - sectionPaddingTop - toolbarH;
+      const h = sectionH - sectionPaddingTop - sectionPaddingBottom - toolbarH;
       if (h > 0) {
         tableWrap.style.height = `${String(h)}px`;
         tableWrap.style.maxHeight = `${String(h)}px`;
