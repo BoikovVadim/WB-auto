@@ -31,6 +31,7 @@ export type ProductAdvertisingClusterDataTableProps = Pick<
   | "onCopyClusterName"
   | "copiedQueryKey"
   | "onCopyQueryText"
+  | "onClusterNameWidthChange"
 >;
 
 export type ProductAdvertisingClusterCellRendererInput = {

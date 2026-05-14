@@ -110,6 +110,7 @@ export type ProductAdvertisingClusterTableSectionProps = {
   onCopyClusterName: (clusterKey: string, clusterName: string) => void | Promise<void>;
   copiedQueryKey: string | null;
   onCopyQueryText: (queryKey: string, queryText: string) => void | Promise<void>;
+  onClusterNameWidthChange: (width: number) => void;
 };
 
 function ClusterTableSkeleton() {

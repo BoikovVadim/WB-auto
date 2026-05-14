@@ -163,6 +163,7 @@ export function useProductAdvertisingClusterSectionState(input: {
     onCopyClusterName: mutations.onCopyClusterName,
     copiedQueryKey: mutations.copiedQueryKey,
     onCopyQueryText: mutations.onCopyQueryText,
+    onClusterNameWidthChange: tableState.handleClusterNameWidthChange,
   }), [
     nmId, tableState, mutations, onCampaignHover, onApplyClusterAction,
     dateRange, onDateRangeChange, onPresetHover, isAdvertisingSyncStarting,

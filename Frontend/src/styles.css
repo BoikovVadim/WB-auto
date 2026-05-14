@@ -315,21 +315,31 @@ input {
   overflow: hidden;
 }
 
+.wb-exports-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 24px;
+}
+
 .wb-method-grid {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 260px));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 260px));
+  align-items: stretch;
 }
 
 .wb-method-card {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
   padding: 11px;
   border-radius: 12px;
   background: linear-gradient(180deg, #ffffff 0%, #fbf9f3 100%);
   border: 1px solid rgba(0, 0, 0, 0.06);
-  aspect-ratio: 1.72 / 1;
-  align-content: space-between;
   max-width: 260px;
 }
 
@@ -362,6 +372,8 @@ input {
 .wb-method-card-details {
   display: grid;
   gap: 6px;
+  flex: 1;
+  align-content: start;
 }
 
 .wb-method-card-row {
@@ -1822,6 +1834,33 @@ input {
   background: #fff;
 }
 
+/* ── Cluster-name column resize handle ────────────────────────────────────── */
+
+/* The th needs a positioning context for the absolute handle */
+.wb-advertising-th--resizable {
+  position: relative;
+}
+
+/* Thin grab zone on the right edge of the clusterName header cell */
+.wb-advertising-resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  user-select: none;
+  z-index: 2;
+  border-right: 2px solid transparent;
+  transition: border-color 0.15s;
+}
+
+.wb-advertising-resize-handle:hover,
+.wb-advertising-resize-handle:active {
+  border-right-color: rgba(99, 102, 241, 0.5);
+}
+
+/* ── Sticky cluster overlay ─────────────────────────────────────────────── */
 /* Sticky cluster overlay: a <div> (not <tr>) with position:sticky.
    <div> sticky is universally supported; placed right after the sticky header,
    with height:0 so it does not shift the body table layout. */

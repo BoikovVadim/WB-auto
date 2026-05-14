@@ -1,4 +1,4 @@
-import { forwardRef } from "react";
+import { forwardRef, useCallback, useRef, useState } from "react";
 import { ui } from "../copy";
 import {
   isAdvertisingNumericFilterKey,
@@ -12,6 +12,9 @@ import { renderAdvertisingTotalsCell } from "./advertisingClusterTableCells";
 import { AdvertisingClusterTableColgroup } from "./AdvertisingClusterTableColgroup";
 import type { ProductAdvertisingClusterDataTableProps } from "./productAdvertisingClusterDataTableTypes";
 
+const CLUSTER_NAME_RESIZE_MIN = 100;
+const CLUSTER_NAME_RESIZE_MAX = 700;
+
 export const ProductAdvertisingClusterTableHeader = forwardRef<
   HTMLDivElement,
   {
@@ -22,14 +25,68 @@ export const ProductAdvertisingClusterTableHeader = forwardRef<
 >(function ProductAdvertisingClusterTableHeader(props, ref) {
   const { stickyOffsets, tableProps } = props;
 
+  // Live preview width during drag — only the header table updates during drag;
+  // the body table snaps to the committed width on mouseup (persisted to localStorage).
+  const [draggingWidth, setDraggingWidth] = useState<number | null>(null);
+  const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  const handleResizeMouseDown = useCallback(
+    (event: React.MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const startX = event.clientX;
+      const startWidth = tableProps.advertisingColumnWidths.clusterName;
+      dragStateRef.current = { startX, startWidth };
+
+      const handleMouseMove = (e: MouseEvent) => {
+        if (!dragStateRef.current) return;
+        const delta = e.clientX - dragStateRef.current.startX;
+        const next = Math.min(
+          CLUSTER_NAME_RESIZE_MAX,
+          Math.max(CLUSTER_NAME_RESIZE_MIN, Math.round(dragStateRef.current.startWidth + delta)),
+        );
+        setDraggingWidth(next);
+      };
+
+      const handleMouseUp = (e: MouseEvent) => {
+        if (!dragStateRef.current) return;
+        const delta = e.clientX - dragStateRef.current.startX;
+        const final = Math.min(
+          CLUSTER_NAME_RESIZE_MAX,
+          Math.max(CLUSTER_NAME_RESIZE_MIN, Math.round(dragStateRef.current.startWidth + delta)),
+        );
+        dragStateRef.current = null;
+        setDraggingWidth(null);
+        tableProps.onClusterNameWidthChange(final);
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+      };
+
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    },
+    [tableProps],
+  );
+
+  const effectiveWidths =
+    draggingWidth !== null
+      ? { ...tableProps.advertisingColumnWidths, clusterName: draggingWidth }
+      : tableProps.advertisingColumnWidths;
+
+  const effectiveTableWidth =
+    draggingWidth !== null
+      ? props.tableWidth + (draggingWidth - tableProps.advertisingColumnWidths.clusterName)
+      : props.tableWidth;
+
   return (
     <div ref={ref} className="wb-advertising-sticky-header-block">
       <table
         className="wb-data-table wb-data-table--product-sheet wb-data-table--advertising wb-advertising-sticky-header-table"
-        style={{ tableLayout: "fixed", width: `${String(props.tableWidth)}px` }}
+        style={{ tableLayout: "fixed", width: `${String(effectiveTableWidth)}px` }}
       >
         <AdvertisingClusterTableColgroup
-          advertisingColumnWidths={tableProps.advertisingColumnWidths}
+          advertisingColumnWidths={effectiveWidths}
           orderedAdvertisingColumns={tableProps.orderedAdvertisingColumns}
           prefix="sticky-header-col"
         />
@@ -51,6 +108,7 @@ export const ProductAdvertisingClusterTableHeader = forwardRef<
             </th>
             {tableProps.orderedAdvertisingColumns.map(({ key: value, label }) => {
               const isActive = tableProps.sortState.key === value;
+              const isClusterName = value === "clusterName";
               const ariaSort = !isActive
                 ? "none"
                 : tableProps.sortState.direction === "asc"
@@ -64,7 +122,7 @@ export const ProductAdvertisingClusterTableHeader = forwardRef<
                   className={`${getAdvertisingCellClassName(stickyOffsets, value, {
                     header: true,
                     dragging: tableProps.draggedAdvertisingColumn === value,
-                  })}${isActive ? " is-sorted" : ""}`}
+                  })}${isActive ? " is-sorted" : ""}${isClusterName ? " wb-advertising-th--resizable" : ""}`}
                   style={getAdvertisingStickyStyle(stickyOffsets, value)}
                   draggable
                   title={ui.columnOrderHint}
@@ -101,6 +159,14 @@ export const ProductAdvertisingClusterTableHeader = forwardRef<
                       </span>
                     </button>
                   </div>
+                  {isClusterName ? (
+                    <span
+                      className="wb-advertising-resize-handle"
+                      title="Потяните, чтобы изменить ширину столбца"
+                      aria-hidden="true"
+                      onMouseDown={handleResizeMouseDown}
+                    />
+                  ) : null}
                 </th>
               );
             })}

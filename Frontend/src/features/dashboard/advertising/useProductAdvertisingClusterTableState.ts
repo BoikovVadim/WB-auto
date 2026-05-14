@@ -25,6 +25,7 @@ import { compareWorkspaceClusterRows } from "./productWorkspaceLocalView";
 import { isTransientActionSyncStatus } from "./snapshot";
 import { useAdvertisingCampaignSelection } from "./useAdvertisingCampaignSelection";
 import { useAdvertisingClusterColumnOrderState } from "./useAdvertisingClusterColumnOrderState";
+import { useAdvertisingClusterNameWidthState } from "./useAdvertisingClusterNameWidthState";
 import { useAdvertisingClusterGroupSelection } from "./useAdvertisingClusterGroupSelection";
 import { useAdvertisingClusterTableControls } from "./useAdvertisingClusterTableControls";
 import {
@@ -95,6 +96,7 @@ export function useProductAdvertisingClusterTableState(input: {
     setDraggedAdvertisingColumn,
     handleAdvertisingColumnDrop,
   } = useAdvertisingClusterColumnOrderState();
+  const { clusterNameWidth, handleClusterNameWidthChange } = useAdvertisingClusterNameWidthState();
   const bootstrapClusterTable = useMemo(() => {
     if (!workspace?.initialClusterTable || !selectedCampaign || clusterTableRequestInput === null) {
       return null;
@@ -191,14 +193,16 @@ export function useProductAdvertisingClusterTableState(input: {
     }
     return rows;
   }, [allClusterRows, statusFilter, numericFilters, sortState.key, sortState.direction]);
-  const advertisingColumnWidths = useMemo(
-    () =>
-      buildAdvertisingClusterWidths(
-        productAdvertisingClusterTable?.rows ?? visibleClusterRows,
-        orderedAdvertisingColumns,
-      ),
-    [orderedAdvertisingColumns, productAdvertisingClusterTable?.rows, visibleClusterRows],
-  );
+  const advertisingColumnWidths = useMemo(() => {
+    const widths = buildAdvertisingClusterWidths(
+      productAdvertisingClusterTable?.rows ?? visibleClusterRows,
+      orderedAdvertisingColumns,
+    );
+    if (clusterNameWidth !== null) {
+      return { ...widths, clusterName: clusterNameWidth };
+    }
+    return widths;
+  }, [orderedAdvertisingColumns, productAdvertisingClusterTable?.rows, visibleClusterRows, clusterNameWidth]);
   // Счётчики кластеров берём ТОЛЬКО из загруженной таблицы за актуальный период.
   // rowsCount из workspace нельзя использовать как fallback: workspace строится за
   // свой период дат, а таблица кластеров — за выбранный пользователем период.
@@ -359,6 +363,7 @@ export function useProductAdvertisingClusterTableState(input: {
     canSubmitClusterAction,
     clusterTableError: productAdvertisingClusterTableError,
     clusterRowByKey,
+    handleClusterNameWidthChange,
   };
 }
 
