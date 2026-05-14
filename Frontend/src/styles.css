@@ -1839,7 +1839,7 @@ input {
 /* Permanent right border on every clusterName cell — creates the continuous
    vertical separator line that runs through the full table height. */
 .wb-advertising-column-cell--cluster {
-  border-right: 1px solid rgba(0, 0, 0, 0.10);
+  border-right: 2px solid rgba(0, 0, 0, 0.18);
 }
 
 /* The th needs a positioning context for the absolute resize handle */
@@ -1848,21 +1848,34 @@ input {
 }
 
 /* Grab zone on the right edge of the clusterName header cell.
-   width covers the cell border so the cursor appears right on the line. */
+   Sits on top of the cell border so the cursor appears right on the line.
+   ::after draws the always-visible thin colored bar so the user can see
+   the resize affordance without hovering. */
 .wb-advertising-resize-handle {
   position: absolute;
-  right: -3px;
+  right: -4px;
   top: 0;
   bottom: 0;
-  width: 7px;
+  width: 8px;
   cursor: col-resize;
   user-select: none;
   z-index: 3;
 }
 
-.wb-advertising-resize-handle:hover,
-.wb-advertising-resize-handle:active {
-  background: rgba(99, 102, 241, 0.15);
+.wb-advertising-resize-handle::after {
+  content: '';
+  position: absolute;
+  right: 3px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(0, 0, 0, 0.18);
+  transition: background 0.15s;
+}
+
+.wb-advertising-resize-handle:hover::after,
+.wb-advertising-resize-handle:active::after {
+  background: rgba(99, 102, 241, 0.55);
 }
 
 /* ── Sticky cluster overlay ─────────────────────────────────────────────── */

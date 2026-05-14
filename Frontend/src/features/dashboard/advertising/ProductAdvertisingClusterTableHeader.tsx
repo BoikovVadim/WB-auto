@@ -48,6 +48,13 @@ export const ProductAdvertisingClusterTableHeader = forwardRef<
         tableWrap.querySelectorAll<HTMLTableColElement>('col[data-col-key="clusterName"]'),
       );
 
+      // Capture all th/td cells of the cluster column so we can set maxWidth
+      // during drag — this forces overflow clipping even on position:sticky cells
+      // where overflow:hidden alone does not clip reliably during DOM manipulation.
+      const clusterCells = Array.from(
+        tableWrap.querySelectorAll<HTMLElement>(".wb-advertising-column-cell--cluster"),
+      );
+
       // Capture all table elements and their current pixel widths.
       const tables = Array.from(tableWrap.querySelectorAll<HTMLTableElement>("table"));
       const initialTableWidths = tables.map((t) => t.offsetWidth);
@@ -64,6 +71,11 @@ export const ProductAdvertisingClusterTableHeader = forwardRef<
           col.style.width = widthPx;
           col.style.minWidth = widthPx;
         }
+        // Force content clipping: maxWidth on the actual cells ensures text
+        // never bleeds into the adjacent "Ставка" column during drag.
+        for (const cell of clusterCells) {
+          cell.style.maxWidth = widthPx;
+        }
         const widthDelta = newWidth - dragStateRef.current.startWidth;
         tables.forEach((table, i) => {
           table.style.width = `${String(initialTableWidths[i] + widthDelta)}px`;
@@ -78,6 +90,10 @@ export const ProductAdvertisingClusterTableHeader = forwardRef<
           Math.max(CLUSTER_NAME_RESIZE_MIN, Math.round(dragStateRef.current.startWidth + delta)),
         );
         dragStateRef.current = null;
+        // Clear inline maxWidth before React re-renders (avoids stale inline styles).
+        for (const cell of clusterCells) {
+          cell.style.maxWidth = "";
+        }
         // Commit to React state + localStorage; React re-renders with the same
         // finalWidth so the DOM settles without any visual jump.
         tableProps.onClusterNameWidthChange(finalWidth);
