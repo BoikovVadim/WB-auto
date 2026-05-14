@@ -18,8 +18,8 @@ const CAMPAIGN_TYPE_LABEL: Record<number, string> = {
   9: "Поиск+Каталог",
 };
 
-function getCampaignTypeLabel(campaignType: number | null): string | null {
-  return campaignType !== null ? (CAMPAIGN_TYPE_LABEL[campaignType] ?? null) : null;
+function getCampaignTypeLabel(campaignType: number | null | undefined): string | null {
+  return campaignType != null ? (CAMPAIGN_TYPE_LABEL[campaignType] ?? null) : null;
 }
 
 function getBidTypeLabel(bidType: string | null): string | null {

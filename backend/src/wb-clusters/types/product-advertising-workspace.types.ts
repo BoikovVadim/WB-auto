@@ -24,7 +24,7 @@ export interface ProductAdvertisingWorkspaceCampaignTotals {
 export interface ProductAdvertisingWorkspaceCampaignTab {
   advertId: number;
   campaignName: string | null;
-  campaignType: number | null;
+  campaignType?: number | null;
   campaignStatus: number | null;
   paymentType: string | null;
   bidType: string | null;
