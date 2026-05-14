@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useRef, useState } from "react";
+import { forwardRef, useCallback, useRef } from "react";
 import { ui } from "../copy";
 import {
   isAdvertisingNumericFilterKey,
@@ -25,9 +25,8 @@ export const ProductAdvertisingClusterTableHeader = forwardRef<
 >(function ProductAdvertisingClusterTableHeader(props, ref) {
   const { stickyOffsets, tableProps } = props;
 
-  // Live preview width during drag — only the header table updates during drag;
-  // the body table snaps to the committed width on mouseup (persisted to localStorage).
-  const [draggingWidth, setDraggingWidth] = useState<number | null>(null);
+  // Drag state ref — stores initial positions; no React state needed during drag
+  // because we update the DOM directly (zero re-renders, smooth 60 fps resize).
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   const handleResizeMouseDown = useCallback(
@@ -35,30 +34,53 @@ export const ProductAdvertisingClusterTableHeader = forwardRef<
       event.preventDefault();
       event.stopPropagation();
 
-      const startX = event.clientX;
+      const tableWrap = (event.target as HTMLElement).closest<HTMLElement>(
+        ".wb-product-workspace-table-wrap",
+      );
+      if (!tableWrap) return;
+
       const startWidth = tableProps.advertisingColumnWidths.clusterName;
-      dragStateRef.current = { startX, startWidth };
+      dragStateRef.current = { startX: event.clientX, startWidth };
+
+      // Capture ALL col elements for the clusterName column across every table
+      // in the wrap (header, body, sticky overlay).
+      const clusterCols = Array.from(
+        tableWrap.querySelectorAll<HTMLTableColElement>('col[data-col-key="clusterName"]'),
+      );
+
+      // Capture all table elements and their current pixel widths.
+      const tables = Array.from(tableWrap.querySelectorAll<HTMLTableElement>("table"));
+      const initialTableWidths = tables.map((t) => t.offsetWidth);
 
       const handleMouseMove = (e: MouseEvent) => {
         if (!dragStateRef.current) return;
         const delta = e.clientX - dragStateRef.current.startX;
-        const next = Math.min(
+        const newWidth = Math.min(
           CLUSTER_NAME_RESIZE_MAX,
           Math.max(CLUSTER_NAME_RESIZE_MIN, Math.round(dragStateRef.current.startWidth + delta)),
         );
-        setDraggingWidth(next);
+        const widthPx = `${String(newWidth)}px`;
+        for (const col of clusterCols) {
+          col.style.width = widthPx;
+          col.style.minWidth = widthPx;
+        }
+        const widthDelta = newWidth - dragStateRef.current.startWidth;
+        tables.forEach((table, i) => {
+          table.style.width = `${String(initialTableWidths[i] + widthDelta)}px`;
+        });
       };
 
       const handleMouseUp = (e: MouseEvent) => {
         if (!dragStateRef.current) return;
         const delta = e.clientX - dragStateRef.current.startX;
-        const final = Math.min(
+        const finalWidth = Math.min(
           CLUSTER_NAME_RESIZE_MAX,
           Math.max(CLUSTER_NAME_RESIZE_MIN, Math.round(dragStateRef.current.startWidth + delta)),
         );
         dragStateRef.current = null;
-        setDraggingWidth(null);
-        tableProps.onClusterNameWidthChange(final);
+        // Commit to React state + localStorage; React re-renders with the same
+        // finalWidth so the DOM settles without any visual jump.
+        tableProps.onClusterNameWidthChange(finalWidth);
         document.removeEventListener("mousemove", handleMouseMove);
         document.removeEventListener("mouseup", handleMouseUp);
       };
@@ -69,24 +91,14 @@ export const ProductAdvertisingClusterTableHeader = forwardRef<
     [tableProps],
   );
 
-  const effectiveWidths =
-    draggingWidth !== null
-      ? { ...tableProps.advertisingColumnWidths, clusterName: draggingWidth }
-      : tableProps.advertisingColumnWidths;
-
-  const effectiveTableWidth =
-    draggingWidth !== null
-      ? props.tableWidth + (draggingWidth - tableProps.advertisingColumnWidths.clusterName)
-      : props.tableWidth;
-
   return (
     <div ref={ref} className="wb-advertising-sticky-header-block">
       <table
         className="wb-data-table wb-data-table--product-sheet wb-data-table--advertising wb-advertising-sticky-header-table"
-        style={{ tableLayout: "fixed", width: `${String(effectiveTableWidth)}px` }}
+        style={{ tableLayout: "fixed", width: `${String(props.tableWidth)}px` }}
       >
         <AdvertisingClusterTableColgroup
-          advertisingColumnWidths={effectiveWidths}
+          advertisingColumnWidths={tableProps.advertisingColumnWidths}
           orderedAdvertisingColumns={tableProps.orderedAdvertisingColumns}
           prefix="sticky-header-col"
         />

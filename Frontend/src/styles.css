@@ -1834,30 +1834,35 @@ input {
   background: #fff;
 }
 
-/* ── Cluster-name column resize handle ────────────────────────────────────── */
+/* ── Cluster-name column: visible separator line + resize handle ─────────── */
 
-/* The th needs a positioning context for the absolute handle */
+/* Permanent right border on every clusterName cell — creates the continuous
+   vertical separator line that runs through the full table height. */
+.wb-advertising-column-cell--cluster {
+  border-right: 1px solid rgba(0, 0, 0, 0.10);
+}
+
+/* The th needs a positioning context for the absolute resize handle */
 .wb-advertising-th--resizable {
   position: relative;
 }
 
-/* Thin grab zone on the right edge of the clusterName header cell */
+/* Grab zone on the right edge of the clusterName header cell.
+   width covers the cell border so the cursor appears right on the line. */
 .wb-advertising-resize-handle {
   position: absolute;
-  right: 0;
+  right: -3px;
   top: 0;
   bottom: 0;
-  width: 6px;
+  width: 7px;
   cursor: col-resize;
   user-select: none;
-  z-index: 2;
-  border-right: 2px solid transparent;
-  transition: border-color 0.15s;
+  z-index: 3;
 }
 
 .wb-advertising-resize-handle:hover,
 .wb-advertising-resize-handle:active {
-  border-right-color: rgba(99, 102, 241, 0.5);
+  background: rgba(99, 102, 241, 0.15);
 }
 
 /* ── Sticky cluster overlay ─────────────────────────────────────────────── */

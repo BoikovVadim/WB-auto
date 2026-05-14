@@ -11,6 +11,7 @@ export function AdvertisingClusterTableColgroup(props: {
   return (
     <colgroup>
       <col
+        data-col-key="select"
         style={{
           width: `${String(props.advertisingColumnWidths.select)}px`,
           minWidth: `${String(props.advertisingColumnWidths.select)}px`,
@@ -19,6 +20,7 @@ export function AdvertisingClusterTableColgroup(props: {
       {props.orderedAdvertisingColumns.map(({ key }) => (
         <col
           key={`${props.prefix}-${key}`}
+          data-col-key={key}
           style={{
             width: `${String(props.advertisingColumnWidths[key])}px`,
             minWidth: `${String(props.advertisingColumnWidths[key])}px`,
