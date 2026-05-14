@@ -35,10 +35,24 @@ export class ProductWorkspaceSnapshotResolver {
       startedAt: string;
     } | null;
   }): Promise<ProductAdvertisingWorkspaceResponse> {
-    // Fast path: when exact dates are known, try exact DB lookup first (no CTE overhead).
-    // If the exact snapshot exists → return immediately.
-    // If NOT found → fall through to CTE to find the closest available snapshot
-    // (stale-while-revalidate: show yesterday's data rather than a blank screen).
+    // SQL-direct fast path: строим workspace shell прямо из PostgreSQL для
+    // запрошенного диапазона — без CTE и без устаревших данных.
+    // Работает для ЛЮБОГО диапазона дат < 150 мс.
+    // Идёт ПЕРВЫМ чтобы гарантировать актуальные данные (placements, bid_type, etc.)
+    // из wb_campaigns, даже если есть старый снапшот без этих полей.
+    if (input.currentPeriod) {
+      const sqlShell = await this.wbClustersRepository.getWorkspaceShellDirectSQL(
+        input.nmId,
+        input.currentPeriod,
+      );
+      if (sqlShell) {
+        return sqlShell;
+      }
+    }
+
+    // Snapshot fallback: используем только когда SQL-direct не вернул данных
+    // (нет кластеров для товара). Старые снапшоты могут не иметь новых полей
+    // (placements и т.д.) — поэтому они идут после SQL-direct.
     if (input.currentPeriod) {
       const storedWorkspace = await this.productWorkspaceRepository.getWorkspaceSnapshot({
         nmId: input.nmId,
@@ -54,20 +68,6 @@ export class ProductWorkspaceSnapshotResolver {
         if (normalizedWorkspace) {
           return normalizedWorkspace;
         }
-      }
-      // Exact period not materialized yet — fall through to CTE below.
-    }
-
-    // SQL-direct fast path: строим workspace shell прямо из PostgreSQL для
-    // запрошенного диапазона — без CTE и без устаревших данных.
-    // Работает для ЛЮБОГО диапазона дат < 150 мс.
-    if (input.currentPeriod) {
-      const sqlShell = await this.wbClustersRepository.getWorkspaceShellDirectSQL(
-        input.nmId,
-        input.currentPeriod,
-      );
-      if (sqlShell) {
-        return sqlShell;
       }
     }
 
