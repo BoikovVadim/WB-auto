@@ -72,7 +72,7 @@ export function useDashboardBrowserEffects(input: {
       }
     };
 
-    const intervalId = window.setInterval(checkForNewFrontendBundle, 10_000);
+    const intervalId = window.setInterval(checkForNewFrontendBundle, 5_000);
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         void checkForNewFrontendBundle();
