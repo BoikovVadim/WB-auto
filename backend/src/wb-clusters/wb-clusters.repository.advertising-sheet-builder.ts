@@ -217,6 +217,8 @@ const response: ProductAdvertisingSheetResponse = {
     campaignStatus: row.campaign_status,
     paymentType: row.payment_type,
     bidType: row.bid_type,
+    placementsSearch: row.placements_search,
+    placementsRecommendations: row.placements_recommendations,
     currency: row.currency,
     name: row.name,
     subjectId: row.subject_id,

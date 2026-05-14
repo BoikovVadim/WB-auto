@@ -25,6 +25,10 @@ export interface PromotionCampaignDetailsItem {
   settings?: {
     name?: string;
     payment_type?: string;
+    placements?: {
+      search?: boolean;
+      recommendations?: boolean;
+    };
   };
   timestamps?: {
     created?: string;

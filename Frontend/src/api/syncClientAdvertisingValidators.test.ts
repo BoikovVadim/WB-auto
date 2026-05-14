@@ -82,6 +82,8 @@ function buildContractSheetFixture(): ContractSheetResponse {
         campaignStatus: 9,
         paymentType: "cpm",
         bidType: "manual",
+        placementsSearch: true,
+        placementsRecommendations: false,
         currency: "RUB",
         name: "Campaign",
         subjectId: 101,

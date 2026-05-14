@@ -273,6 +273,8 @@ export abstract class WbClustersRepositoryCatalogStorage extends WbClustersRepos
       campaignStatus: number | null;
       paymentType: string | null;
       bidType: string | null;
+      placementsSearch: boolean | null;
+      placementsRecommendations: boolean | null;
       currency: string | null;
       syncedAt: string | null;
     }>
@@ -286,6 +288,8 @@ export abstract class WbClustersRepositoryCatalogStorage extends WbClustersRepos
       campaign_status: number | null;
       payment_type: string | null;
       bid_type: string | null;
+      placements_search: boolean | null;
+      placements_recommendations: boolean | null;
       currency: string | null;
       synced_at: string | null;
     }>(
@@ -297,6 +301,8 @@ export abstract class WbClustersRepositoryCatalogStorage extends WbClustersRepos
           c.campaign_status,
           c.payment_type,
           c.bid_type,
+          c.placements_search,
+          c.placements_recommendations,
           c.currency,
           GREATEST(c.synced_at, cp.synced_at)::text AS synced_at
         FROM ${this.tableName("wb_campaign_products")} cp
@@ -317,6 +323,8 @@ export abstract class WbClustersRepositoryCatalogStorage extends WbClustersRepos
       campaignStatus: row.campaign_status,
       paymentType: row.payment_type,
       bidType: row.bid_type,
+      placementsSearch: row.placements_search,
+      placementsRecommendations: row.placements_recommendations,
       currency: row.currency,
       syncedAt: row.synced_at,
     }));

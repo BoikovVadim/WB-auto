@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 
 import {
+  getCampaignAlterStatements,
   getCampaignProductAlterStatements,
   getCatalogAlterStatements,
   getClusterStatsAlterStatements,
@@ -35,6 +36,7 @@ export async function initializeWbClustersSchema(input: {
   await executeSchemaStatements(context, getCoreCreateStatements(context));
   await executeSchemaStatements(context, getSyncRunAlterStatements(context));
   await executeSchemaStatements(context, getCatalogAlterStatements(context));
+  await executeSchemaStatements(context, getCampaignAlterStatements(context));
   await executeSchemaStatements(context, getCampaignProductAlterStatements(context));
   await executeSchemaStatements(context, getClusterCoreCreateStatements(context));
   await executeSchemaStatements(context, getClusterStatsAlterStatements(context));

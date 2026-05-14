@@ -44,6 +44,8 @@ export function normalizeCampaign(
     campaignStatus: value.campaignStatus,
     paymentType: asNonEmptyStringOrNull(value.paymentType),
     bidType: asNonEmptyStringOrNull(value.bidType),
+    placementsSearch: typeof value.placementsSearch === "boolean" ? value.placementsSearch : null,
+    placementsRecommendations: typeof value.placementsRecommendations === "boolean" ? value.placementsRecommendations : null,
     currency: asNonEmptyStringOrNull(value.currency),
     name: asNonEmptyStringOrNull(value.name),
     subjectId: asNumberOrNull(value.subjectId),

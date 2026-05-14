@@ -316,6 +316,8 @@ export class ProductWorkspaceSnapshotResolver {
       campaignStatus: c.campaignStatus,
       paymentType: c.paymentType,
       bidType: c.bidType,
+      placementsSearch: c.placementsSearch ?? null,
+      placementsRecommendations: c.placementsRecommendations ?? null,
       currency: c.currency,
       syncedAt: c.syncedAt,
       rowsCount: 0,

@@ -12,6 +12,8 @@ export abstract class WbClustersRepositoryCampaignEntityPersistence extends WbCl
     createdAtWb: string | null;
     startedAtWb: string | null;
     updatedAtWb: string | null;
+    placementsSearch: boolean | null;
+    placementsRecommendations: boolean | null;
   }) {
     await this.ensureSchemaOrThrow();
     const pool = this.getPool();
@@ -30,8 +32,10 @@ export abstract class WbClustersRepositoryCampaignEntityPersistence extends WbCl
           created_at_wb,
           started_at_wb,
           updated_at_wb,
+          placements_search,
+          placements_recommendations,
           synced_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
         ON CONFLICT (advert_id) DO UPDATE
         SET
           campaign_type = EXCLUDED.campaign_type,
@@ -44,6 +48,8 @@ export abstract class WbClustersRepositoryCampaignEntityPersistence extends WbCl
           created_at_wb = EXCLUDED.created_at_wb,
           started_at_wb = EXCLUDED.started_at_wb,
           updated_at_wb = EXCLUDED.updated_at_wb,
+          placements_search = EXCLUDED.placements_search,
+          placements_recommendations = EXCLUDED.placements_recommendations,
           synced_at = NOW()
       `,
       [
@@ -58,6 +64,8 @@ export abstract class WbClustersRepositoryCampaignEntityPersistence extends WbCl
         input.createdAtWb,
         input.startedAtWb,
         input.updatedAtWb,
+        input.placementsSearch,
+        input.placementsRecommendations,
       ],
     );
   }

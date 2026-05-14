@@ -38,6 +38,8 @@ export abstract class WbClustersRepositoryAdvertisingSheetCoreQueryLoader extend
           campaign_status: number;
           payment_type: string | null;
           bid_type: string | null;
+          placements_search: boolean | null;
+          placements_recommendations: boolean | null;
           currency: string | null;
           name: string | null;
           subject_id: number | null;
@@ -55,6 +57,8 @@ export abstract class WbClustersRepositoryAdvertisingSheetCoreQueryLoader extend
           c.campaign_status,
           c.payment_type,
           c.bid_type,
+          c.placements_search,
+          c.placements_recommendations,
           c.currency,
           c.name,
           cp.subject_id,

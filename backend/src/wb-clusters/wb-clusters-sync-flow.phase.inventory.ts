@@ -139,6 +139,8 @@ export async function runInventorySyncPhase(self: WbClustersService, syncRunId: 
       updatedAtWb: self.readOptionalString(
         detail?.timestamps?.updated ?? storedCampaign?.updatedAtWb,
       ),
+      placementsSearch: detail?.settings?.placements?.search ?? storedCampaign?.placementsSearch ?? null,
+      placementsRecommendations: detail?.settings?.placements?.recommendations ?? storedCampaign?.placementsRecommendations ?? null,
     });
 
     if (detailProducts.length > 0) {

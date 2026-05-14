@@ -28,6 +28,8 @@ export interface ProductAdvertisingWorkspaceCampaignTab {
   campaignStatus: number | null;
   paymentType: string | null;
   bidType: string | null;
+  placementsSearch?: boolean | null;
+  placementsRecommendations?: boolean | null;
   currency: string | null;
   syncedAt: string | null;
   rowsCount: number;

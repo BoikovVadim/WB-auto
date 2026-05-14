@@ -17,6 +17,8 @@ export abstract class WbClustersRepositoryCampaignInventoryRead extends WbCluste
         createdAtWb: string | null;
         startedAtWb: string | null;
         updatedAtWb: string | null;
+        placementsSearch: boolean | null;
+        placementsRecommendations: boolean | null;
         products: Array<{
           nmId: number;
           subjectId: number | null;
@@ -43,6 +45,8 @@ export abstract class WbClustersRepositoryCampaignInventoryRead extends WbCluste
           c.created_at_wb::text AS created_at_wb,
           c.started_at_wb::text AS started_at_wb,
           c.updated_at_wb::text AS updated_at_wb,
+          c.placements_search,
+          c.placements_recommendations,
           cp.nm_id::text AS nm_id,
           cp.subject_id,
           cp.subject_name,
@@ -69,6 +73,8 @@ export abstract class WbClustersRepositoryCampaignInventoryRead extends WbCluste
         createdAtWb: string | null;
         startedAtWb: string | null;
         updatedAtWb: string | null;
+        placementsSearch: boolean | null;
+        placementsRecommendations: boolean | null;
         products: Array<{
           nmId: number;
           subjectId: number | null;
@@ -99,6 +105,8 @@ export abstract class WbClustersRepositoryCampaignInventoryRead extends WbCluste
           createdAtWb: row.created_at_wb,
           startedAtWb: row.started_at_wb,
           updatedAtWb: row.updated_at_wb,
+          placementsSearch: (row as { placements_search?: boolean | null }).placements_search ?? null,
+          placementsRecommendations: (row as { placements_recommendations?: boolean | null }).placements_recommendations ?? null,
           products: [],
         };
         inventory.set(advertId, entry);

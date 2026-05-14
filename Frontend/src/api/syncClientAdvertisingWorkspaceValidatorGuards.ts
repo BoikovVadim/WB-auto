@@ -31,6 +31,8 @@ export function isProductAdvertisingWorkspaceCampaignTab(
     isNullableNumber(value.campaignStatus) &&
     isNullableNonEmptyString(value.paymentType) &&
     isNullableNonEmptyString(value.bidType) &&
+    (value.placementsSearch === undefined || value.placementsSearch === null || typeof value.placementsSearch === "boolean") &&
+    (value.placementsRecommendations === undefined || value.placementsRecommendations === null || typeof value.placementsRecommendations === "boolean") &&
     isNullableNonEmptyString(value.currency) &&
     isNullableIsoDateString(value.syncedAt) &&
     typeof value.rowsCount === "number" &&

@@ -9,17 +9,17 @@ import {
 } from "./clusterTableView";
 import { formatAdvertisingCampaignStatus } from "./model";
 
-const CAMPAIGN_TYPE_LABEL: Record<number, string> = {
-  4: "Каталог",
-  5: "Карточка",
-  6: "Поиск",
-  7: "Рекомендации",
-  8: "Авто",
-  9: "Поиск+Каталог",
-};
-
-function getCampaignTypeLabel(campaignType: number | null | undefined): string | null {
-  return campaignType != null ? (CAMPAIGN_TYPE_LABEL[campaignType] ?? null) : null;
+function getPlacementsLabel(
+  placementsSearch: boolean | null | undefined,
+  placementsRecommendations: boolean | null | undefined,
+): string | null {
+  const search = placementsSearch === true;
+  const rec = placementsRecommendations === true;
+  if (search && rec) return "Поиск+Рекомендации";
+  if (search) return "Поиск";
+  if (rec) return "Рекомендации";
+  if (placementsSearch === null && placementsRecommendations === null) return null;
+  return null;
 }
 
 function getBidTypeLabel(bidType: string | null): string | null {
@@ -138,9 +138,9 @@ export function ProductAdvertisingClusterOverview(
                 <span style={{ display: "block", fontSize: "11px", fontWeight: 600, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {getAdvertisingCampaignLabel(item)}
                 </span>
-                {(getCampaignTypeLabel(item.campaignType) ?? getBidTypeLabel(item.bidType)) && (
+                {(getPlacementsLabel(item.placementsSearch, item.placementsRecommendations) ?? getBidTypeLabel(item.bidType)) && (
                   <span style={{ display: "block", fontSize: "10px", fontWeight: 400, lineHeight: 1.2, opacity: 0.6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {[getCampaignTypeLabel(item.campaignType), getBidTypeLabel(item.bidType)]
+                    {[getPlacementsLabel(item.placementsSearch, item.placementsRecommendations), getBidTypeLabel(item.bidType)]
                       .filter(Boolean)
                       .join(" · ")}
                   </span>

@@ -35,6 +35,8 @@ export interface ProductAdvertisingCampaign {
   campaignStatus: number;
   paymentType: string | null;
   bidType: string | null;
+  placementsSearch: boolean | null;
+  placementsRecommendations: boolean | null;
   currency: string | null;
   name: string | null;
   subjectId: number | null;

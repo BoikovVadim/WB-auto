@@ -402,6 +402,8 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
       campaign_status: number | null;
       payment_type: string | null;
       bid_type: string | null;
+      placements_search: boolean | null;
+      placements_recommendations: boolean | null;
       currency: string | null;
       synced_at: string | null;
       active_count: string;
@@ -465,6 +467,8 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
         cam.campaign_status,
         cam.payment_type,
         cam.bid_type,
+        cam.placements_search,
+        cam.placements_recommendations,
         COALESCE(pa.currency, cam.currency)               AS currency,
         cam.synced_at::text,
         COALESCE(cc.active_count, 0)::text                AS active_count,
@@ -540,6 +544,8 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
         campaignStatus: row.campaign_status,
         paymentType: row.payment_type,
         bidType: row.bid_type,
+        placementsSearch: row.placements_search,
+        placementsRecommendations: row.placements_recommendations,
         currency: row.currency,
         syncedAt: row.synced_at,
         rowsCount: n(row.total_count) ?? 0,

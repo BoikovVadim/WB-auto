@@ -38,6 +38,21 @@ export function getSyncRunAlterStatements({
   ];
 }
 
+export function getCampaignAlterStatements({
+  tableName,
+}: WbClustersSchemaContext): string[] {
+  return [
+    `
+      ALTER TABLE ${tableName("wb_campaigns")}
+      ADD COLUMN IF NOT EXISTS placements_search BOOLEAN NULL
+    `,
+    `
+      ALTER TABLE ${tableName("wb_campaigns")}
+      ADD COLUMN IF NOT EXISTS placements_recommendations BOOLEAN NULL
+    `,
+  ];
+}
+
 export function getCampaignProductAlterStatements({
   tableName,
 }: WbClustersSchemaContext): string[] {
