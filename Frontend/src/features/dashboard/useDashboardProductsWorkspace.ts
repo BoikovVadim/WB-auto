@@ -34,7 +34,7 @@ type ProductOption = {
   nmId: number | null;
 };
 
-export type ProductListSortKey = "name" | "total" | "active" | "paused" | "disabled";
+export type ProductListSortKey = "id" | "name" | "total" | "active" | "paused" | "disabled";
 
 export function useDashboardProductsWorkspace(input: {
   activeSection: "exports" | "method" | "products" | "jam" | "catalog" | "campaigns" | "sync-runs" | "cluster-stats" | "daily-stats" | "minus-phrases" | "query-frequencies";
@@ -79,6 +79,8 @@ export function useDashboardProductsWorkspace(input: {
         const normalize = (s: string) =>
           s.trim().replace(/[-_/\\]+/g, " ").replace(/\s+/g, " ").toLocaleLowerCase("ru");
         result = normalize(left.vendorCode).localeCompare(normalize(right.vendorCode), "ru");
+      } else if (input.productsSortKey === "id") {
+        result = (left.nmId ?? 0) - (right.nmId ?? 0);
       } else {
         const getCnt = (p: typeof left): number => {
           switch (input.productsSortKey) {

@@ -312,7 +312,7 @@ export function useDashboardProductActions(input: {
         return currentKey;
       }
       // Новая колонка — переключаемся на неё с направлением по умолчанию.
-      setProductsSortDirection(key === "name" ? "asc" : "desc");
+      setProductsSortDirection(key === "name" ? "asc" : "desc"); // id/метрики → убывание
       return key;
     });
   }, [setProductsSortKey, setProductsSortDirection, setStatusNotice]);

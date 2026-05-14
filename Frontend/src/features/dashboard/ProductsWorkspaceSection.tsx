@@ -132,8 +132,30 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
               </colgroup>
               <thead>
                 <tr>
-                  <th>{ui.rowNumber}</th>
-                  <th>{ui.productIdColumn}</th>
+                  <th>
+                    <button
+                      className="wb-products-sort-button"
+                      type="button"
+                      onClick={() => props.onProductsSortToggle("id")}
+                    >
+                      <span>{ui.rowNumber}</span>
+                      <span className={props.productsSortKey === "id" ? "wb-sort-arrow--active" : "wb-sort-arrow--inactive"}>
+                        {props.productsSortKey === "id" ? (props.productsSortDirection === "asc" ? "\u2191" : "\u2193") : "\u2195"}
+                      </span>
+                    </button>
+                  </th>
+                  <th>
+                    <button
+                      className="wb-products-sort-button"
+                      type="button"
+                      onClick={() => props.onProductsSortToggle("id")}
+                    >
+                      <span>{ui.productIdColumn}</span>
+                      <span className={props.productsSortKey === "id" ? "wb-sort-arrow--active" : "wb-sort-arrow--inactive"}>
+                        {props.productsSortKey === "id" ? (props.productsSortDirection === "asc" ? "\u2191" : "\u2193") : "\u2195"}
+                      </span>
+                    </button>
+                  </th>
                   <th>
                     <button
                       className="wb-products-sort-button"
