@@ -34,7 +34,9 @@ export type ProductAdvertisingClusterDataTableProps = Pick<
   | "copiedQueryKey"
   | "onCopyQueryText"
   | "onClusterNameWidthChange"
->;
+> & {
+  emptySearchMessage?: string;
+};
 
 export type ProductAdvertisingClusterCellRendererInput = {
   row: ProductAdvertisingWorkspaceClusterRow;

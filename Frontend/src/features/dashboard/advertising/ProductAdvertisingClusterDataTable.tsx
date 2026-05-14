@@ -354,15 +354,21 @@ export function ProductAdvertisingClusterDataTable(
         </div>
       ) : null}
 
-      <ProductAdvertisingClusterTableBody
-        stickyOffsets={stickyOffsets}
-        tableProps={props}
-        bodyEntries={bodyEntries}
-        topSpacerHeight={0}
-        bottomSpacerHeight={0}
-        tableWidth={totalWidth}
-        hiddenClusterKey={stuckClusterKey}
-      />
+      {bodyEntries.length === 0 && props.emptySearchMessage ? (
+        <p className="wb-empty-copy" style={{ paddingTop: 20, paddingBottom: 20 }}>
+          {props.emptySearchMessage}
+        </p>
+      ) : (
+        <ProductAdvertisingClusterTableBody
+          stickyOffsets={stickyOffsets}
+          tableProps={props}
+          bodyEntries={bodyEntries}
+          topSpacerHeight={0}
+          bottomSpacerHeight={0}
+          tableWidth={totalWidth}
+          hiddenClusterKey={stuckClusterKey}
+        />
+      )}
     </div>
   );
 }

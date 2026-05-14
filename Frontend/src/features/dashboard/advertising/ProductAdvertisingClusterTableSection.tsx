@@ -161,13 +161,10 @@ export function ProductAdvertisingClusterTableSection(
             className="wb-advertising-cluster-table-wrap"
             style={props.isClusterTableRefreshing ? { opacity: 0.45, pointerEvents: "none", transition: "opacity 0.15s" } : { transition: "opacity 0.15s" }}
           >
-            {isSearchHidingAllRows ? (
-              <p className="wb-empty-copy" style={{ paddingTop: 24 }}>
-                {ui.noClustersForSearch}
-              </p>
-            ) : (
-              <ProductAdvertisingClusterDataTable {...props} />
-            )}
+            <ProductAdvertisingClusterDataTable
+              {...props}
+              emptySearchMessage={isSearchHidingAllRows ? ui.noClustersForSearch : undefined}
+            />
           </div>
         ) : showSkeleton ? (
           <ClusterTableSkeleton />
