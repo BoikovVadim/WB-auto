@@ -72,8 +72,9 @@ export function useDashboardProductsWorkspace(input: {
     return [...productCatalogItems].sort((left, right) => {
       let result: number;
       if (input.productsSortKey === "name") {
-        // numeric:true → "animal cage 107" корректно выше "animal cage 12"
-        result = left.vendorCode.localeCompare(right.vendorCode, "ru", { numeric: true });
+        // Побуквенное сравнение: "cage 107" < "cage 12" потому что '0' < '2' на позиции 7.
+        // "cage" < "cage 12" потому что короткое слово-префикс идёт первым.
+        result = left.vendorCode.localeCompare(right.vendorCode, "ru");
       } else {
         const getCnt = (p: typeof left): number => {
           switch (input.productsSortKey) {

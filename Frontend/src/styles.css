@@ -1103,6 +1103,15 @@ input {
   cursor: pointer;
 }
 
+.wb-sort-arrow--active {
+  opacity: 1;
+}
+
+.wb-sort-arrow--inactive {
+  opacity: 0.3;
+  font-weight: 400;
+}
+
 .wb-products-link {
   padding: 0;
   border: none;

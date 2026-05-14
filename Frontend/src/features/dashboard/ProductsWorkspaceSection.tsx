@@ -141,9 +141,9 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                       onClick={() => props.onProductsSortToggle("name")}
                     >
                       <span>{ui.productNameColumn}</span>
-                      {props.productsSortKey === "name" && (
-                        <span>{props.productsSortDirection === "asc" ? "\u2191" : "\u2193"}</span>
-                      )}
+                      <span className={props.productsSortKey === "name" ? "wb-sort-arrow--active" : "wb-sort-arrow--inactive"}>
+                        {props.productsSortKey === "name" ? (props.productsSortDirection === "asc" ? "\u2191" : "\u2193") : "\u2195"}
+                      </span>
                     </button>
                   </th>
                   <th className="wb-table-cell--numeric wb-products-campaign-count-th" title="Всего РК">
@@ -153,9 +153,9 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                       onClick={() => props.onProductsSortToggle("total")}
                     >
                       <span>РК</span>
-                      {props.productsSortKey === "total" && (
-                        <span>{props.productsSortDirection === "asc" ? "\u2191" : "\u2193"}</span>
-                      )}
+                      <span className={props.productsSortKey === "total" ? "wb-sort-arrow--active" : "wb-sort-arrow--inactive"}>
+                        {props.productsSortKey === "total" ? (props.productsSortDirection === "asc" ? "\u2191" : "\u2193") : "\u2195"}
+                      </span>
                     </button>
                   </th>
                   <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-active-th" title="Включённые РК">
@@ -165,9 +165,9 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                       onClick={() => props.onProductsSortToggle("active")}
                     >
                       <span>Вкл</span>
-                      {props.productsSortKey === "active" && (
-                        <span>{props.productsSortDirection === "asc" ? "\u2191" : "\u2193"}</span>
-                      )}
+                      <span className={props.productsSortKey === "active" ? "wb-sort-arrow--active" : "wb-sort-arrow--inactive"}>
+                        {props.productsSortKey === "active" ? (props.productsSortDirection === "asc" ? "\u2191" : "\u2193") : "\u2195"}
+                      </span>
                     </button>
                   </th>
                   <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-paused-th" title="Приостановленные РК">
@@ -177,9 +177,9 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                       onClick={() => props.onProductsSortToggle("paused")}
                     >
                       <span>Пауза</span>
-                      {props.productsSortKey === "paused" && (
-                        <span>{props.productsSortDirection === "asc" ? "\u2191" : "\u2193"}</span>
-                      )}
+                      <span className={props.productsSortKey === "paused" ? "wb-sort-arrow--active" : "wb-sort-arrow--inactive"}>
+                        {props.productsSortKey === "paused" ? (props.productsSortDirection === "asc" ? "\u2191" : "\u2193") : "\u2195"}
+                      </span>
                     </button>
                   </th>
                   <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-disabled-th" title="Выключенные РК">
@@ -189,9 +189,9 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                       onClick={() => props.onProductsSortToggle("disabled")}
                     >
                       <span>Выкл</span>
-                      {props.productsSortKey === "disabled" && (
-                        <span>{props.productsSortDirection === "asc" ? "\u2191" : "\u2193"}</span>
-                      )}
+                      <span className={props.productsSortKey === "disabled" ? "wb-sort-arrow--active" : "wb-sort-arrow--inactive"}>
+                        {props.productsSortKey === "disabled" ? (props.productsSortDirection === "asc" ? "\u2191" : "\u2193") : "\u2195"}
+                      </span>
                     </button>
                   </th>
                 </tr>
