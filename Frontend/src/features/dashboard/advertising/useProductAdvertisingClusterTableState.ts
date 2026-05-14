@@ -71,7 +71,7 @@ export function useProductAdvertisingClusterTableState(input: {
     clusterDailyStatsBounds,
     selectedCampaign,
     setSelectedCampaignId,
-  } = useAdvertisingCampaignSelection(workspace);
+  } = useAdvertisingCampaignSelection(nmId, workspace);
   const {
     clusterSearch,
     setClusterSearch,
