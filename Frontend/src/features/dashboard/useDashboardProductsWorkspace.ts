@@ -34,6 +34,8 @@ type ProductOption = {
   nmId: number | null;
 };
 
+export type ProductListSortKey = "name" | "total" | "active" | "paused" | "disabled";
+
 export function useDashboardProductsWorkspace(input: {
   activeSection: "exports" | "method" | "products" | "jam" | "catalog" | "campaigns" | "sync-runs" | "cluster-stats" | "daily-stats" | "minus-phrases" | "query-frequencies";
   productsMode: "list" | "detail";
@@ -43,6 +45,7 @@ export function useDashboardProductsWorkspace(input: {
   selectedCatalogVendorCode: string | null;
   selectedProductNmId: number | null;
   productsSearch: string;
+  productsSortKey: ProductListSortKey;
   productsSortDirection: "asc" | "desc";
   productAdvertisingDetailRevisions: ProductAdvertisingDetailRevisions;
   setError: (value: string | null) => void;
@@ -67,10 +70,25 @@ export function useDashboardProductsWorkspace(input: {
   const deferredProductsSearch = useDeferredValue(input.productsSearch);
   const sortedProducts = useMemo(() => {
     return [...productCatalogItems].sort((left, right) => {
-      const result = left.vendorCode.localeCompare(right.vendorCode, "ru");
+      let result: number;
+      if (input.productsSortKey === "name") {
+        // numeric:true → "animal cage 107" корректно выше "animal cage 12"
+        result = left.vendorCode.localeCompare(right.vendorCode, "ru", { numeric: true });
+      } else {
+        const getCnt = (p: typeof left): number => {
+          switch (input.productsSortKey) {
+            case "total":    return p.campaignCounts.total;
+            case "active":   return p.campaignCounts.active;
+            case "paused":   return p.campaignCounts.paused;
+            case "disabled": return p.campaignCounts.disabled;
+            default:         return 0;
+          }
+        };
+        result = getCnt(left) - getCnt(right);
+      }
       return input.productsSortDirection === "asc" ? result : -result;
     });
-  }, [input.productsSortDirection, productCatalogItems]);
+  }, [input.productsSortKey, input.productsSortDirection, productCatalogItems]);
 
   const filteredProducts = useMemo(() => {
     const normalizedQuery = deferredProductsSearch.trim().toLocaleLowerCase("ru");

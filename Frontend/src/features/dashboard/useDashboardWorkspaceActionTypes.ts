@@ -76,6 +76,7 @@ export type DashboardWorkspaceActionsInput = {
   setIsExportLoading: Dispatch<SetStateAction<boolean>>;
   setIsAdvertisingSyncStarting: Dispatch<SetStateAction<boolean>>;
   setProductAdvertisingDateRange: Dispatch<SetStateAction<AdvertisingDateRange>>;
+  setProductsSortKey: Dispatch<SetStateAction<import("./useDashboardProductsWorkspace").ProductListSortKey>>;
   setProductsSortDirection: Dispatch<SetStateAction<"asc" | "desc">>;
   setExportHistory: Dispatch<SetStateAction<WbExportListItem[]>>;
   setExportMethods: Dispatch<SetStateAction<ExportMethodStatus[]>>;

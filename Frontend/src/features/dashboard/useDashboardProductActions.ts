@@ -16,6 +16,7 @@ import type {
   DashboardOpenExportOptions,
   DashboardWorkspaceActionsInput,
 } from "./useDashboardWorkspaceActionTypes";
+import type { ProductListSortKey } from "./useDashboardProductsWorkspace";
 
 export function useDashboardProductActions(input: {
   currentExport: DashboardWorkspaceActionsInput["currentExport"];
@@ -35,6 +36,7 @@ export function useDashboardProductActions(input: {
   setStatusNotice: DashboardWorkspaceActionsInput["setStatusNotice"];
   setIsAdvertisingSyncStarting: DashboardWorkspaceActionsInput["setIsAdvertisingSyncStarting"];
   setProductAdvertisingDateRange: DashboardWorkspaceActionsInput["setProductAdvertisingDateRange"];
+  setProductsSortKey: DashboardWorkspaceActionsInput["setProductsSortKey"];
   setProductsSortDirection: DashboardWorkspaceActionsInput["setProductsSortDirection"];
   prefetchSavedExport: (
     entityType: DashboardWorkspaceActionsInput["primaryEntityType"],
@@ -65,6 +67,7 @@ export function useDashboardProductActions(input: {
     setStatusNotice,
     setIsAdvertisingSyncStarting,
     setProductAdvertisingDateRange,
+    setProductsSortKey,
     setProductsSortDirection,
     prefetchSavedExport,
     openExport,
@@ -294,17 +297,25 @@ export function useDashboardProductActions(input: {
     openProductsList();
   }, [openProductsList]);
 
-  const handleProductsSortToggle = useCallback(() => {
+  const handleProductsSortToggle = useCallback((key: ProductListSortKey) => {
     setStatusNotice(null);
     startAdvertisingUxBudget(
       "products:list-search",
       "products list search or sort visible",
       advertisingUxBudgetsMs.productsSearchVisible,
     );
-    setProductsSortDirection((currentValue) =>
-      currentValue === "asc" ? "desc" : "asc",
-    );
-  }, [setProductsSortDirection, setStatusNotice]);
+    // Читаем текущий ключ через функциональный апдейт, чтобы не создавать лишних зависимостей.
+    setProductsSortKey((currentKey) => {
+      if (key === currentKey) {
+        // Та же колонка — инвертируем направление.
+        setProductsSortDirection((dir) => dir === "asc" ? "desc" : "asc");
+        return currentKey;
+      }
+      // Новая колонка — переключаемся на неё с направлением по умолчанию.
+      setProductsSortDirection(key === "name" ? "asc" : "desc");
+      return key;
+    });
+  }, [setProductsSortKey, setProductsSortDirection, setStatusNotice]);
 
   return {
     openProductsWorkspace,

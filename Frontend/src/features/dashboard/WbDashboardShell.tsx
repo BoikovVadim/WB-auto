@@ -44,6 +44,7 @@ type WbDashboardShellProps = {
   hasCatalogItems: boolean;
   isCatalogLoading: boolean;
   filteredProducts: DashboardProductOption[];
+  productsSortKey: import("./useDashboardProductsWorkspace").ProductListSortKey;
   productsSortDirection: "asc" | "desc";
   detailWorkspace: ReactNode;
   currentMethod: ExportMethodStatus | null;
@@ -80,7 +81,7 @@ type WbDashboardShellProps = {
   onOpenMethod: (entityType: SyncEntity) => void;
   onPrefetchMethod: (entityType: SyncEntity) => void;
   onProductsSearchChange: (value: string) => void;
-  onProductsSortToggle: () => void;
+  onProductsSortToggle: (key: import("./useDashboardProductsWorkspace").ProductListSortKey) => void;
   onProductOpen: (product: DashboardProductOption) => void;
   onProductHover: (nmId: number | null) => void;
   onProductFocus: (nmId: number | null) => void;
@@ -105,6 +106,7 @@ export function WbDashboardShell({
   hasCatalogItems,
   isCatalogLoading,
   filteredProducts,
+  productsSortKey,
   productsSortDirection,
   detailWorkspace,
   currentMethod,
@@ -229,6 +231,7 @@ export function WbDashboardShell({
               hasCatalogItems={hasCatalogItems}
               isCatalogLoading={isCatalogLoading}
               filteredProducts={filteredProducts}
+              productsSortKey={productsSortKey}
               productsSortDirection={productsSortDirection}
               onProductsSearchChange={onProductsSearchChange}
               onProductsSortToggle={onProductsSortToggle}

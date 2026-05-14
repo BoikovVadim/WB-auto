@@ -5,6 +5,7 @@ import {
   loadScrollPosition,
   saveScrollPosition,
 } from "./persistence/scrollPositionPersistence";
+import type { ProductListSortKey } from "./useDashboardProductsWorkspace";
 
 const PRODUCT_LIST_SCROLL_KEY = "products-list";
 
@@ -21,8 +22,9 @@ type ProductsWorkspaceSectionProps = {
   resolvedCatalogProduct: ProductListItem | null;
   filteredProducts: ProductListItem[];
   detailWorkspace: ReactNode;
+  productsSortKey: ProductListSortKey;
   productsSortDirection: "asc" | "desc";
-  onProductsSortToggle: () => void;
+  onProductsSortToggle: (key: ProductListSortKey) => void;
   onProductOpen: (product: ProductListItem) => void;
   onProductHover: (nmId: number | null) => void;
   onProductFocus: (nmId: number | null) => void;
@@ -136,16 +138,62 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                     <button
                       className="wb-products-sort-button"
                       type="button"
-                      onClick={props.onProductsSortToggle}
+                      onClick={() => props.onProductsSortToggle("name")}
                     >
                       <span>{ui.productNameColumn}</span>
-                      <span>{props.productsSortDirection === "asc" ? "\u2191" : "\u2193"}</span>
+                      {props.productsSortKey === "name" && (
+                        <span>{props.productsSortDirection === "asc" ? "\u2191" : "\u2193"}</span>
+                      )}
                     </button>
                   </th>
-                  <th className="wb-table-cell--numeric wb-products-campaign-count-th" title="Всего РК">РК всего</th>
-                  <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-active-th" title="Включённые РК">Вкл</th>
-                  <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-paused-th" title="Приостановленные РК">Пауза</th>
-                  <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-disabled-th" title="Выключенные РК">Выкл</th>
+                  <th className="wb-table-cell--numeric wb-products-campaign-count-th" title="Всего РК">
+                    <button
+                      className="wb-products-sort-button"
+                      type="button"
+                      onClick={() => props.onProductsSortToggle("total")}
+                    >
+                      <span>РК</span>
+                      {props.productsSortKey === "total" && (
+                        <span>{props.productsSortDirection === "asc" ? "\u2191" : "\u2193"}</span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-active-th" title="Включённые РК">
+                    <button
+                      className="wb-products-sort-button"
+                      type="button"
+                      onClick={() => props.onProductsSortToggle("active")}
+                    >
+                      <span>Вкл</span>
+                      {props.productsSortKey === "active" && (
+                        <span>{props.productsSortDirection === "asc" ? "\u2191" : "\u2193"}</span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-paused-th" title="Приостановленные РК">
+                    <button
+                      className="wb-products-sort-button"
+                      type="button"
+                      onClick={() => props.onProductsSortToggle("paused")}
+                    >
+                      <span>Пауза</span>
+                      {props.productsSortKey === "paused" && (
+                        <span>{props.productsSortDirection === "asc" ? "\u2191" : "\u2193"}</span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-disabled-th" title="Выключенные РК">
+                    <button
+                      className="wb-products-sort-button"
+                      type="button"
+                      onClick={() => props.onProductsSortToggle("disabled")}
+                    >
+                      <span>Выкл</span>
+                      {props.productsSortKey === "disabled" && (
+                        <span>{props.productsSortDirection === "asc" ? "\u2191" : "\u2193"}</span>
+                      )}
+                    </button>
+                  </th>
                 </tr>
                 {props.filteredProducts.length > 0 ? (
                   <tr className="wb-products-totals-row">
@@ -232,6 +280,7 @@ function areProductsWorkspaceSectionPropsEqual(
     previousProps.hasCatalogItems === nextProps.hasCatalogItems &&
     previousProps.isCatalogLoading === nextProps.isCatalogLoading &&
     previousProps.productsMode === nextProps.productsMode &&
+    previousProps.productsSortKey === nextProps.productsSortKey &&
     previousProps.productsSortDirection === nextProps.productsSortDirection &&
     previousProps.filteredProducts === nextProps.filteredProducts &&
     previousProps.onProductsSortToggle === nextProps.onProductsSortToggle &&

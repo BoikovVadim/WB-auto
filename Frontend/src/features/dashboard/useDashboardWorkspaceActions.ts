@@ -49,6 +49,7 @@ export function useDashboardWorkspaceActions(input: DashboardWorkspaceActionsInp
     setStatusNotice: input.setStatusNotice,
     setIsAdvertisingSyncStarting: input.setIsAdvertisingSyncStarting,
     setProductAdvertisingDateRange: input.setProductAdvertisingDateRange,
+    setProductsSortKey: input.setProductsSortKey,
     setProductsSortDirection: input.setProductsSortDirection,
     prefetchSavedExport,
     openExport,

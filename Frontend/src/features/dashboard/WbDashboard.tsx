@@ -115,9 +115,8 @@ export function WbDashboard() {
   const [isExportLoading, setIsExportLoading] = useState(false);
   const [isArchiveLoading, setIsArchiveLoading] = useState(false);
   const [productsSearch, setProductsSearch] = useState("");
-  const [productsSortDirection, setProductsSortDirection] = useState<"asc" | "desc">(
-    "asc",
-  );
+  const [productsSortKey, setProductsSortKey] = useState<import("./useDashboardProductsWorkspace").ProductListSortKey>("name");
+  const [productsSortDirection, setProductsSortDirection] = useState<"asc" | "desc">("asc");
   const invalidateProductAdvertisingDetail = useCallback(
     (target: ProductAdvertisingDetailInvalidationTarget = "all") => {
       setProductAdvertisingDetailRevisions((currentValue) =>
@@ -201,6 +200,7 @@ export function WbDashboard() {
     selectedCatalogVendorCode,
     selectedProductNmId,
     productsSearch,
+    productsSortKey,
     productsSortDirection,
     productAdvertisingDetailRevisions,
     setError,
@@ -261,6 +261,7 @@ export function WbDashboard() {
     setIsExportLoading,
     setIsAdvertisingSyncStarting,
     setProductAdvertisingDateRange,
+    setProductsSortKey,
     setProductsSortDirection,
     setExportHistory,
     setExportMethods,
@@ -386,6 +387,7 @@ export function WbDashboard() {
       hasCatalogItems={productCatalogItems.length > 0}
       isCatalogLoading={isProductCatalogLoading}
       filteredProducts={filteredProducts}
+      productsSortKey={productsSortKey}
       productsSortDirection={productsSortDirection}
       detailWorkspace={detailWorkspace}
       currentMethod={currentMethod}

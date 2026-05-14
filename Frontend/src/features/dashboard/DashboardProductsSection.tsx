@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { ui } from "./copy";
 import { ProductsWorkspaceSection } from "./ProductsWorkspaceSection";
+import type { ProductListSortKey } from "./useDashboardProductsWorkspace";
 
 type ProductListItem = {
   vendorCode: string;
@@ -17,10 +18,11 @@ type DashboardProductsSectionProps = {
   hasCatalogItems: boolean;
   isCatalogLoading: boolean;
   filteredProducts: ProductListItem[];
+  productsSortKey: ProductListSortKey;
   productsSortDirection: "asc" | "desc";
   detailWorkspace: ReactNode;
   onProductsSearchChange: (value: string) => void;
-  onProductsSortToggle: () => void;
+  onProductsSortToggle: (key: ProductListSortKey) => void;
   onProductOpen: (product: ProductListItem) => void;
   onProductHover: (nmId: number | null) => void;
   onProductFocus: (nmId: number | null) => void;
@@ -68,6 +70,7 @@ export function DashboardProductsSection(props: DashboardProductsSectionProps) {
         productsMode={props.productsMode}
         resolvedCatalogProduct={props.resolvedCatalogProduct}
         filteredProducts={props.filteredProducts}
+        productsSortKey={props.productsSortKey}
         productsSortDirection={props.productsSortDirection}
         onProductsSortToggle={props.onProductsSortToggle}
         onProductOpen={props.onProductOpen}
