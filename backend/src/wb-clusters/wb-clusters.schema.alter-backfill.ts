@@ -178,6 +178,75 @@ export function getClusterKeyMigrationStatements({
           OR cluster_key ~ '^[0-9]+:excluded:'
         )
     `,
+    // Rebuild cluster_key to use the punctuation-preserving normalizer (normalizeQuery),
+    // matching the normalized_cluster_name column. The old key used the punctuation-
+    // stripping normalizeAdvertisingIdentity, so punctuation-only-different names collided
+    // and one silently overwrote the other.
+    //
+    // Migrating the PK requires three idempotent steps (validated against prod via a
+    // BEGIN/ROLLBACK dry run before shipping):
+    //   1. wb_cluster_stats FK -> ON UPDATE CASCADE, so a parent rekey carries its
+    //      stats children along (the FK previously had no ON UPDATE action and blocked
+    //      key updates entirely, which crashed an earlier attempt).
+    //   2. Dedup: rows that recompute to the same new key are pre-existing duplicates of
+    //      one logical cluster (e.g. an 'active' row later demoted to 'stats' kept its old
+    //      key). Keep one canonical row per new key; the rest are deleted (their stats
+    //      children cascade-delete and re-sync on the next stats pull).
+    //   3. Two-step rekey via a unique temporary key (ctid) to avoid transient PK
+    //      collisions where one row's NEW key equals another's OLD key mid-update.
+    // All steps are idempotent: after the first run their WHERE clauses match nothing.
+    `
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'wb_cluster_stats_cluster_key_fkey'
+            AND confupdtype = 'c'
+        ) THEN
+          ALTER TABLE ${tableName("wb_cluster_stats")}
+            DROP CONSTRAINT IF EXISTS wb_cluster_stats_cluster_key_fkey;
+          ALTER TABLE ${tableName("wb_cluster_stats")}
+            ADD CONSTRAINT wb_cluster_stats_cluster_key_fkey
+            FOREIGN KEY (cluster_key) REFERENCES ${tableName("wb_clusters")}(cluster_key)
+            ON UPDATE CASCADE ON DELETE CASCADE;
+        END IF;
+      END $$
+    `,
+    `
+      WITH recomputed AS (
+        SELECT cluster_key,
+          CASE WHEN source_kind = 'stats' OR advert_id IS NULL
+            THEN nm_id::text || ':' || source_kind || ':' || normalized_cluster_name
+            ELSE nm_id::text || ':' || advert_id::text || ':' || source_kind || ':' || normalized_cluster_name
+          END AS new_key
+        FROM ${tableName("wb_clusters")}
+      ),
+      ranked AS (
+        SELECT cluster_key,
+          ROW_NUMBER() OVER (PARTITION BY new_key ORDER BY cluster_key) AS rn
+        FROM recomputed
+      )
+      DELETE FROM ${tableName("wb_clusters")}
+      WHERE cluster_key IN (SELECT cluster_key FROM ranked WHERE rn > 1)
+    `,
+    `
+      UPDATE ${tableName("wb_clusters")}
+      SET cluster_key = '__ck_migrate__:' || ctid::text
+      WHERE cluster_key <> CASE
+        WHEN source_kind = 'stats' OR advert_id IS NULL
+          THEN nm_id::text || ':' || source_kind || ':' || normalized_cluster_name
+        ELSE nm_id::text || ':' || advert_id::text || ':' || source_kind || ':' || normalized_cluster_name
+      END
+    `,
+    `
+      UPDATE ${tableName("wb_clusters")}
+      SET cluster_key = CASE
+        WHEN source_kind = 'stats' OR advert_id IS NULL
+          THEN nm_id::text || ':' || source_kind || ':' || normalized_cluster_name
+        ELSE nm_id::text || ':' || advert_id::text || ':' || source_kind || ':' || normalized_cluster_name
+      END
+      WHERE cluster_key LIKE '__ck_migrate__:%'
+    `,
   ];
 }
 

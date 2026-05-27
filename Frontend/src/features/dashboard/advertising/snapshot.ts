@@ -25,11 +25,13 @@ export function clearCachedProductAdvertisingSheets(storageKeyPrefix: string) {
   }
 }
 
+// Cluster-identity normalizer. Matches the backend normalizeQuery (trim + lowercase
+// + collapse whitespace, punctuation PRESERVED) so the `{advertId}:{name}` keys built
+// here line up with the backend normalized_cluster_name column when sent back to the API.
 export function normalizeAdvertisingText(value: string) {
   return value
     .trim()
     .toLocaleLowerCase("ru")
-    .replace(/[_/\\|.,:;!?()[\]{}"'+=*%#№@`~^&-]+/g, " ")
     .replace(/\s+/g, " ");
 }
 
