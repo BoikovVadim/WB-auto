@@ -182,10 +182,21 @@ export function getClusterKeyMigrationStatements({
     // matching the normalized_cluster_name column. Previously cluster_key was built with
     // the punctuation-stripping normalizeAdvertisingIdentity, so names differing only by
     // punctuation collided on the PK and one silently overwrote the other.
-    // The key part now equals normalized_cluster_name (already normalizeQuery output), so
-    // we recompute directly from columns. New keys only ever become MORE granular than the
-    // old stripped keys, so no two rows can collide on the recomputed value — the UPDATE is
-    // PK-safe. The WHERE guard makes it idempotent across restarts.
+    // The final key equals nm:[advert:]source:normalized_cluster_name (the column is already
+    // normalizeQuery output), and final keys are unique per row. BUT a single UPDATE would
+    // hit transient PK collisions: row A's NEW key can equal row B's OLD (stripped) key while
+    // B is not yet rekeyed (e.g. "foo bar" vs "foo-bar"). Postgres checks the PK per-row, so
+    // that throws. We therefore rekey in two steps via a guaranteed-unique temporary key.
+    // Both steps are idempotent across restarts (their WHERE clauses match nothing once done).
+    `
+      UPDATE ${tableName("wb_clusters")}
+      SET cluster_key = '__ck_migrate__:' || ctid::text
+      WHERE cluster_key <> CASE
+        WHEN source_kind = 'stats' OR advert_id IS NULL
+          THEN nm_id::text || ':' || source_kind || ':' || normalized_cluster_name
+        ELSE nm_id::text || ':' || advert_id::text || ':' || source_kind || ':' || normalized_cluster_name
+      END
+    `,
     `
       UPDATE ${tableName("wb_clusters")}
       SET cluster_key = CASE
@@ -193,11 +204,7 @@ export function getClusterKeyMigrationStatements({
           THEN nm_id::text || ':' || source_kind || ':' || normalized_cluster_name
         ELSE nm_id::text || ':' || advert_id::text || ':' || source_kind || ':' || normalized_cluster_name
       END
-      WHERE cluster_key <> CASE
-        WHEN source_kind = 'stats' OR advert_id IS NULL
-          THEN nm_id::text || ':' || source_kind || ':' || normalized_cluster_name
-        ELSE nm_id::text || ':' || advert_id::text || ':' || source_kind || ':' || normalized_cluster_name
-      END
+      WHERE cluster_key LIKE '__ck_migrate__:%'
     `,
   ];
 }
