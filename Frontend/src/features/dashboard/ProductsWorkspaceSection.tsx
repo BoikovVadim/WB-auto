@@ -5,15 +5,9 @@ import {
   loadScrollPosition,
   saveScrollPosition,
 } from "./persistence/scrollPositionPersistence";
-import type { ProductListSortKey } from "./useDashboardProductsWorkspace";
+import type { ProductListItem, ProductListSortKey } from "./useDashboardProductsWorkspace";
 
 const PRODUCT_LIST_SCROLL_KEY = "products-list";
-
-type ProductListItem = {
-  vendorCode: string;
-  nmId: number | null;
-  campaignCounts?: { total: number; active: number; paused: number; disabled: number };
-};
 
 type ProductsWorkspaceSectionProps = {
   hasCatalogItems: boolean;
@@ -34,7 +28,89 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
   props: ProductsWorkspaceSectionProps,
 ) {
   const tableWrapRef = useRef<HTMLDivElement | null>(null);
+  const tableRef = useRef<HTMLTableElement | null>(null);
   const lastScrollTopRef = useRef(0);
+  const resizingColRef = useRef<number | null>(null);
+
+  const measureProductsHeaderMinWidth = (label: string, fallback: number) => {
+    const EXTRA_SPACE = 46; // sort arrow + button gap + inner paddings + resize handle room
+    try {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return Math.max(label.length * 8 + EXTRA_SPACE, fallback);
+      ctx.font = "700 12px Inter, system-ui, -apple-system, sans-serif";
+      return Math.max(Math.ceil(ctx.measureText(label).width) + EXTRA_SPACE, fallback);
+    } catch {
+      return Math.max(label.length * 8 + EXTRA_SPACE, fallback);
+    }
+  };
+  const nameHeaderMinWidth = useMemo(
+    () => measureProductsHeaderMinWidth(ui.productNameColumn, 130),
+    [],
+  );
+  const minResizableWidthByColumn = useMemo(
+    () =>
+      new Map<number, number>([
+        [2, nameHeaderMinWidth],
+      ]),
+    [nameHeaderMinWidth],
+  );
+
+  const startColumnResize = (colIndex: number) => (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!tableRef.current) return;
+    const tableEl = tableRef.current;
+    const cols = tableEl.querySelectorAll<HTMLTableColElement>("colgroup col");
+    if (!cols[colIndex]) return;
+
+    const measuredColWidths = Array.from(cols).map((col) => {
+      const measured = col.getBoundingClientRect().width;
+      if (measured > 0) {
+        return measured;
+      }
+      const parsed = Number.parseFloat(col.style.width);
+      return Number.isFinite(parsed) ? parsed : 0;
+    });
+    const initialSelectedWidth = measuredColWidths[colIndex] ?? 0;
+    const startX = event.clientX;
+
+    resizingColRef.current = colIndex;
+    document.body.style.cursor = "col-resize";
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (resizingColRef.current === null || !tableRef.current) return;
+      const ths = tableEl.querySelectorAll<HTMLTableCellElement>("thead th");
+      const th = ths[resizingColRef.current];
+      if (!th) return;
+      const minWidth = minResizableWidthByColumn.get(resizingColRef.current) ?? 48;
+      const widthDelta = moveEvent.clientX - startX;
+      const newWidth = Math.max(minWidth, initialSelectedWidth + widthDelta);
+      th.style.width = `${newWidth}px`;
+
+      // Sync the matching col in colgroup for table-layout:fixed
+      const col = tableEl.querySelector<HTMLTableColElement>(`colgroup col:nth-child(${resizingColRef.current + 1})`);
+      if (col) col.style.width = `${newWidth}px`;
+
+      // Keep table width equal to the sum of column widths so only the resized
+      // column changes size and other columns stay visually fixed.
+      const totalTableWidth = measuredColWidths.reduce(
+        (sum, width, index) => sum + (index === resizingColRef.current ? newWidth : width),
+        0,
+      );
+      tableEl.style.width = `${Math.ceil(totalTableWidth)}px`;
+    };
+
+    const onMouseUp = () => {
+      resizingColRef.current = null;
+      document.body.style.cursor = "";
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp, { once: true });
+  };
 
   // Restore scroll position when entering the list (initial mount, returning from detail,
   // or when the catalog finishes loading and the scrollable div appears in the DOM).
@@ -118,6 +194,7 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
             }}
           >
             <table
+              ref={tableRef}
               className="wb-data-table wb-data-table--products"
               style={{ tableLayout: "fixed", width: `${String(totalW)}px` }}
             >
@@ -132,7 +209,7 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
               </colgroup>
               <thead>
                 <tr>
-                  <th>
+                  <th style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
                     <button
                       className="wb-products-sort-button"
                       type="button"
@@ -144,7 +221,7 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                       </span>
                     </button>
                   </th>
-                  <th>
+                  <th style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
                     <button
                       className="wb-products-sort-button"
                       type="button"
@@ -156,7 +233,7 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                       </span>
                     </button>
                   </th>
-                  <th>
+                  <th style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
                     <button
                       className="wb-products-sort-button"
                       type="button"
@@ -167,8 +244,9 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                         {props.productsSortKey === "name" ? (props.productsSortDirection === "asc" ? "\u2191" : "\u2193") : "\u2195"}
                       </span>
                     </button>
+                    <div className="wb-col-resize-handle" onMouseDown={startColumnResize(2)} />
                   </th>
-                  <th className="wb-table-cell--numeric wb-products-campaign-count-th" title="Всего РК">
+                  <th className="wb-table-cell--numeric wb-products-campaign-count-th" title="Всего РК" style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
                     <button
                       className="wb-products-sort-button"
                       type="button"
@@ -180,7 +258,7 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                       </span>
                     </button>
                   </th>
-                  <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-active-th" title="Включённые РК">
+                  <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-active-th" title="Включённые РК" style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
                     <button
                       className="wb-products-sort-button"
                       type="button"
@@ -192,7 +270,7 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                       </span>
                     </button>
                   </th>
-                  <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-paused-th" title="Приостановленные РК">
+                  <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-paused-th" title="Приостановленные РК" style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
                     <button
                       className="wb-products-sort-button"
                       type="button"
@@ -204,7 +282,7 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                       </span>
                     </button>
                   </th>
-                  <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-disabled-th" title="Выключенные РК">
+                  <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-disabled-th" title="Выключенные РК" style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
                     <button
                       className="wb-products-sort-button"
                       type="button"
@@ -218,20 +296,20 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                   </th>
                 </tr>
                 {props.filteredProducts.length > 0 ? (
-                  <tr className="wb-products-totals-row">
-                    <th />
-                    <th />
-                    <th style={{ textAlign: "left", fontSize: "11px", fontWeight: 700, color: "rgba(15,23,42,0.45)" }}>Итого</th>
-                    <th className="wb-table-cell--numeric wb-products-campaign-count-th">
+                  <tr className="wb-products-totals-row wb-thead-row--second">
+                    <th style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }} />
+                    <th style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }} />
+                    <th style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3, textAlign: "left", fontSize: "11px", fontWeight: 700, color: "rgba(15,23,42,0.45)" }}>Итого</th>
+                    <th className="wb-table-cell--numeric wb-products-campaign-count-th" style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }}>
                       {campaignTotals.total > 0 ? String(campaignTotals.total) : "—"}
                     </th>
-                    <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-active-th">
+                    <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-active-th" style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }}>
                       {campaignTotals.active > 0 ? String(campaignTotals.active) : "—"}
                     </th>
-                    <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-paused-th">
+                    <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-paused-th" style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }}>
                       {campaignTotals.paused > 0 ? String(campaignTotals.paused) : "—"}
                     </th>
-                    <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-disabled-th">
+                    <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-disabled-th" style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }}>
                       {campaignTotals.disabled > 0 ? String(campaignTotals.disabled) : "—"}
                     </th>
                   </tr>

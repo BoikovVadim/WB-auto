@@ -6,7 +6,8 @@ import {
   type RawCampaignRow,
   type RawCampaignProductRow,
 } from "../../api/syncClientCore";
-import { type ColumnDef, mutedStyle } from "./RawTableSection";
+import { type ColumnDef } from "./RawTableSection";
+import { mutedStyle } from "./RawTableSection.styles";
 
 type CampaignsTab = "campaigns" | "products";
 

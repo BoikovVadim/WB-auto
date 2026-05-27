@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 
-import { WbClustersRepositoryRawDataRead } from "./wb-clusters.repository.raw-data-read";
+import { WbClustersRepositoryJamDaily } from "./wb-clusters.repository.jam-daily";
 
 export type {
   PreferredProductAdvertisingSnapshotSummaryRecord,
@@ -20,5 +20,9 @@ export type {
   RawQueryFrequencyRow,
 } from "./wb-clusters.repository.raw-data-read";
 
+export type { ChangeLogEntry } from "./wb-clusters.repository.change-log";
+export type { DailyOrdersRow } from "./wb-clusters.repository.orders";
+export type { JamDailyRow } from "./wb-clusters.repository.jam-daily";
+
 @Injectable()
-export class WbClustersRepository extends WbClustersRepositoryRawDataRead {}
+export class WbClustersRepository extends WbClustersRepositoryJamDaily {}

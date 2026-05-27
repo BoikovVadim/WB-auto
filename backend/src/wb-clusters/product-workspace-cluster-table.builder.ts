@@ -17,12 +17,14 @@ import {
 import {
   buildClusterQuerySearchIndex,
   buildWorkspaceClusterKey,
+  matchesClusterNameSearch,
   matchesClusterNumericFilters,
   matchesClusterSearch,
   matchesClusterStatusFilter,
 } from "./product-workspace-cluster-table.filters";
 import { compareWorkspaceClusterRows } from "./product-workspace-cluster-table.sort";
 import { buildClusterTableTotals } from "./product-workspace-cluster-table.totals";
+import { buildProductAdvertisingReadModelRevision } from "./product-advertising-read-model-revision";
 
 type WorkspaceClusterSourceRow = ProductAdvertisingSheetResponse["clusters"][number];
 
@@ -31,6 +33,7 @@ export function buildProductAdvertisingWorkspaceClusterTableResponse(input: {
   advertId: number;
   status: ProductAdvertisingWorkspaceClusterStatusFilter;
   search: string;
+  clusterNameSearch: string;
   numericFilters: ProductAdvertisingWorkspaceClusterNumericFilters;
   sortKey: ProductAdvertisingWorkspaceClusterSortKey;
   sortDirection: ProductAdvertisingWorkspaceClusterSortDirection;
@@ -54,12 +57,16 @@ export function buildProductAdvertisingWorkspaceClusterTableResponse(input: {
   );
   const querySearchIndex = buildClusterQuerySearchIndex(input.sheet.clusterQueries, input.advertId);
   const searchValue = input.search.trim();
+  const clusterNameSearchValue = input.clusterNameSearch.trim();
   const filteredRows = campaignRows
     .filter((row: ProductAdvertisingWorkspaceClusterRow) =>
       matchesClusterStatusFilter(row, input.status),
     )
     .filter((row: ProductAdvertisingWorkspaceClusterRow) =>
       matchesClusterSearch(row, searchValue, querySearchIndex),
+    )
+    .filter((row: ProductAdvertisingWorkspaceClusterRow) =>
+      matchesClusterNameSearch(row, clusterNameSearchValue),
     )
     .filter((row: ProductAdvertisingWorkspaceClusterRow) =>
       matchesClusterNumericFilters(row, input.numericFilters),
@@ -79,6 +86,14 @@ export function buildProductAdvertisingWorkspaceClusterTableResponse(input: {
     nmId: input.sheet.nmId,
     advertId: input.advertId,
     checkedAt: input.sheet.checkedAt,
+    revision: buildProductAdvertisingReadModelRevision({
+      scope: "cluster_table",
+      nmId: input.sheet.nmId,
+      advertId: input.advertId,
+      requestedStartDate: input.sheet.range.startDate,
+      requestedEndDate: input.sheet.range.endDate,
+      builtAt: input.sheet.checkedAt,
+    }),
     readiness: {
       scope: "cluster_table",
       status: "ready",
@@ -86,7 +101,6 @@ export function buildProductAdvertisingWorkspaceClusterTableResponse(input: {
       materializationStatus: "fallback_sheet",
     },
     rows: pageRows,
-    querySearchIndex: Object.fromEntries(querySearchIndex.entries()),
     totals: buildClusterTableTotals(filteredRows),
     totalsScope: "filtered_population",
     filterCounts: {
@@ -96,6 +110,7 @@ export function buildProductAdvertisingWorkspaceClusterTableResponse(input: {
     },
     appliedFilters: {
       search: searchValue,
+      clusterNameSearch: clusterNameSearchValue,
       status: input.status,
       numericFilters: input.numericFilters,
     },

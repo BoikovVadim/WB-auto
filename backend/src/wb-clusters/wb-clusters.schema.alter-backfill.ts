@@ -10,6 +10,14 @@ export function getCatalogAlterStatements({
     `,
     `
       ALTER TABLE ${tableName("wb_product_catalog")}
+      ADD COLUMN IF NOT EXISTS category_name TEXT NULL
+    `,
+    `
+      ALTER TABLE ${tableName("wb_product_catalog")}
+      ADD COLUMN IF NOT EXISTS subject_id BIGINT NULL
+    `,
+    `
+      ALTER TABLE ${tableName("wb_product_catalog")}
       ADD COLUMN IF NOT EXISTS first_seen_at TIMESTAMPTZ NULL
     `,
     `
@@ -170,6 +178,27 @@ export function getClusterKeyMigrationStatements({
           OR cluster_key ~ '^[0-9]+:excluded:'
         )
     `,
+    // Rebuild cluster_key to use the punctuation-preserving normalizer (normalizeQuery),
+    // matching the normalized_cluster_name column. Previously cluster_key was built with
+    // the punctuation-stripping normalizeAdvertisingIdentity, so names differing only by
+    // punctuation collided on the PK and one silently overwrote the other.
+    // The key part now equals normalized_cluster_name (already normalizeQuery output), so
+    // we recompute directly from columns. New keys only ever become MORE granular than the
+    // old stripped keys, so no two rows can collide on the recomputed value — the UPDATE is
+    // PK-safe. The WHERE guard makes it idempotent across restarts.
+    `
+      UPDATE ${tableName("wb_clusters")}
+      SET cluster_key = CASE
+        WHEN source_kind = 'stats' OR advert_id IS NULL
+          THEN nm_id::text || ':' || source_kind || ':' || normalized_cluster_name
+        ELSE nm_id::text || ':' || advert_id::text || ':' || source_kind || ':' || normalized_cluster_name
+      END
+      WHERE cluster_key <> CASE
+        WHEN source_kind = 'stats' OR advert_id IS NULL
+          THEN nm_id::text || ':' || source_kind || ':' || normalized_cluster_name
+        ELSE nm_id::text || ':' || advert_id::text || ':' || source_kind || ':' || normalized_cluster_name
+      END
+    `,
   ];
 }
 
@@ -200,6 +229,229 @@ export function getSnapshotAlterStatements({
     `
       ALTER TABLE ${tableName("wb_product_advertising_sheet_snapshots")}
       ADD COLUMN IF NOT EXISTS failure_reason TEXT NULL
+    `,
+  ];
+}
+
+export function getCabinetQueryMapDeduplicationStatements({
+  tableName,
+}: WbClustersSchemaContext): string[] {
+  return [
+    // Deduplicate wb_cabinet_cluster_queries and enforce UNIQUE (nm_id, advert_id, normalized_query_text).
+    // The entire block is skipped if the constraint already exists (idempotent on repeated restarts).
+    // The DELETE uses a window-function USING strategy which is much faster than NOT IN on large tables.
+    `
+      DO $$ BEGIN
+        IF EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'wb_cabinet_cluster_queries_nm_advert_query_unique'
+        ) THEN
+          RETURN;
+        END IF;
+
+        -- Remove duplicates: keep the canonical row per (nm_id, advert_id, normalized_query_text).
+        -- Prefer the row where cluster name = query text; fall back to latest captured_at.
+        DELETE FROM ${tableName("wb_cabinet_cluster_queries")} d
+        USING (
+          SELECT cabinet_query_key,
+                 FIRST_VALUE(cabinet_query_key) OVER (
+                   PARTITION BY nm_id, advert_id, normalized_query_text
+                   ORDER BY (CASE WHEN normalized_cluster_name = normalized_query_text THEN 0 ELSE 1 END) ASC,
+                            captured_at DESC,
+                            cabinet_query_key ASC
+                 ) AS keep_key
+          FROM ${tableName("wb_cabinet_cluster_queries")}
+        ) subq
+        WHERE d.cabinet_query_key = subq.cabinet_query_key
+          AND d.cabinet_query_key != subq.keep_key;
+
+        -- Enforce one cluster per (nm_id, advert_id, query) going forward.
+        ALTER TABLE ${tableName("wb_cabinet_cluster_queries")}
+        ADD CONSTRAINT wb_cabinet_cluster_queries_nm_advert_query_unique
+        UNIQUE (nm_id, advert_id, normalized_query_text);
+      END $$
+    `,
+  ];
+}
+
+export function getCostPriceCreateStatements({
+  tableName,
+}: WbClustersSchemaContext): string[] {
+  return [
+    `
+      CREATE TABLE IF NOT EXISTS ${tableName("wb_product_cost_price")} (
+        nm_id BIGINT NOT NULL,
+        effective_date DATE NOT NULL DEFAULT CURRENT_DATE,
+        cost_value NUMERIC NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (nm_id, effective_date)
+      )
+    `,
+    `
+      CREATE INDEX IF NOT EXISTS wb_product_cost_price_nm_id_idx
+        ON ${tableName("wb_product_cost_price")} (nm_id, effective_date DESC)
+    `,
+  ];
+}
+
+export function getChangeLogCreateStatements({
+  tableName,
+}: WbClustersSchemaContext): string[] {
+  return [
+    `
+      CREATE TABLE IF NOT EXISTS ${tableName("wb_cluster_change_log")} (
+        id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        nm_id BIGINT NOT NULL,
+        advert_id BIGINT NOT NULL,
+        cluster_name TEXT NOT NULL,
+        change_type TEXT NOT NULL,
+        old_value TEXT NULL,
+        new_value TEXT NOT NULL,
+        job_id TEXT NULL,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `,
+    `
+      CREATE INDEX IF NOT EXISTS wb_cluster_change_log_campaign_idx
+        ON ${tableName("wb_cluster_change_log")} (nm_id, advert_id, applied_at DESC)
+    `,
+  ];
+}
+
+/** Daily orders aggregated per product from WB Statistics API */
+/**
+ * wb_product_daily_orders: aggregated order counts per nm_id per day.
+ * Data source: WB Analytics CSV report (DETAIL_HISTORY_REPORT).
+ * One download → ZIP → parse → INSERT. No per-product batching.
+ * Frontend reads with: SELECT nm_id, order_date, orders_count FROM wb_product_daily_orders
+ */
+export function getProductDailyOrdersCreateStatements({
+  tableName,
+}: WbClustersSchemaContext): string[] {
+  return [
+    `
+      CREATE TABLE IF NOT EXISTS ${tableName("wb_product_daily_orders")} (
+        nm_id           BIGINT      NOT NULL,
+        order_date      DATE        NOT NULL,
+        orders_count    INT         NOT NULL DEFAULT 0,
+        cancelled_count INT         NOT NULL DEFAULT 0,
+        orders_sum      NUMERIC     NOT NULL DEFAULT 0,
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (nm_id, order_date)
+      )
+    `,
+    `
+      CREATE INDEX IF NOT EXISTS wb_product_daily_orders_date_idx
+        ON ${tableName("wb_product_daily_orders")} (order_date DESC)
+    `,
+  ];
+}
+
+/** General-purpose system change log covering all entity types (cost_price, cluster_bid, etc.) */
+export function getSystemChangeLogCreateStatements({
+  tableName,
+}: WbClustersSchemaContext): string[] {
+  return [
+    `
+      CREATE TABLE IF NOT EXISTS ${tableName("wb_system_change_log")} (
+        id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        entity_type TEXT NOT NULL,
+        nm_id BIGINT NULL,
+        entity_label TEXT NULL,
+        change_type TEXT NOT NULL,
+        old_value TEXT NULL,
+        new_value TEXT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `,
+    `
+      CREATE INDEX IF NOT EXISTS wb_system_change_log_created_idx
+        ON ${tableName("wb_system_change_log")} (created_at DESC)
+    `,
+    `
+      CREATE INDEX IF NOT EXISTS wb_system_change_log_nm_id_idx
+        ON ${tableName("wb_system_change_log")} (nm_id, created_at DESC)
+    `,
+  ];
+}
+
+/**
+ * wb_product_jam_daily: daily JAM metrics aggregated per product.
+ * Materialized from wb_product_search_text_range_snapshots + _rows after each nightly JAM sync.
+ * One row per (nm_id, jam_date). Frontend reads with simple SELECT for any date range.
+ */
+export function getJamDailyCreateStatements({
+  tableName,
+}: WbClustersSchemaContext): string[] {
+  return [
+    `
+      CREATE TABLE IF NOT EXISTS ${tableName("wb_product_jam_daily")} (
+        nm_id             BIGINT      NOT NULL,
+        jam_date          DATE        NOT NULL,
+        avg_position      NUMERIC     NULL,
+        best_position     NUMERIC     NULL,
+        total_frequency   BIGINT      NOT NULL DEFAULT 0,
+        top_frequency     BIGINT      NOT NULL DEFAULT 0,
+        total_clicks      INT         NOT NULL DEFAULT 0,
+        total_add_to_cart INT         NOT NULL DEFAULT 0,
+        total_orders      INT         NOT NULL DEFAULT 0,
+        query_count       INT         NOT NULL DEFAULT 0,
+        updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (nm_id, jam_date)
+      )
+    `,
+    `
+      CREATE INDEX IF NOT EXISTS wb_product_jam_daily_date_idx
+        ON ${tableName("wb_product_jam_daily")} (jam_date DESC)
+    `,
+  ];
+}
+
+export function getMonthlyFrequencyAlterStatements({
+  tableName,
+}: WbClustersSchemaContext): string[] {
+  return [
+    `
+      ALTER TABLE ${tableName("wb_search_query_frequencies")}
+      ADD COLUMN IF NOT EXISTS subject_name TEXT NULL
+    `,
+    `
+      ALTER TABLE ${tableName("wb_search_query_frequencies")}
+      ADD COLUMN IF NOT EXISTS normalized_query_identity TEXT NULL
+    `,
+    `
+      UPDATE ${tableName("wb_search_query_frequencies")}
+      SET normalized_query_identity = normalized_query_text
+      WHERE normalized_query_identity IS NULL
+    `,
+    `
+      ALTER TABLE ${tableName("wb_search_query_frequencies")}
+      ALTER COLUMN normalized_query_identity SET NOT NULL
+    `,
+    `
+      ALTER TABLE ${tableName("wb_search_query_frequencies")}
+      ADD COLUMN IF NOT EXISTS normalized_query_stem TEXT NULL
+    `,
+    `
+      UPDATE ${tableName("wb_search_query_frequencies")}
+      SET normalized_query_stem = TRIM(
+        REGEXP_REPLACE(
+          REGEXP_REPLACE(
+            COALESCE(normalized_query_identity, normalized_query_text),
+            '(иями|ями|ами|ого|ему|ому|ыми|ими|его|ая|яя|ое|ее|ой|ий|ый|ые|ие|их|ых|ую|юю|ам|ям|ах|ях|ом|ем|ов|ев|ей|а|я|ы|и|у|ю|о|е|ь|й)\\y',
+            '',
+            'gi'
+          ),
+          '\\s+',
+          ' ',
+          'g'
+        )
+      )
+      WHERE normalized_query_stem IS NULL
+    `,
+    `
+      ALTER TABLE ${tableName("wb_search_query_frequencies")}
+      ALTER COLUMN normalized_query_stem SET NOT NULL
     `,
   ];
 }

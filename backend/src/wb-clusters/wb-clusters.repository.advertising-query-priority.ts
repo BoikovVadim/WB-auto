@@ -11,8 +11,9 @@ const ruCollatorPriority = new Intl.Collator("ru", { sensitivity: "base" });
 function mappingSourceRank(value: ProductAdvertisingClusterQueryMappingSource): number {
   if (value === "merged") return 0;
   if (value === "cabinet") return 1;
-  if (value === "promotion") return 2;
-  return 3;
+  if (value === "stem-fallback") return 2;
+  if (value === "promotion") return 3;
+  return 4;
 }
 
 function clusterSourceKindRank(value: ClusterSourceKind): number {

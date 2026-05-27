@@ -37,6 +37,10 @@ export function isAdvertisingCampaignPaused(status: number | null) {
   return status === 11;
 }
 
+export function isAdvertisingCampaignArchived(status: number | null) {
+  return status === 7 || status === 8;
+}
+
 export function getDefaultAdvertisingSortDirection(key: AdvertisingClusterSortKey) {
   return key === "source" || key === "campaignName" || key === "clusterName"
     ? "asc"

@@ -114,6 +114,25 @@ export async function applyProductClusterAction(
     errorMessage: "Изменение статуса кластеров поставлено в очередь на отправку в WB.",
   });
 
+  // Записываем в историю изменений
+  try {
+    await self.wbClustersRepository.saveChangeLogEntries(
+      canonicalInput.map((item) => ({
+        nmId,
+        advertId,
+        clusterName: item.clusterName,
+        changeType: "status_change" as const,
+        oldValue: item.desiredIsActive ? "excluded" : "active",
+        newValue: item.desiredIsActive ? "active" : "excluded",
+        jobId: queuedJob.jobId,
+      })),
+    );
+  } catch (err: unknown) {
+    self.logger?.warn(
+      `Не удалось сохранить историю изменений статуса кластера: ${(err as Error).message}`,
+    );
+  }
+
   // Инвалидируем кэш cluster-table чтобы следующий GET вернул обновлённый статус кластера.
   invalidateProductAdvertisingSheetCaches(self, nmId);
 
@@ -232,6 +251,18 @@ export async function applyProductClusterBids(
   const appliedAt = new Date().toISOString();
   const syncRunId = await self.wbClustersRepository.createSyncRun("manual");
 
+  // Читаем текущие ставки до перезаписи, чтобы записать их как oldValue в историю.
+  let oldBidsMap = new Map<string, number>();
+  try {
+    oldBidsMap = await self.wbClustersRepository.getCurrentClusterBids(
+      nmId,
+      advertId,
+      canonicalInput.map((item) => item.clusterName),
+    );
+  } catch {
+    // не блокируем основной поток если чтение упало
+  }
+
   await self.wbClustersRepository.upsertClusterBids(
     canonicalInput.map((item) => ({
       advert_id: advertId,
@@ -278,6 +309,32 @@ export async function applyProductClusterBids(
     statsRowsUpserted: 0,
     errorMessage: "Ставка поставлена в очередь на отправку в WB.",
   });
+
+  // Записываем в историю изменений
+  try {
+    await self.wbClustersRepository.saveChangeLogEntries(
+      canonicalInput.map((item) => {
+        const normalizedName = item.clusterName
+          .trim()
+          .toLocaleLowerCase("ru")
+          .replace(/\s+/g, " ");
+        const oldBid = oldBidsMap.get(normalizedName) ?? null;
+        return {
+          nmId,
+          advertId,
+          clusterName: item.clusterName,
+          changeType: "bid_change" as const,
+          oldValue: oldBid !== null ? String(oldBid) : null,
+          newValue: String(item.bid),
+          jobId: queuedJob.jobId,
+        };
+      }),
+    );
+  } catch (err: unknown) {
+    self.logger?.warn(
+      `Не удалось сохранить историю изменений ставки: ${(err as Error).message}`,
+    );
+  }
 
   self.activateManualBidInteractiveWindow("manual-apply", self.manualBidInteractiveWindowMs);
   self.scheduleClusterBidWritePass();

@@ -10,6 +10,7 @@ export const dashboardUiCopyTables = {
   product: "Товар",
   brand: "Бренд",
   subject: "Предмет",
+  category: "Категория",
   vendorCode: "Артикул",
   frequency: "Частота",
   weekFrequency: "Частота за неделю",

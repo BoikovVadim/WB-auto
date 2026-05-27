@@ -1,5 +1,6 @@
 import { IsDateString, IsIn, IsOptional, IsString, MinLength } from "class-validator";
 
+import { IsValidDateRange } from "../../common/validators/date-range.validator";
 import type {
   ProductAdvertisingWorkspaceClusterSortDirection,
   ProductAdvertisingWorkspaceClusterSortKey,
@@ -36,6 +37,7 @@ const clusterSortKeys: ProductAdvertisingWorkspaceClusterSortKey[] = [
   "spend",
 ];
 
+@IsValidDateRange()
 export class GetProductWorkspaceClusterQueriesDto {
   @IsOptional()
   @IsString()

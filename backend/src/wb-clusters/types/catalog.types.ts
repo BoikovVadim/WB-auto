@@ -4,7 +4,7 @@ export interface ProductClusterLookupMatch {
   queryText: string;
   clusterName: string;
   sourceKind: ClusterSourceKind;
-  mappingSource: "promotion" | "cabinet" | "merged" | "cluster-name";
+  mappingSource: "promotion" | "cabinet" | "merged" | "cluster-name" | "stem-fallback";
   isActive: boolean | null;
   advertId: number | null;
   views: number | null;
@@ -34,6 +34,8 @@ export interface ProductCatalogItem {
   name: string;
   brandName: string;
   subjectName: string;
+  subjectId: number | null;
+  categoryName: string | null;
   sourceExportRequestId: string | null;
   firstSeenAt: string | null;
   lastSeenAt: string | null;

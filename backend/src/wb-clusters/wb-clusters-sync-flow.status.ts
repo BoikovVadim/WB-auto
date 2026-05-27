@@ -268,6 +268,15 @@ export async function handleScheduledJamSync(self: WbClustersService) {
       // yesterday (just finalized above) is correctly skipped here.
       await self.runJamSyncForNmIds(nmIds, warningMessages);
 
+      // Materialize aggregated daily rows into wb_product_jam_daily for the last 2 days
+      // (yesterday finalized above + today if any intraday data exists).
+      try {
+        await self.materializeJamDaily(1);
+      } catch (matErr) {
+        const msg = matErr instanceof Error ? matErr.message : String(matErr);
+        self.logger.warn(`JAM daily materialization failed (non-fatal): ${msg}`);
+      }
+
       self.logger.log(
         `Scheduled JAM sync completed for ${nmIds.length} nmIds. Warnings: ${warningMessages.length}.`,
       );
@@ -280,6 +289,61 @@ export async function handleScheduledJamSync(self: WbClustersService) {
   })();
   self.jamSyncInFlight = job;
   await job;
+}
+
+export async function handleScheduledMonthlyFrequencySync(self: WbClustersService) {
+  if (!appEnv.wbPromotionSyncEnabled) {
+    return;
+  }
+
+  if (!self.wbClustersRepository.isConfigured()) {
+    return;
+  }
+
+  const warningMessages: string[] = [];
+  let syncRunId: string | null = null;
+
+  try {
+    await self.wbClustersRepository.ensureSchema();
+    syncRunId = await self.wbClustersRepository.createSyncRun("schedule");
+    await self.syncMonthlyFrequencyReadModel({
+      syncRunId,
+      nmId: null,
+      warningMessages,
+    });
+    await self.wbClustersRepository.completeSyncRun(syncRunId, {
+      status: "succeeded",
+      campaignsSeen: 0,
+      campaignsSynced: 0,
+      productsSeen: 0,
+      clustersUpserted: 0,
+      statsRowsUpserted: 0,
+      warningCount: warningMessages.length,
+      hasPartialFailure: warningMessages.length > 0,
+      errorMessage: self.summarizeWarnings(warningMessages),
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown monthly frequency sync error";
+    if (syncRunId) {
+      await self.wbClustersRepository.completeSyncRun(syncRunId, {
+        status: "failed",
+        campaignsSeen: 0,
+        campaignsSynced: 0,
+        productsSeen: 0,
+        clustersUpserted: 0,
+        statsRowsUpserted: 0,
+        warningCount: warningMessages.length,
+        hasPartialFailure: warningMessages.length > 0,
+        errorMessage: message,
+      });
+    }
+    self.logger.error(`Scheduled monthly frequency sync failed: ${message}`);
+  }
+}
+
+export async function runMonthlyFrequencySyncNow(self: WbClustersService) {
+  return handleScheduledMonthlyFrequencySync(self);
 }
 
 /**

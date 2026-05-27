@@ -30,6 +30,7 @@ export {
   getAdvertisingSourcePriority,
   getDefaultAdvertisingSortDirection,
   isAdvertisingCampaignPaused,
+  isAdvertisingCampaignArchived,
   isAdvertisingCampaignRunning,
   isClusterActive,
   isClusterExcluded,

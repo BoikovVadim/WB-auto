@@ -1,7 +1,8 @@
 import { useCallback } from "react";
 
 import { fetchRawClusterStats, type RawClusterStatRow } from "../../api/syncClientCore";
-import { RawTableSection, type ColumnDef, mutedStyle } from "./RawTableSection";
+import { RawTableSection, type ColumnDef } from "./RawTableSection";
+import { mutedStyle } from "./RawTableSection.styles";
 
 function num(v: number | null, d = 0) {
   if (v == null) return <span style={mutedStyle}>—</span>;

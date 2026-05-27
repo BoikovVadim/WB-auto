@@ -3,6 +3,7 @@ import { useCallback, useMemo } from "react";
 import { fetchProductAdvertisingWorkspaceClusterTable } from "../../../api/syncClientAdvertisingRead";
 import type { ProductAdvertisingWorkspaceResponse } from "../../../api/syncClient";
 import type { ProductAdvertisingClusterTableSectionProps } from "./ProductAdvertisingClusterTableSection";
+import { toProductAdvertisingWorkspaceNumericFilters } from "./advertisingModelFilters";
 import { getAdvertisingDatePresetRange, formatCalendarDateValue, type AdvertisingDatePreset, type AdvertisingDateRange } from "./date";
 import type { ProductAdvertisingDetailRevisions } from "./productAdvertisingDetailInvalidation";
 import { useProductAdvertisingClusterMutations } from "./useProductAdvertisingClusterMutations";
@@ -49,10 +50,13 @@ export function useProductAdvertisingClusterSectionState(input: {
     onClearSelectedClusterKeys: tableState.clearSelectedClusterKeys,
     onReloadSheet,
   });
+  const requestNumericFilters = useMemo(
+    () => toProductAdvertisingWorkspaceNumericFilters(tableState.numericFilters),
+    [tableState.numericFilters],
+  );
 
-  // Prefetch-коллбэк для hover на пресете: начинает загружать таблицу кластеров
-  // за будущий диапазон ДО клика. К моменту выбора данные уже в кеше/in-flight.
-  // Делаем для всех кампаний товара — пользователь может переключиться на любую.
+  // Hover по пресету прогревает ровно тот backend-shaped slice, который пользователь
+  // увидит после клика: те же фильтры/сортировки, но с будущим диапазоном.
   const onPresetHover = useCallback(
     (preset: AdvertisingDatePreset) => {
       if (!nmId || !tableState.campaignSummaries.length) return;
@@ -67,19 +71,20 @@ export function useProductAdvertisingClusterSectionState(input: {
           nmId,
           advertId: campaign.advertId,
           requestInput,
-          // Must match the real table request (backend sort is fixed; UI sort is client-side).
-          sortKey: "spend",
-          sortDirection: "desc",
+          search: tableState.clusterSearch,
+          clusterNameSearch: tableState.clusterNameSearch,
+          status: tableState.statusFilter,
+          numericFilters: requestNumericFilters,
+          sortKey: tableState.sortState.key,
+          sortDirection: tableState.sortState.direction,
           pageSize: 5000,
         }).catch(() => null);
       }
     },
-    [nmId, tableState.campaignSummaries],
+    [nmId, requestNumericFilters, tableState],
   );
 
-  // Prefetch-коллбэк для hover на карточке кампании: загружает таблицу кластеров
-  // за ТЕКУЩИЙ выбранный диапазон дат ДО клика. Устраняет задержку при переключении
-  // между РК — к моменту клика данные уже в кеше или почти загружены.
+  // Hover по карточке кампании греет exact slice для текущего backend query state.
   const onCampaignHover = useCallback(
     (advertId: number) => {
       if (!nmId || !tableState.clusterTableRequestInput) return;
@@ -87,20 +92,23 @@ export function useProductAdvertisingClusterSectionState(input: {
         nmId,
         advertId,
         requestInput: tableState.clusterTableRequestInput,
-        // Must match the real table request (backend sort is fixed; UI sort is client-side).
-        sortKey: "spend",
-        sortDirection: "desc",
+        search: tableState.clusterSearch,
+        clusterNameSearch: tableState.clusterNameSearch,
+        status: tableState.statusFilter,
+        numericFilters: requestNumericFilters,
+        sortKey: tableState.sortState.key,
+        sortDirection: tableState.sortState.direction,
         pageSize: 5000,
       }).catch(() => null);
     },
-    [nmId, tableState.clusterTableRequestInput],
+    [nmId, requestNumericFilters, tableState],
   );
 
   const onApplyClusterAction = useCallback(
     (action: Parameters<ProductAdvertisingClusterTableSectionProps["onApplyClusterAction"]>[0]) => {
       void mutations.handleApplyClusterAction(action);
     },
-    [mutations.handleApplyClusterAction],
+    [mutations],
   );
 
   const onReloadAdvertising = useCallback(() => {

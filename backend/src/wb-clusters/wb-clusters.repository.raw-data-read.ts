@@ -119,10 +119,10 @@ export interface RawQueryFrequencyRow {
   normalizedQueryText: string;
   queryText: string;
   monthlyFrequency: number | null;
-  reportType: string | null;
   reportStartDate: string | null;
   reportEndDate: string | null;
   syncedAt: string | null;
+  subjectName: string | null;
 }
 
 export abstract class WbClustersRepositoryRawDataRead extends WbClustersRepositoryWorkspaceSnapshotStorage {
@@ -601,41 +601,151 @@ export abstract class WbClustersRepositoryRawDataRead extends WbClustersReposito
   }
 
   async getRawQueryFrequencies(limit: number): Promise<RawQueryFrequencyRow[]> {
+    const { rows } = await this.getQueryFrequenciesPaginated({ limit, offset: 0, search: null, sortBy: "monthly_frequency", sortDir: "desc" });
+    return rows;
+  }
+
+  async getQueryFrequenciesPaginated(opts: {
+    limit: number;
+    offset: number;
+    search: string | null;
+    sortBy: "monthly_frequency" | "query_text" | "subject_name";
+    sortDir: "asc" | "desc";
+  }): Promise<{ rows: RawQueryFrequencyRow[]; total: number }> {
+    if (!this.isConfigured()) return { rows: [], total: 0 };
+    await this.ensureSchemaOrThrow();
+    const pool = this.getPool();
+
+    const { limit, offset, search, sortBy, sortDir } = opts;
+    const dir = sortDir === "asc" ? "ASC" : "DESC";
+    // monthly_frequency is cast to ::text in SELECT — must cast back in ORDER BY
+    // or PostgreSQL will sort the text alias alphabetically ("9998" > "740215").
+    const orderCol =
+      sortBy === "query_text" ? "query_text"
+      : sortBy === "subject_name" ? "COALESCE(subject_name, '')"
+      : "monthly_frequency::numeric";
+    const nullsDir = "NULLS LAST";
+
+    const tbl = this.tableName("wb_search_query_frequencies");
+    const searchPattern = search ? `%${search.toLowerCase()}%` : null;
+
+    // Data query: $1=limit, $2=offset, $3=searchPattern (optional)
+    const dataParams: unknown[] = [limit, offset];
+    const dataWhere = searchPattern
+      ? (dataParams.push(searchPattern), `WHERE normalized_query_text LIKE $3`)
+      : "";
+
+    // Count query uses its own param list to avoid $-index mismatch
+    const countParams: unknown[] = searchPattern ? [searchPattern] : [];
+    const countWhere = searchPattern ? `WHERE normalized_query_text LIKE $1` : "";
+
+    const [dataResult, countResult] = await Promise.all([
+      pool.query<{
+        normalized_query_text: string;
+        query_text: string;
+        monthly_frequency: string | null;
+        report_start_date: string | null;
+        report_end_date: string | null;
+        synced_at: string | null;
+        subject_name: string | null;
+      }>(
+        `SELECT
+          normalized_query_text, query_text,
+          monthly_frequency::text, report_start_date::text,
+          report_end_date::text, synced_at::text, subject_name
+        FROM ${tbl}
+        ${dataWhere}
+        ORDER BY ${orderCol} ${dir} ${nullsDir}, query_text ASC
+        LIMIT $1 OFFSET $2`,
+        dataParams,
+      ),
+      pool.query<{ total: string }>(
+        `SELECT COUNT(*)::text AS total FROM ${tbl} ${countWhere}`,
+        countParams,
+      ),
+    ]);
+
+    return {
+      rows: dataResult.rows.map((row) => ({
+        normalizedQueryText: row.normalized_query_text,
+        queryText: row.query_text,
+        monthlyFrequency: this.toNullableNumber(row.monthly_frequency),
+        reportStartDate: row.report_start_date,
+        reportEndDate: row.report_end_date,
+        syncedAt: row.synced_at,
+        subjectName: row.subject_name ?? null,
+      })),
+      total: Number(countResult.rows[0]?.total ?? 0),
+    };
+  }
+
+  async getFrequencyHistoryWeeks(): Promise<string[]> {
     if (!this.isConfigured()) return [];
     await this.ensureSchemaOrThrow();
     const pool = this.getPool();
+    const result = await pool.query<{ snapshotted_week: string }>(
+      `SELECT DISTINCT snapshotted_week::text
+       FROM ${this.tableName("wb_query_frequency_history")}
+       ORDER BY snapshotted_week DESC
+       LIMIT 52`,
+    );
+    return result.rows.map((r) => r.snapshotted_week);
+  }
+
+  async getRawQueryFrequencyHistory(input: {
+    week: string | null;
+    limit: number;
+  }): Promise<Array<{
+    normalizedQueryText: string;
+    queryText: string;
+    monthlyFrequency: number | null;
+    reportStartDate: string | null;
+    reportEndDate: string | null;
+    snapshottedWeek: string;
+    snapshottedAt: string | null;
+  }>> {
+    if (!this.isConfigured()) return [];
+    await this.ensureSchemaOrThrow();
+    const pool = this.getPool();
+
+    const weekFilter = input.week
+      ? `WHERE snapshotted_week = $2::date`
+      : `WHERE snapshotted_week = (SELECT MAX(snapshotted_week) FROM ${this.tableName("wb_query_frequency_history")})`;
+    const params: unknown[] = [input.limit];
+    if (input.week) params.push(input.week);
 
     const result = await pool.query<{
       normalized_query_text: string;
       query_text: string;
       monthly_frequency: string | null;
-      report_type: string | null;
       report_start_date: string | null;
       report_end_date: string | null;
-      synced_at: string | null;
+      snapshotted_week: string;
+      snapshotted_at: string | null;
     }>(
       `SELECT
-        normalized_query_text,
-        query_text,
-        monthly_frequency::text,
-        report_type,
-        report_start_date::text,
-        report_end_date::text,
-        synced_at::text
-      FROM ${this.tableName("wb_search_query_frequencies")}
-      ORDER BY monthly_frequency DESC NULLS LAST
-      LIMIT $1`,
-      [limit],
+         normalized_query_text,
+         query_text,
+         monthly_frequency::text,
+         report_start_date::text,
+         report_end_date::text,
+         snapshotted_week::text,
+         snapshotted_at::text
+       FROM ${this.tableName("wb_query_frequency_history")}
+       ${weekFilter}
+       ORDER BY monthly_frequency::numeric DESC NULLS LAST
+       LIMIT $1`,
+      params,
     );
 
     return result.rows.map((row) => ({
       normalizedQueryText: row.normalized_query_text,
       queryText: row.query_text,
       monthlyFrequency: this.toNullableNumber(row.monthly_frequency),
-      reportType: row.report_type,
       reportStartDate: row.report_start_date,
       reportEndDate: row.report_end_date,
-      syncedAt: row.synced_at,
+      snapshottedWeek: row.snapshotted_week,
+      snapshottedAt: row.snapshotted_at,
     }));
   }
 }

@@ -13,18 +13,24 @@ import type {
   WbExportResponse,
 } from "../../api/syncClient";
 import { ui } from "./copy";
-import { HeaderPill } from "./HeaderPill";
 import { DashboardCampaignsSection } from "./DashboardCampaignsSection";
 import { DashboardCatalogSection } from "./DashboardCatalogSection";
+import { DashboardJamDailySection } from "./DashboardJamDailySection";
 import { DashboardClusterStatsSection } from "./DashboardClusterStatsSection";
 import { DashboardDailyStatsSection } from "./DashboardDailyStatsSection";
 import { DashboardExportsOverviewSection } from "./DashboardExportsOverviewSection";
 import { DashboardJamStatusSection } from "./DashboardJamStatusSection";
 import { DashboardMethodWorkspaceSection } from "./DashboardMethodWorkspaceSection";
 import { DashboardMinusPhrasesSection } from "./DashboardMinusPhrasesSection";
+import { DashboardCatalogProductDetailSection } from "./DashboardCatalogProductDetailSection";
+import { DashboardCatalogProductsSection } from "./DashboardCatalogProductsSection";
+import { DashboardOrdersDetailSection } from "./DashboardOrdersDetailSection";
+import { DashboardChangeHistorySection } from "./DashboardChangeHistorySection";
+import { DashboardHubSection } from "./DashboardHubSection";
 import { DashboardProductsSection } from "./DashboardProductsSection";
 import { DashboardQueryFrequenciesSection } from "./DashboardQueryFrequenciesSection";
 import { DashboardSyncRunsSection } from "./DashboardSyncRunsSection";
+import { DashboardTechSection } from "./DashboardTechSection";
 import type {
   DashboardProductOption,
   DashboardStatusNotice,
@@ -74,6 +80,26 @@ type WbDashboardShellProps = {
   onOpenQueryFrequenciesSection: () => void;
   onOpenProductsSection: () => void;
   onPrefetchProductsSection: () => void;
+  onOpenCatalogProductsSection: () => void;
+  onPrefetchCatalogProductsSection: () => void;
+  onOpenDashboardSection: () => void;
+  onOpenDashboardTechSection: () => void;
+  onOpenDashboardCabinetSection: () => void;
+  onOpenChangeHistorySection: () => void;
+  isCostPriceSheetOpen: boolean;
+  isCostPricesLoading: boolean;
+  costPrices: Map<number, import("./DashboardCatalogProductsSection").CostPriceCurrent>;
+  orderCounts: Map<number, import("../../api/syncClientOrders").TodayOrderCount>;
+  isOrdersSheetOpen: boolean;
+  isJamSheetOpen: boolean;
+  onOpenCostPriceSheet: () => void;
+  onCloseCostPriceSheet: () => void;
+  onOpenOrdersSheet: () => void;
+  onCloseOrdersSheet: () => void;
+  onOpenJamSheet: () => void;
+  onCloseJamSheet: () => void;
+  onCostSaved: (nmId: number, value: number) => Promise<void>;
+  onCostCleared: (nmIds: number[]) => Promise<void>;
   onRefresh: () => void;
   onTokenInputChange: (value: string) => void;
   onSaveToken: () => void;
@@ -123,7 +149,7 @@ export function WbDashboardShell({
   isArchiveLoading,
   tokenInput,
   isTokenSaving,
-  error,
+  error: _error,
   statusNotice,
   onSetExportsSection,
   onOpenJamSection,
@@ -136,7 +162,27 @@ export function WbDashboardShell({
   onOpenQueryFrequenciesSection,
   onOpenProductsSection,
   onPrefetchProductsSection,
-  onRefresh,
+  onOpenCatalogProductsSection,
+  onPrefetchCatalogProductsSection,
+  onOpenDashboardSection,
+  onOpenDashboardTechSection,
+  onOpenDashboardCabinetSection,
+  onOpenChangeHistorySection,
+  isCostPriceSheetOpen,
+  isCostPricesLoading,
+  costPrices,
+  orderCounts,
+  isOrdersSheetOpen,
+  isJamSheetOpen,
+  onOpenCostPriceSheet,
+  onCloseCostPriceSheet,
+  onOpenOrdersSheet,
+  onCloseOrdersSheet,
+  onOpenJamSheet,
+  onCloseJamSheet,
+  onCostSaved,
+  onCostCleared,
+  onRefresh: _onRefresh,
   onTokenInputChange,
   onSaveToken,
   onClearToken,
@@ -178,6 +224,29 @@ export function WbDashboardShell({
           >
             <span className="wb-cabinet-menu-icon">P</span>
             <span className="wb-cabinet-menu-label">{ui.viewProducts}</span>
+          </button>
+          <button
+            className={`wb-cabinet-menu-item ${activeSection === "catalog-products" ? "active" : ""}`}
+            onMouseEnter={onPrefetchCatalogProductsSection}
+            onFocus={onPrefetchCatalogProductsSection}
+            onClick={onOpenCatalogProductsSection}
+          >
+            <span className="wb-cabinet-menu-icon">T</span>
+            <span className="wb-cabinet-menu-label">{ui.viewCatalogProducts}</span>
+          </button>
+          <button
+            className={`wb-cabinet-menu-item ${activeSection === "dashboard" || activeSection === "dashboard-tech" || activeSection === "dashboard-cabinet" ? "active" : ""}`}
+            onClick={onOpenDashboardSection}
+          >
+            <span className="wb-cabinet-menu-icon">Д</span>
+            <span className="wb-cabinet-menu-label">Дашборд</span>
+          </button>
+          <button
+            className={`wb-cabinet-menu-item ${activeSection === "change-history" ? "active" : ""}`}
+            onClick={onOpenChangeHistorySection}
+          >
+            <span className="wb-cabinet-menu-icon">И</span>
+            <span className="wb-cabinet-menu-label">История</span>
           </button>
         </nav>
       </aside>
@@ -221,7 +290,46 @@ export function WbDashboardShell({
               onOpenDailyStats={onOpenDailyStatsSection}
               onOpenMinusPhrases={onOpenMinusPhrasesSection}
               onOpenQueryFrequencies={onOpenQueryFrequenciesSection}
+              onOpenOrders={onOpenOrdersSheet}
             />
+          ) : activeSection === "catalog-products" ? (
+            isCostPriceSheetOpen ? (
+              <DashboardCatalogProductDetailSection
+                products={filteredProducts}
+                costPrices={costPrices}
+                onBack={onCloseCostPriceSheet}
+              />
+            ) : isOrdersSheetOpen ? (
+              <DashboardOrdersDetailSection
+                products={filteredProducts}
+                orderCounts={orderCounts}
+                onBack={onCloseOrdersSheet}
+              />
+            ) : isJamSheetOpen ? (
+              <DashboardJamDailySection
+                products={filteredProducts}
+                onBack={onCloseJamSheet}
+              />
+            ) : (
+              <DashboardCatalogProductsSection
+                productCatalogCount={productCatalogCount}
+                productsSearch={productsSearch}
+                hasCatalogItems={hasCatalogItems}
+                isCatalogLoading={isCatalogLoading || isCostPricesLoading}
+                filteredProducts={filteredProducts}
+                productsSortKey={productsSortKey}
+                productsSortDirection={productsSortDirection}
+                costPrices={costPrices}
+                orderCounts={orderCounts}
+                onProductsSearchChange={onProductsSearchChange}
+                onProductsSortToggle={onProductsSortToggle}
+                onOpenCostPriceSheet={onOpenCostPriceSheet}
+                onOpenOrdersSheet={onOpenOrdersSheet}
+                onOpenJamSheet={onOpenJamSheet}
+                onCostSaved={onCostSaved}
+                onCostCleared={onCostCleared}
+              />
+            )
           ) : activeSection === "products" ? (
             <DashboardProductsSection
               productsMode={productsMode}
@@ -241,6 +349,20 @@ export function WbDashboardShell({
               onBackToProducts={onBackToProducts}
               detailWorkspace={detailWorkspace}
             />
+          ) : activeSection === "dashboard" ? (
+            <DashboardHubSection
+              onOpenTech={onOpenDashboardTechSection}
+              onOpenCabinet={onOpenDashboardCabinetSection}
+            />
+          ) : activeSection === "dashboard-tech" ? (
+            <DashboardTechSection onBack={onOpenDashboardSection} />
+          ) : activeSection === "dashboard-cabinet" ? (
+            <div className="wb-card" style={{ padding: 32 }}>
+              <h2>Дашборд кабинета</h2>
+              <p style={{ marginTop: 12, color: "var(--wb-text-muted)" }}>В разработке.</p>
+            </div>
+          ) : activeSection === "change-history" ? (
+            <DashboardChangeHistorySection />
           ) : (
             <DashboardMethodWorkspaceSection
               currentMethod={currentMethod}

@@ -1,6 +1,8 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 
+import AdmZip from "adm-zip";
+
 import type { DownloadedXlsxFile } from "./wb-cmp-safari.client.types";
 
 export function formatIsoDateForRuInput(value: string) {
@@ -17,7 +19,7 @@ export async function listXlsxFiles(downloadsDirectory: string) {
   const result = new Map<string, number>();
 
   for (const entry of entries) {
-    if (!entry.isFile() || !/\.xlsx$/i.test(entry.name)) {
+    if (!entry.isFile() || !/\.(xlsx|zip)$/i.test(entry.name)) {
       continue;
     }
 
@@ -30,6 +32,19 @@ export async function listXlsxFiles(downloadsDirectory: string) {
   }
 
   return result;
+}
+
+export async function readWorkbookBuffer(absolutePath: string): Promise<Buffer> {
+  const raw = await readFile(absolutePath);
+  if (!/\.zip$/i.test(absolutePath)) {
+    return raw;
+  }
+  const zip = new AdmZip(raw);
+  const xlsxEntry = zip.getEntries().find((e) => /\.xlsx$/i.test(e.entryName));
+  if (!xlsxEntry) {
+    throw new Error(`No XLSX file found inside ZIP archive: ${absolutePath}`);
+  }
+  return xlsxEntry.getData();
 }
 
 export async function waitForDownloadedXlsxFile(input: {
@@ -58,7 +73,7 @@ export async function waitForDownloadedXlsxFile(input: {
     }> = [];
 
     for (const entry of entries) {
-      if (!entry.isFile() || !/\.xlsx$/i.test(entry.name)) {
+      if (!entry.isFile() || !/\.(xlsx|zip)$/i.test(entry.name)) {
         continue;
       }
 
@@ -79,7 +94,7 @@ export async function waitForDownloadedXlsxFile(input: {
       const matchesDownloadHint =
         normalizedDownloadHint !== null &&
         normalizedFileName.includes(normalizedDownloadHint);
-      const startedRecently = fileStats.mtimeMs >= input.startedAtMs - 5_000;
+      const startedRecently = fileStats.mtimeMs >= input.startedAtMs - 900_000; // accept files from 15 min before run
 
       if ((isNewFile || startedRecently) && (matchesReportName || matchesDownloadHint)) {
         matchingFiles.push({
@@ -101,7 +116,7 @@ export async function waitForDownloadedXlsxFile(input: {
         continue;
       }
 
-      const workbookBuffer = await readFile(candidate.absolutePath);
+      const workbookBuffer = await readWorkbookBuffer(candidate.absolutePath);
       return {
         fileName: candidate.fileName,
         absolutePath: candidate.absolutePath,
@@ -121,7 +136,10 @@ export async function waitForDownloadedXlsxFile(input: {
 }
 
 function normalizeDownloadName(value: string) {
+  // normalize("NFC") converts macOS NFD filenames (е.g. й = U+0438+U+0306)
+  // to composed NFC form so Cyrillic includes() comparisons work correctly.
   return value
+    .normalize("NFC")
     .toLocaleLowerCase("ru")
     .replace(/[^a-zа-я0-9]+/gi, " ")
     .trim();

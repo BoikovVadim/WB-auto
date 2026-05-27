@@ -1,5 +1,6 @@
 import { Inject, Injectable, ServiceUnavailableException } from "@nestjs/common";
 
+import { buildProductAdvertisingReadModelRevision } from "./product-advertising-read-model-revision";
 import { ProductAdvertisingSnapshotRepository } from "./product-advertising-snapshot.repository";
 import { ProductAdvertisingSnapshotResolver } from "./product-advertising-snapshot.resolver";
 import { ProductWorkspaceRepository } from "./product-workspace.repository";
@@ -35,11 +36,6 @@ export class ProductWorkspaceSnapshotResolver {
       startedAt: string;
     } | null;
   }): Promise<ProductAdvertisingWorkspaceResponse> {
-    // SQL-direct fast path: строим workspace shell прямо из PostgreSQL для
-    // запрошенного диапазона — без CTE и без устаревших данных.
-    // Работает для ЛЮБОГО диапазона дат < 150 мс.
-    // Идёт ПЕРВЫМ чтобы гарантировать актуальные данные (placements, bid_type, etc.)
-    // из wb_campaigns, даже если есть старый снапшот без этих полей.
     if (input.currentPeriod) {
       const sqlShell = await this.wbClustersRepository.getWorkspaceShellDirectSQL(
         input.nmId,
@@ -48,31 +44,13 @@ export class ProductWorkspaceSnapshotResolver {
       if (sqlShell) {
         return sqlShell;
       }
+      // Explicit date ranges must stay exact/current. If the canonical Postgres
+      // projection has no campaigns for this period, return an empty exact shell
+      // instead of reviving another truth path.
+      return this.buildFallbackWorkspaceResponse(input);
     }
 
-    // Snapshot fallback: используем только когда SQL-direct не вернул данных
-    // (нет кластеров для товара). Старые снапшоты могут не иметь новых полей
-    // (placements и т.д.) — поэтому они идут после SQL-direct.
-    if (input.currentPeriod) {
-      const storedWorkspace = await this.productWorkspaceRepository.getWorkspaceSnapshot({
-        nmId: input.nmId,
-        startDate: input.currentPeriod.start,
-        endDate: input.currentPeriod.end,
-        schemaVersion: input.schemaVersion,
-      });
-      if (storedWorkspace) {
-        const normalizedWorkspace = normalizeStoredWorkspacePayload({
-          payload: storedWorkspace.payload,
-          currentRefresh: input.currentRefresh,
-        });
-        if (normalizedWorkspace) {
-          return normalizedWorkspace;
-        }
-      }
-    }
-
-    // CTE path: find the closest ready snapshot for the requested range.
-    // Used when (a) no exact dates given, or (b) SQL-direct returned null (no campaigns).
+    // CTE path: find the closest ready snapshot when no exact dates were given.
     const preferredSummary = await this.resolvePreferredSnapshotSummary(input);
     if (!preferredSummary) {
       return this.buildFallbackWorkspaceResponse(input);
@@ -179,38 +157,25 @@ export class ProductWorkspaceSnapshotResolver {
     currentPeriod?: { start: string; end: string } | null;
     schemaVersion: number;
   }) {
-    // Сначала пробуем готовый снапшот (мгновенно).
     if (input.currentPeriod) {
-      const exactResult = await this.productWorkspaceRepository.getWorkspaceClusterQueries({
+      const colonIdx = input.clusterKey.indexOf(":");
+      const normalizedClusterName =
+        colonIdx >= 0 ? input.clusterKey.slice(colonIdx + 1) : input.clusterKey;
+      const sqlQueries = await this.wbClustersRepository.getWorkspaceClusterQueriesSQL(
+        input.nmId,
+        input.advertId,
+        normalizedClusterName,
+        input.currentPeriod,
+      );
+
+      if (sqlQueries.queries.length === 0) {
+        return null;
+      }
+
+      return {
         nmId: input.nmId,
         startDate: input.currentPeriod.start,
         endDate: input.currentPeriod.end,
-        schemaVersion: input.schemaVersion,
-        advertId: input.advertId,
-        clusterKey: input.clusterKey,
-      });
-      if (exactResult) {
-        return exactResult;
-      }
-    }
-
-    // SQL-direct fast path: запросы кластера не зависят от диапазона дат —
-    // структура кластеров хранится как текущий срез. Возвращаем напрямую.
-    // clusterKey = "${advertId}:${normalizedClusterName}"
-    const colonIdx = input.clusterKey.indexOf(":");
-    const normalizedClusterName = colonIdx >= 0 ? input.clusterKey.slice(colonIdx + 1) : input.clusterKey;
-
-    const sqlQueries = await this.wbClustersRepository.getWorkspaceClusterQueriesSQL(
-      input.nmId,
-      input.advertId,
-      normalizedClusterName,
-    );
-
-    if (sqlQueries.queries.length > 0) {
-      return {
-        nmId: input.nmId,
-        startDate: input.currentPeriod?.start ?? "",
-        endDate: input.currentPeriod?.end ?? "",
         schemaVersion: input.schemaVersion,
         advertId: input.advertId,
         clusterKey: input.clusterKey,
@@ -220,7 +185,6 @@ export class ProductWorkspaceSnapshotResolver {
       };
     }
 
-    // Нет данных ни в SQL, ни в снапшоте — CTE-fallback на ближайший период.
     const preferredSummary = await this.resolvePreferredSnapshotSummary(input);
     if (!preferredSummary) {
       return null;
@@ -330,10 +294,17 @@ export class ProductWorkspaceSnapshotResolver {
     return {
       nmId: input.nmId,
       checkedAt: now,
+      revision: buildProductAdvertisingReadModelRevision({
+        scope: "workspace",
+        nmId: input.nmId,
+        requestedStartDate: input.currentPeriod?.start ?? null,
+        requestedEndDate: input.currentPeriod?.end ?? null,
+        builtAt: now,
+      }),
       readiness: {
         scope: "workspace",
         status: "ready",
-        source: "workspace_snapshot",
+        source: "sql_direct",
         materializationStatus: "pending",
       },
       header: {

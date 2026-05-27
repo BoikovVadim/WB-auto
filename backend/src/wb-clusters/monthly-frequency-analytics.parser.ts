@@ -60,44 +60,51 @@ function parseMonthlyFrequencyWorkbook(
     normalizeAdvertisingText: (value: string) => string;
   },
 ) {
-  const firstSheetName = workbook.SheetNames[0];
-  if (!firstSheetName) {
-    return [] as MonthlyFrequencyRow[];
-  }
-
-  const worksheet = workbook.Sheets[firstSheetName];
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
-    header: 1,
-    defval: "",
-  });
-  const headerMatch = findMonthlyFrequencyHeaderRow(rows);
-  if (!headerMatch) {
-    return [];
-  }
-
-  const deduplicatedRows = new Map<string, MonthlyFrequencyRow>();
-  for (const row of rows.slice(headerMatch.headerRowIndex + 1)) {
-    if (!Array.isArray(row)) {
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+      header: 1,
+      defval: "",
+    });
+    const headerMatch = findMonthlyFrequencyHeaderRow(rows);
+    if (!headerMatch) {
       continue;
     }
 
-    const queryText = input.readOptionalString(row[headerMatch.queryColumnIndex]);
-    const monthlyFrequency = readMonthlyFrequencyValue(
-      row[headerMatch.frequencyColumnIndex],
-    );
-    if (!queryText || monthlyFrequency === null) {
-      continue;
+    const deduplicatedRows = new Map<string, MonthlyFrequencyRow>();
+    for (const row of rows.slice(headerMatch.headerRowIndex + 1)) {
+      if (!Array.isArray(row)) {
+        continue;
+      }
+
+      const queryText = input.readOptionalString(row[headerMatch.queryColumnIndex]);
+      const monthlyFrequency = readMonthlyFrequencyValue(
+        row[headerMatch.frequencyColumnIndex],
+      );
+      if (!queryText || monthlyFrequency === null) {
+        continue;
+      }
+
+      const subjectName =
+        headerMatch.subjectColumnIndex !== -1
+          ? (input.readOptionalString(row[headerMatch.subjectColumnIndex]) ?? null)
+          : null;
+
+      const normalizedQuery = input.normalizeAdvertisingText(queryText);
+      const existing = deduplicatedRows.get(normalizedQuery);
+      if (!existing || monthlyFrequency > existing.monthlyFrequency) {
+        deduplicatedRows.set(normalizedQuery, {
+          queryText,
+          monthlyFrequency,
+          subjectName,
+        });
+      }
     }
 
-    const normalizedQuery = input.normalizeAdvertisingText(queryText);
-    const existing = deduplicatedRows.get(normalizedQuery);
-    if (!existing || monthlyFrequency > existing.monthlyFrequency) {
-      deduplicatedRows.set(normalizedQuery, {
-        queryText,
-        monthlyFrequency,
-      });
+    if (deduplicatedRows.size > 0) {
+      return Array.from(deduplicatedRows.values());
     }
   }
 
-  return Array.from(deduplicatedRows.values());
+  return [] as MonthlyFrequencyRow[];
 }

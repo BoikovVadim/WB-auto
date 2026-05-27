@@ -120,6 +120,8 @@ export interface StoredProductCatalogRow {
   product_name: string;
   brand_name: string;
   subject_name: string;
+  subject_id: string | null;
+  category_name: string | null;
   source_export_request_id: string | null;
   first_seen_at: string | null;
   last_seen_at: string | null;

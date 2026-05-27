@@ -76,7 +76,8 @@ export type ProductAdvertisingClusterQueryMappingSource =
   | "promotion"
   | "cabinet"
   | "merged"
-  | "cluster-name";
+  | "cluster-name"
+  | "stem-fallback";
 
 export type ProductAdvertisingClusterQueryMatchConfidence =
   | "exact"

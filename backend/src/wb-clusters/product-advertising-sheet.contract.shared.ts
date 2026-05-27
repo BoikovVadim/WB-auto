@@ -62,6 +62,7 @@ const clusterQueryMappingSources = new Set<ProductAdvertisingClusterQueryMapping
   "cabinet",
   "merged",
   "cluster-name",
+  "stem-fallback",
 ]);
 const clusterQueryMatchConfidence = new Set<ProductAdvertisingClusterQueryMatchConfidence>([
   "exact",

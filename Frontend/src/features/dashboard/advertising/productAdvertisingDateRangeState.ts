@@ -1,10 +1,10 @@
-import { formatCalendarDateValue, getAdvertisingDatePresetRange, type AdvertisingDateRange } from "./date";
+import { getAdvertisingDatePresetRange, type AdvertisingDateRange } from "./date";
 
 // Default preset applied when no explicit date range is available.
 // Used both on the first app load and when entering a product without
 // a stored preference.
 function getDefaultDateRange(): AdvertisingDateRange {
-  return getAdvertisingDatePresetRange("week");
+  return getAdvertisingDatePresetRange("month");
 }
 
 function normalizeExplicitDateRange(input: {
@@ -39,13 +39,8 @@ export function resolveInitialProductAdvertisingDateRange(input: {
 }
 
 export function resolveProductAdvertisingDateRangeForProductOpen(
-  currentRange: AdvertisingDateRange | null | undefined,
+  _currentRange: AdvertisingDateRange | null | undefined,
 ) {
-  // If the user already has a date range selected (either from a previous
-  // product or from sessionStorage) → keep it.
-  // Otherwise → default to "Неделя" (7 days ending today).
-  if (!currentRange || (!currentRange.start && !currentRange.end)) {
-    return getDefaultDateRange();
-  }
-  return currentRange;
+  // Product open should always start from a sliding month window ending today.
+  return getDefaultDateRange();
 }

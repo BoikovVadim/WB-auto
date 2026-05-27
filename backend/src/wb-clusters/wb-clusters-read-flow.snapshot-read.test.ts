@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   getProductAdvertisingSheetBundle,
+  getProductAdvertisingWorkspace,
   getProductAdvertisingWorkspaceClusterQueries,
   getProductAdvertisingWorkspaceClusterTable,
 } from "./wb-clusters-read-flow.snapshot-read";
@@ -154,6 +155,97 @@ function createEmptyNumericFilters() {
 }
 
 describe("wb-clusters snapshot read flow", () => {
+  it("returns workspace shell without loading initial cluster table", async () => {
+    const resolveWorkspaceShell = vi.fn().mockResolvedValue({
+      nmId: 777,
+      checkedAt: "2026-05-17T14:00:00.000Z",
+      readiness: {
+        scope: "workspace",
+        status: "ready",
+        source: "sql_direct",
+        materializationStatus: "sql_direct",
+      },
+      header: {
+        nmId: 777,
+        vendorCode: "v",
+        productName: "p",
+        brandName: "b",
+        subjectName: "s",
+      },
+      snapshot: {
+        status: "ready",
+        fit: "exact",
+        source: "live_read_model",
+        builtAt: "2026-05-17T14:00:00.000Z",
+        requestedStartDate: "2026-05-01",
+        requestedEndDate: "2026-05-17",
+        snapshotStartDate: "2026-05-01",
+        snapshotEndDate: "2026-05-17",
+        builtFromExportRequestId: null,
+        lastError: null,
+      },
+      range: {
+        startDate: "2026-05-01",
+        endDate: "2026-05-17",
+        jamIncluded: false,
+        jamStatus: "pending",
+      },
+      dateBounds: {
+        minDate: "2026-05-01",
+        maxDate: "2026-05-17",
+        defaultStartDate: "2026-05-01",
+        defaultEndDate: "2026-05-17",
+      },
+      campaignTabs: [],
+      defaultCampaignId: null,
+      selectedCampaignSummary: null,
+      initialClusterTable: null,
+      syncState: {
+        hasPendingClusterSync: false,
+        refreshStatus: "idle",
+        syncRunId: null,
+        startedAt: null,
+      },
+      diagnostics: {
+        periodMetricsStatus: "exact",
+        periodMetricsActualStartDate: "2026-05-01",
+        periodMetricsActualEndDate: "2026-05-17",
+        dailyStatsWindowStartDate: "2026-05-01",
+        dailyStatsWindowEndDate: "2026-05-17",
+        queryCoverageStatus: "ready",
+      },
+    });
+    const resolveWorkspaceCampaignRows = vi.fn();
+    const self = {
+      productAdvertisingSheetSnapshotSchemaVersion: 9,
+      productRefreshInFlight: new Map(),
+      normalizeAdvertisingSheetJamRange: vi.fn().mockReturnValue({
+        start: "2026-05-01",
+        end: "2026-05-17",
+      }),
+      productWorkspaceSnapshotResolver: {
+        resolveWorkspaceShell,
+        resolveWorkspaceCampaignRows,
+      },
+      productAdvertisingWorkspaceReadService: {
+        buildClusterTableResponse: vi.fn(),
+      },
+    };
+
+    const workspace = await getProductAdvertisingWorkspace(
+      self as unknown as WbClustersSnapshotReadContext,
+      777,
+      {
+        startDate: "2026-05-01",
+        endDate: "2026-05-17",
+      },
+    );
+
+    expect(workspace.nmId).toBe(777);
+    expect(resolveWorkspaceShell).toHaveBeenCalledTimes(1);
+    expect(resolveWorkspaceCampaignRows).not.toHaveBeenCalled();
+  });
+
   it("falls back to sheet-backed workspace campaign rows when storage is not materialized yet", async () => {
     const resolveWorkspaceCampaignRows = vi.fn().mockResolvedValue(null);
     const resolve = vi.fn().mockResolvedValue(createFallbackSheet());
@@ -266,10 +358,9 @@ describe("wb-clusters snapshot read flow", () => {
     });
   });
 
-  it("falls back to sheet-backed workspace queries when storage is not materialized yet", async () => {
+  it("returns an empty workspace query slice when storage is not materialized yet", async () => {
+    const buildClusterQueriesResponse = vi.fn().mockReturnValue({ queries: [] });
     const resolveWorkspaceClusterQueries = vi.fn().mockResolvedValue(null);
-    const resolve = vi.fn().mockResolvedValue(createFallbackSheet());
-    // SQL fast path returns null → code falls back to PATH B sheet resolve.
     const getWorkspaceClusterQueriesSQL = vi.fn().mockResolvedValue(null);
     const self = {
       productAdvertisingSheetSnapshotSchemaVersion: 9,
@@ -283,13 +374,11 @@ describe("wb-clusters snapshot read flow", () => {
       productWorkspaceSnapshotResolver: {
         resolveWorkspaceClusterQueries,
       },
-      productAdvertisingSnapshotResolver: {
-        resolve,
-      },
       productAdvertisingReadRepository: {
         getWorkspaceClusterQueriesSQL,
       },
       productAdvertisingWorkspaceReadService: {
+        buildClusterQueriesResponse,
       },
     };
 
@@ -309,30 +398,52 @@ describe("wb-clusters snapshot read flow", () => {
       currentPeriod: null,
       schemaVersion: 9,
     });
-    expect(resolve).toHaveBeenCalledWith({
+    expect(buildClusterQueriesResponse).toHaveBeenCalledWith({
       nmId: 555,
-      currentPeriod: null,
-      schemaVersion: 9,
+      snapshot: expect.objectContaining({
+        queries: [],
+      }),
+      advertId: 11,
+      clusterKey: "11:кеды",
+      clusterName: "  Кеды  ",
+      sortKey: "spend",
+      sortDirection: "desc",
+      normalizeAdvertisingText: expect.any(Function),
     });
     expect(result.readiness).toEqual({
       scope: "cluster_queries",
       status: "ready",
-      source: "sheet_snapshot",
-      materializationStatus: "fallback_sheet",
+      source: "workspace_snapshot",
+      materializationStatus: "materialized",
     });
   });
 
   it("deduplicates and validates nmIds before resolving a bundle", async () => {
-    const resolveMany = vi.fn().mockResolvedValue([{ nmId: 1001 }]);
+    const getProductAdvertisingSheet = vi
+      .fn()
+      .mockImplementation(async (nmId: number) => ({ nmId }));
+    const withEmptyJamMetrics = vi.fn().mockImplementation((sheet) => sheet);
+    const enrichProductAdvertisingSheetWithJam = vi
+      .fn()
+      .mockImplementation(async (sheet) => sheet);
+    const attachLiveMetadata = vi.fn().mockImplementation((sheet) => sheet);
     const self = {
-      productAdvertisingSheetSnapshotSchemaVersion: 3,
       normalizeAdvertisingSheetJamRange: vi.fn().mockReturnValue({
         start: "2024-04-01",
         end: "2024-04-30",
       }),
-      productAdvertisingSnapshotResolver: {
-        resolveMany,
+      productAdvertisingReadRepository: {
+        getProductAdvertisingSheet,
       },
+      withEmptyJamMetrics,
+      enrichProductAdvertisingSheetWithJam,
+      productAdvertisingSnapshotResolver: {
+        attachLiveMetadata,
+      },
+      productAdvertisingSheetCacheVersion: new Map(),
+      productAdvertisingSheetSnapshotCache: new Map(),
+      productAdvertisingSheetSnapshotInFlight: new Map(),
+      resolveProductAdvertisingSheetSnapshotCacheTtlMs: vi.fn().mockReturnValue(60_000),
     };
 
     const bundle = await getProductAdvertisingSheetBundle(
@@ -344,19 +455,20 @@ describe("wb-clusters snapshot read flow", () => {
       },
     );
 
-    expect(resolveMany).toHaveBeenCalledWith({
-      nmIds: [1001, 2002],
-      currentPeriod: {
-        start: "2024-04-01",
-        end: "2024-04-30",
-      },
-      schemaVersion: 3,
+    expect(getProductAdvertisingSheet).toHaveBeenCalledTimes(2);
+    expect(getProductAdvertisingSheet).toHaveBeenNthCalledWith(1, 1001, {
+      start: "2024-04-01",
+      end: "2024-04-30",
+    });
+    expect(getProductAdvertisingSheet).toHaveBeenNthCalledWith(2, 2002, {
+      start: "2024-04-01",
+      end: "2024-04-30",
     });
     expect(bundle.range).toEqual({
       startDate: "2024-04-01",
       endDate: "2024-04-30",
     });
-    expect(bundle.sheets).toEqual([{ nmId: 1001 }]);
+    expect(bundle.sheets).toEqual([{ nmId: 1001 }, { nmId: 2002 }]);
     expect(Number.isNaN(Date.parse(bundle.checkedAt))).toBe(false);
   });
 });

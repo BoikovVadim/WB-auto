@@ -103,10 +103,18 @@ export function getIndexStatements({
       CREATE INDEX IF NOT EXISTS wb_clusters_nm_advert_norm_cluster_idx
       ON ${tableName("wb_clusters")} (nm_id, advert_id, normalized_cluster_name)
     `,
-    // Speeds up the frequency JOIN in PATH B: LEFT JOIN wb_search_query_frequencies ON normalized_query_text.
+    // Speeds up the frequency JOIN: LEFT JOIN wb_search_query_frequencies ON normalized_query_identity.
     `
       CREATE INDEX IF NOT EXISTS wb_search_query_freq_norm_text_idx
       ON ${tableName("wb_search_query_frequencies")} (normalized_query_text)
+    `,
+    `
+      CREATE INDEX IF NOT EXISTS wb_search_query_freq_norm_identity_idx
+      ON ${tableName("wb_search_query_frequencies")} (normalized_query_identity)
+    `,
+    `
+      CREATE INDEX IF NOT EXISTS wb_search_query_freq_norm_stem_idx
+      ON ${tableName("wb_search_query_frequencies")} (normalized_query_stem)
     `,
     `
       CREATE INDEX IF NOT EXISTS wb_campaign_products_nm_id_idx
@@ -119,6 +127,19 @@ export function getIndexStatements({
     `
       CREATE INDEX IF NOT EXISTS wb_search_query_frequencies_report_end_idx
       ON ${tableName("wb_search_query_frequencies")} (report_end_date DESC, synced_at DESC)
+    `,
+    // Covers ORDER BY monthly_frequency DESC NULLS LAST in getRawQueryFrequencies.
+    // Without this the full snapshot SELECT (up to 300k rows) requires a seqscan + sort.
+    `
+      CREATE INDEX IF NOT EXISTS wb_search_query_freq_monthly_freq_idx
+      ON ${tableName("wb_search_query_frequencies")} (monthly_frequency DESC NULLS LAST)
+    `,
+    // Trigram index for instant LIKE '%...%' search on normalized_query_text.
+    // Requires pg_trgm extension (available in all standard PostgreSQL builds).
+    `CREATE EXTENSION IF NOT EXISTS pg_trgm`,
+    `
+      CREATE INDEX IF NOT EXISTS wb_search_query_freq_trgm_idx
+      ON ${tableName("wb_search_query_frequencies")} USING gin (normalized_query_text gin_trgm_ops)
     `,
     `
       CREATE INDEX IF NOT EXISTS wb_product_search_text_range_snapshots_nm_period_idx

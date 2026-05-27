@@ -17,7 +17,20 @@ export class WbClustersScheduler implements OnModuleInit {
   async onModuleInit() {
     this.productCatalogService
       .syncMissingVendorCodesFromContentApi()
+      .then(() =>
+        this.productCatalogService
+          .syncCategoryNames()
+          .catch((err: Error) => this.logger.warn(`onModuleInit category sync error: ${err.message}`)),
+      )
       .catch((err: Error) => this.logger.warn(`onModuleInit vendor sync error: ${err.message}`));
+    // Warm query-frequencies in-memory cache 30 s after boot so that the first
+    // browser request is served from memory rather than hitting the DB cold.
+    setTimeout(() => {
+      this.wbClustersService
+        .getRawQueryFrequencies(300_000)
+        .then((rows) => this.logger.log(`Query frequencies cache warmed: ${rows.length} rows`))
+        .catch((err: Error) => this.logger.warn(`Query frequencies warmup error: ${err.message}`));
+    }, 30_000);
     // Startup warmup re-enabled (May 2026). setImmediate yields added to PATH B
     // prevent the event loop from blocking and give GC time to reclaim memory
     // between batches. Concurrency is "startup" priority = 1 product at a time,
@@ -28,19 +41,9 @@ export class WbClustersScheduler implements OnModuleInit {
         .triggerStartupWarmup()
         .catch((err: Error) => this.logger.warn(`Startup warmup error: ${err.message}`));
     }, 5 * 60 * 1000);
-
-    // One-time JAM backfill: fills all 30 historical days for each product
-    // sequentially (active-RK A→Z first, then all others A→Z), then stops.
-    // Ongoing "yesterday" freshness is handled by the nightly cron below.
-    // Internal 5-minute delay lets DB, schema-init, and warmup settle first.
-    // Disable via WB_PROMOTION_JAM_BACKFILL_LOOP_ENABLED=false for manual debugging.
-    if (appEnv.wbPromotionJamBackfillLoopEnabled) {
-      this.wbClustersService
-        .startJamBackfillLoop()
-        .catch((err: Error) => this.logger.error(`JAM backfill-loop crashed: ${err.message}`));
-    } else {
-      this.logger.log("JAM backfill loop disabled via WB_PROMOTION_JAM_BACKFILL_LOOP_ENABLED=false.");
-    }
+    this.logger.log(
+      "JAM boot backfill is disabled; nightly cron and explicit manual backfill remain active.",
+    );
   }
 
   // Single 5-second tick drives all three queue processors sequentially.
@@ -82,10 +85,18 @@ export class WbClustersScheduler implements OnModuleInit {
     await this.wbClustersService.handleScheduledJamSync();
   }
 
+  @Cron(appEnv.wbPromotionMonthlyFrequencySyncCron)
+  async handleScheduledMonthlyFrequencySync() {
+    await this.wbClustersService.handleScheduledMonthlyFrequencySync();
+  }
+
   // Re-sync vendor codes from WB Content API once a day at 07:00 Moscow (04:00 UTC).
   @Cron("0 0 4 * * *")
   async handleVendorCodeSync() {
     await this.productCatalogService.syncMissingVendorCodesFromContentApi();
+    await this.productCatalogService
+      .syncCategoryNames()
+      .catch((err: Error) => this.logger.warn(`handleVendorCodeSync category sync error: ${err.message}`));
   }
 
   // Ночной пре-компьютинг в 22:30 МСК (19:30 UTC).
@@ -96,5 +107,43 @@ export class WbClustersScheduler implements OnModuleInit {
     await this.wbClustersService
       .precomputeNextDayPeriod()
       .catch((err: Error) => this.logger.warn(`Ночной пре-компьютинг: ошибка: ${err.message}`));
+  }
+
+  // Daily cost price snapshot at 00:01 MSK (21:01 UTC previous day).
+  // Copies each product's most recent cost price into today's date row so that
+  // the retrospective history grows automatically without user action.
+  // Uses ON CONFLICT DO NOTHING — safe if run more than once per day.
+  @Cron("0 1 21 * * *")
+  async handleCostPriceDailySnapshot() {
+    await this.wbClustersService
+      .snapshotCostPricesToday()
+      .catch((err: Error) => this.logger.warn(`Cost price snapshot error: ${err.message}`));
+  }
+
+  // ─── Orders (Analytics CSV) ──────────────────────────────────────────────────
+  //
+  // How accumulation works:
+  //   - Every hour: refresh last 7 days (upsert, old data preserved)
+  //   - At 02:00 МСК: finalize the day — WB closes yesterday by ~01:00 МСК
+  //   - Result: wb_product_daily_orders grows by 1 row per product each day
+  //
+  // Data source: DETAIL_HISTORY_REPORT CSV (one request, all products × 7 days)
+
+  /** Every hour: refresh today's running total from WB Analytics CSV. */
+  @Cron(appEnv.wbOrdersSyncCron)
+  async handleOrdersSync() {
+    if (!appEnv.wbOrdersSyncEnabled) return;
+    await this.wbClustersService
+      .syncOrdersFromAnalytics(0)
+      .catch((err: Error) => this.logger.warn(`Orders sync error: ${err.message}`));
+  }
+
+  /** At 02:00 МСК (23:00 UTC): sync yesterday + today to finalize the previous day. */
+  @Cron(appEnv.wbOrdersFinalizeCron)
+  async handleOrdersFinalize() {
+    if (!appEnv.wbOrdersSyncEnabled) return;
+    await this.wbClustersService
+      .syncOrdersFromAnalytics(1)
+      .catch((err: Error) => this.logger.warn(`Orders finalize error: ${err.message}`));
   }
 }

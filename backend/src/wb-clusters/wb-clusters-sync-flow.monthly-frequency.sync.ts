@@ -60,10 +60,10 @@ export async function syncMonthlyFrequencyReadModel(
     return;
   }
 
-  if (!self.wbCmpSafariClient.isAvailable()) {
+  if (!self.wbCmpSafariClient.isAvailable() && !self.wbSellerPortalPlaywrightClient.isAvailable()) {
     self.pushWarning(
       input.warningMessages,
-      `Monthly frequency premium snapshot for ${period.to} is still missing, and the Safari seller-portal fallback is unavailable on this host.`,
+      `Monthly frequency premium snapshot for ${period.to} is still missing, and neither the Safari nor the Playwright seller-portal fallback is available on this host.`,
     );
     return;
   }
@@ -126,10 +126,24 @@ export async function trySyncMonthlyFrequencyCandidate(
 
   if (readyExistingReport) {
     if (readyExistingReport.status !== "FAILED") {
-      self.pushWarning(
-        input.warningMessages,
-        `WB Seller Analytics already has ${readyExistingReport.status} report ${readyExistingReport.id} for ${input.period.from}..${input.period.to}. Monthly frequency will use the previous cached snapshot until that report becomes available.`,
-      );
+      // Report is still generating (PROCESSING/PENDING): poll until SUCCESS.
+      const polled = await pollReportUntilReady(self, {
+        initialReportId: readyExistingReport.id,
+        period: input.period,
+        candidate: input.candidate,
+        warningMessages: input.warningMessages,
+      });
+      if (polled?.status === "SUCCESS") {
+        const downloaded = await self.downloadMonthlyFrequencyReport({
+          syncRunId: input.syncRunId,
+          nmId: input.nmId,
+          reportId: polled.id,
+          candidate: input.candidate,
+          period: input.period,
+          warningMessages: input.warningMessages,
+        });
+        return downloaded ? "done" : "continue";
+      }
       return "done";
     }
 
@@ -219,23 +233,79 @@ export async function trySyncMonthlyFrequencyCandidate(
     }
   }
 
-  if (createdReport.status !== "SUCCESS") {
-    self.pushWarning(
-      input.warningMessages,
-      `WB Seller Analytics report ${createdReport.id} is still ${createdReport.status}. Monthly frequency will stay on the latest cached snapshot until the report is ready.`,
-    );
-    return "done";
-  }
-
-  const downloaded = await self.downloadMonthlyFrequencyReport({
-    syncRunId: input.syncRunId,
-    nmId: input.nmId,
-    reportId: createdReport.id,
-    candidate: input.candidate,
+  // Report was just created (or retried after FAILED): poll until ready.
+  const polled = await pollReportUntilReady(self, {
+    initialReportId: createdReport.id,
     period: input.period,
+    candidate: input.candidate,
     warningMessages: input.warningMessages,
   });
-  return downloaded ? "done" : "continue";
+  if (polled?.status === "SUCCESS") {
+    const downloaded = await self.downloadMonthlyFrequencyReport({
+      syncRunId: input.syncRunId,
+      nmId: input.nmId,
+      reportId: polled.id,
+      candidate: input.candidate,
+      period: input.period,
+      warningMessages: input.warningMessages,
+    });
+    return downloaded ? "done" : "continue";
+  }
+
+  return "done";
+}
+
+/**
+ * Polls WB Seller Analytics until the report transitions to SUCCESS or FAILED,
+ * or the timeout expires. Returns the final report item (SUCCESS or timed-out
+ * PROCESSING) or null if the report disappears from the list.
+ *
+ * Poll interval: 15 s. Timeout: 5 minutes (20 attempts).
+ * This is acceptable inside the daily 04:00 UTC cron and inside the full sync,
+ * because WB typically generates these reports in < 60 seconds.
+ */
+async function pollReportUntilReady(
+  self: WbClustersService,
+  input: {
+    initialReportId: string;
+    period: { from: string; to: string };
+    candidate: SellerAnalyticsReportCandidate;
+    warningMessages: string[];
+  },
+): Promise<SellerAnalyticsDownloadListItem | null> {
+  const POLL_INTERVAL_MS = 15_000;
+  const MAX_ATTEMPTS = 20; // 5 minutes total
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+
+    const list: SellerAnalyticsDownloadListItem[] | null = await self.tryAnalyticsStep(
+      `seller analytics poll attempt ${attempt}/${MAX_ATTEMPTS} for ${input.candidate.reportType}`,
+      () => getSellerAnalyticsReportList(self),
+      input.warningMessages,
+    );
+    if (!list) {
+      return null;
+    }
+
+    const report =
+      list.find((item: any) => item.id === input.initialReportId) ??
+      findMatchingSellerAnalyticsReport(list, input.candidate.reportName, input.period);
+
+    if (!report) {
+      return null;
+    }
+
+    if (report.status === "SUCCESS" || report.status === "FAILED") {
+      return report;
+    }
+  }
+
+  self.pushWarning(
+    input.warningMessages,
+    `WB Seller Analytics report ${input.initialReportId} is still processing after ${MAX_ATTEMPTS} poll attempts (${(MAX_ATTEMPTS * POLL_INTERVAL_MS) / 60_000} min). Monthly frequency will stay on the latest cached snapshot.`,
+  );
+  return null;
 }
 
 export async function downloadMonthlyFrequencyReport(
@@ -292,6 +362,11 @@ export async function downloadMonthlyFrequencyReport(
     reportEndDate: input.period.to,
     rows,
   });
+
+  // Fresh frequency data just landed: bust the 20-min TTL caches so reads do
+  // not keep serving the previous snapshot until expiry (matches the manual
+  // sync/frequency-cache-bust endpoint behaviour).
+  self.clearAllFrequencyCaches();
 
   await self.wbClustersRepository.saveRawArchive({
     syncRunId: input.syncRunId,

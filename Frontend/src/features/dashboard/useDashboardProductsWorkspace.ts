@@ -34,10 +34,18 @@ type ProductOption = {
   nmId: number | null;
 };
 
-export type ProductListSortKey = "id" | "name" | "total" | "active" | "paused" | "disabled";
+export type ProductListItem = {
+  vendorCode: string;
+  nmId: number | null;
+  subjectName?: string | null;
+  categoryName?: string | null;
+  campaignCounts?: { total: number; active: number; paused: number; disabled: number };
+};
+
+export type ProductListSortKey = "id" | "name" | "category" | "subject" | "total" | "active" | "paused" | "disabled";
 
 export function useDashboardProductsWorkspace(input: {
-  activeSection: "exports" | "method" | "products" | "jam" | "catalog" | "campaigns" | "sync-runs" | "cluster-stats" | "daily-stats" | "minus-phrases" | "query-frequencies";
+  activeSection: import("./persistence/dashboardViewStateTypes").DashboardSection;
   productsMode: "list" | "detail";
   currentProductExport: WbExportResponse | null;
   currentExportProducts: ProductOption[];
@@ -57,7 +65,8 @@ export function useDashboardProductsWorkspace(input: {
   openProductsList: () => void;
 }) {
   const { invalidateProductAdvertisingDetail } = input;
-  const isProductsSectionActive = input.activeSection === "products";
+  const isProductsSectionActive =
+    input.activeSection === "products" || input.activeSection === "catalog-products";
   const isProductsListActive = isProductsSectionActive && input.productsMode === "list";
   const isProductsDetailActive = isProductsSectionActive && input.productsMode === "detail";
   const {
@@ -81,13 +90,21 @@ export function useDashboardProductsWorkspace(input: {
         result = normalize(left.vendorCode).localeCompare(normalize(right.vendorCode), "ru");
       } else if (input.productsSortKey === "id") {
         result = (left.nmId ?? 0) - (right.nmId ?? 0);
+      } else if (input.productsSortKey === "category") {
+        const normalize = (s: string) =>
+          s.trim().replace(/[-_/\\]+/g, " ").replace(/\s+/g, " ").toLocaleLowerCase("ru");
+        result = normalize(left.categoryName ?? "").localeCompare(normalize(right.categoryName ?? ""), "ru");
+      } else if (input.productsSortKey === "subject") {
+        const normalize = (s: string) =>
+          s.trim().replace(/[-_/\\]+/g, " ").replace(/\s+/g, " ").toLocaleLowerCase("ru");
+        result = normalize(left.subjectName ?? "").localeCompare(normalize(right.subjectName ?? ""), "ru");
       } else {
         const getCnt = (p: typeof left): number => {
           switch (input.productsSortKey) {
-            case "total":    return p.campaignCounts.total;
-            case "active":   return p.campaignCounts.active;
-            case "paused":   return p.campaignCounts.paused;
-            case "disabled": return p.campaignCounts.disabled;
+            case "total":    return p.campaignCounts?.total ?? 0;
+            case "active":   return p.campaignCounts?.active ?? 0;
+            case "paused":   return p.campaignCounts?.paused ?? 0;
+            case "disabled": return p.campaignCounts?.disabled ?? 0;
             default:         return 0;
           }
         };
@@ -108,7 +125,9 @@ export function useDashboardProductsWorkspace(input: {
       if (product.vendorCode.toLocaleLowerCase("ru").includes(normalizedQuery)) {
         return true;
       }
-      if (String(product.nmId).includes(normalizedQuery)) {
+      // Не приводим null к строке "null", иначе запрос "null"/"ul" совпал бы со
+      // всеми товарами без nmId.
+      if (product.nmId !== null && String(product.nmId).includes(normalizedQuery)) {
         return true;
       }
       return false;
@@ -144,13 +163,6 @@ export function useDashboardProductsWorkspace(input: {
 
   // Прогреваем воркспейс всех видимых товаров пока пользователь смотрит список —
   // чтобы при клике данные брались из кэша моментально без состояния загрузки.
-  const allCatalogNmIds = useMemo(
-    () =>
-      productCatalogItems
-        .map((p) => p.nmId)
-        .filter((id): id is number => id !== null && id > 0),
-    [productCatalogItems],
-  );
   const visibleFirstNmIds = useMemo(
     () => filteredProducts
       .slice(0, 30)
@@ -162,7 +174,6 @@ export function useDashboardProductsWorkspace(input: {
     active: isProductsListActive,
     requestInput: productAdvertisingPrefetchRequestInput,
     visibleNmIds: visibleFirstNmIds,
-    allNmIds: allCatalogNmIds,
   });
 
   const { resolvedCatalogProduct } = useDashboardProductSelection({

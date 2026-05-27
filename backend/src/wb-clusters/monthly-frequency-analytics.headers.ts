@@ -78,6 +78,26 @@ function isMonthlyFrequencyValueHeader(value: unknown) {
   );
 }
 
+function isMonthlyFrequencySubjectHeader(value: unknown) {
+  const header = normalizeCsvHeader(value);
+  if (!header) {
+    return false;
+  }
+  // Matches:
+  //   "Предмет"                          → "предмет"
+  //   "Больше всего заказов в предмете"  → "большевсегозаказоввпредмете" (WB JAM report column)
+  //   "subject", "SubjectName", etc.
+  return (
+    header === "предмет" ||
+    header.startsWith("предмет") ||
+    header.endsWith("предмете") ||
+    header === "subject" ||
+    header === "subjectname" ||
+    header === "subjectcategory" ||
+    header === "категория"
+  );
+}
+
 export function findMonthlyFrequencyHeaderRow(rows: unknown[][]) {
   for (
     let headerRowIndex = 0;
@@ -100,10 +120,17 @@ export function findMonthlyFrequencyHeaderRow(rows: unknown[][]) {
       frequencyColumnIndex !== -1 &&
       queryColumnIndex !== frequencyColumnIndex
     ) {
+      const subjectColumnIndex = headerRow.findIndex((header) =>
+        isMonthlyFrequencySubjectHeader(header),
+      );
       return {
         headerRowIndex,
         queryColumnIndex,
         frequencyColumnIndex,
+        /** -1 if the "Предмет" column is absent in this report format. */
+        subjectColumnIndex: subjectColumnIndex !== frequencyColumnIndex && subjectColumnIndex !== queryColumnIndex
+          ? subjectColumnIndex
+          : -1,
       };
     }
   }

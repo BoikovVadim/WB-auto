@@ -196,6 +196,10 @@ function buildContractWorkspaceFixture(): ContractWorkspaceResponse {
   return {
     nmId: sheet.nmId,
     checkedAt: sheet.checkedAt,
+    revision: {
+      key: "wb-product-advertising:workspace:123456:none:none:2026-05-01:2026-05-07:2026-05-08T07:00:00.000Z",
+      builtAt: sheet.checkedAt,
+    },
     readiness: {
       scope: "workspace",
       status: "ready",
@@ -297,6 +301,10 @@ function buildContractClusterTableFixture(): ContractClusterTableResponse {
     nmId: 123456,
     advertId: 10,
     checkedAt: "2026-05-08T07:00:00.000Z",
+    revision: {
+      key: "wb-product-advertising:cluster_table:123456:10:none:2026-05-01:2026-05-07:2026-05-08T07:00:00.000Z",
+      builtAt: "2026-05-08T07:00:00.000Z",
+    },
     readiness: {
       scope: "cluster_table",
       status: "ready",
@@ -346,9 +354,6 @@ function buildContractClusterTableFixture(): ContractClusterTableResponse {
         updatedAt: "2026-05-08T06:56:00.000Z",
       },
     ],
-    querySearchIndex: {
-      "10:кеды": ["кеды", "обувь"],
-    },
     totals: {
       count: 1,
       jamQueryCount: 1,
@@ -382,6 +387,7 @@ function buildContractClusterTableFixture(): ContractClusterTableResponse {
     },
     appliedFilters: {
       search: "",
+      clusterNameSearch: "",
       status: "all",
       numericFilters: {
         jamFrequency: { min: null, max: null },
@@ -428,6 +434,10 @@ function buildContractClusterQueriesFixture(): ContractClusterQueriesResponse {
     clusterKey: "10:кеды",
     clusterName: "Кеды",
     checkedAt: "2026-05-08T07:00:00.000Z",
+    revision: {
+      key: "wb-product-advertising:cluster_queries:123456:10:10:кеды:2026-05-01:2026-05-07:2026-05-08T07:00:00.000Z",
+      builtAt: "2026-05-08T07:00:00.000Z",
+    },
     readiness: {
       scope: "cluster_queries",
       status: "ready",
@@ -526,5 +536,12 @@ describe("syncClient advertising contract validators", () => {
     expect(() => assertProductAdvertisingWorkspaceResponse(brokenWorkspace)).toThrow(
       "Invalid product advertising workspace response.",
     );
+  });
+
+  it("accepts cluster-table payloads without querySearchIndex", () => {
+    const clusterTable = buildContractClusterTableFixture();
+    delete clusterTable.querySearchIndex;
+
+    expect(() => assertProductAdvertisingWorkspaceClusterTableResponse(clusterTable)).not.toThrow();
   });
 });

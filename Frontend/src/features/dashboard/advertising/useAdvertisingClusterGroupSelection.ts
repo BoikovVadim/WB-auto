@@ -90,8 +90,21 @@ export function useAdvertisingClusterGroupSelection(
     });
   }, [visibleClusterRowKeys]);
 
-  const allVisibleClustersSelected =
-    visibleClusterRows.length > 0 && selectedClusterRows.length === visibleClusterRows.length;
+  // Сравниваем по числу УНИКАЛЬНЫХ ключей групп: если две видимые строки делят один
+  // ключ, длины массивов завышаются и "выбраны все" срабатывает неверно.
+  const allVisibleClustersSelected = useMemo(() => {
+    const distinctVisibleKeys = new Set(visibleClusterRowKeys);
+    if (distinctVisibleKeys.size === 0) {
+      return false;
+    }
+    let selectedCount = 0;
+    for (const key of distinctVisibleKeys) {
+      if (selectedClusterKeySet.has(key)) {
+        selectedCount += 1;
+      }
+    }
+    return selectedCount === distinctVisibleKeys.size;
+  }, [visibleClusterRowKeys, selectedClusterKeySet]);
 
   return {
     expandedClusterKeys,

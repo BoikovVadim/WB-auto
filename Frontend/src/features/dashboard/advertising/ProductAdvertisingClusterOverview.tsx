@@ -1,13 +1,14 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { ui } from "../copy";
 import { ProductAdvertisingDateFilter } from "./ProductAdvertisingDateFilter";
+import { ProductAdvertisingChangeLogPanel } from "./ProductAdvertisingChangeLogPanel";
 import type { ProductAdvertisingClusterTableSectionProps } from "./ProductAdvertisingClusterTableSection";
 import {
   getAdvertisingCampaignLabel,
   getAdvertisingCampaignStatusTone,
 } from "./clusterTableView";
-import { formatAdvertisingCampaignStatus } from "./model";
+import { formatAdvertisingCampaignStatus, isAdvertisingCampaignArchived } from "./model";
 
 function getPlacementsLabel(
   placementsSearch: boolean | null | undefined,
@@ -18,8 +19,15 @@ function getPlacementsLabel(
   if (search && rec) return "Поиск+Рекомендации";
   if (search) return "Поиск";
   if (rec) return "Рекомендации";
-  if (placementsSearch === null && placementsRecommendations === null) return null;
-  return null;
+  // null только когда оба значения неизвестны. Если хотя бы одно явно известно
+  // (false), площадки заданы, но ни одна не включена — это не "неизвестно".
+  if (
+    (placementsSearch === null || placementsSearch === undefined) &&
+    (placementsRecommendations === null || placementsRecommendations === undefined)
+  ) {
+    return null;
+  }
+  return "Без площадок";
 }
 
 function getBidTypeLabel(bidType: string | null): string | null {
@@ -42,12 +50,6 @@ function buildCampaignUrl(advertId: number, nmId: number | null): string {
     params.set("nmId", String(nmId));
   }
   return `${base}?${params.toString()}`;
-}
-
-function getCampaignStatusPriority(status: number | null): number {
-  if (status === 9) return 0;  // active / running
-  if (status === 11) return 1; // paused
-  return 2;                    // disabled / excluded
 }
 
 type ProductAdvertisingClusterOverviewProps = Pick<
@@ -83,14 +85,88 @@ type ProductAdvertisingClusterOverviewProps = Pick<
 export function ProductAdvertisingClusterOverview(
   props: ProductAdvertisingClusterOverviewProps,
 ) {
-  const sortedCampaigns = useMemo(
-    () =>
-      [...props.campaignSummaries].sort(
-        (a, b) =>
-          getCampaignStatusPriority(a.campaignStatus) -
-          getCampaignStatusPriority(b.campaignStatus),
-      ),
-    [props.campaignSummaries],
+  const [isActiveExpanded, setIsActiveExpanded] = useState(true);
+  const [isArchivedExpanded, setIsArchivedExpanded] = useState(false);
+  const [isChangeLogOpen, setIsChangeLogOpen] = useState(false);
+  const hasSelectedCampaign = props.selectedCampaignAdvertId !== null;
+
+  const handleOpenChangeLog = useCallback(() => setIsChangeLogOpen(true), []);
+  const handleCloseChangeLog = useCallback(() => setIsChangeLogOpen(false), []);
+
+  // Close panel when campaign changes
+  useEffect(() => {
+    setIsChangeLogOpen(false);
+  }, [props.selectedCampaignAdvertId]);
+
+  // Группировка "Активные" = НЕ архивные (вкл. кампании на паузе, статус 11).
+  // Реальный статус каждой кампании виден по цветной точке/тултипу карточки
+  // (formatAdvertisingCampaignStatus), поэтому пауза тут не теряется.
+  const activeCampaigns: typeof props.campaignSummaries = [];
+  const archivedCampaigns: typeof props.campaignSummaries = [];
+  for (const item of props.campaignSummaries) {
+    if (isAdvertisingCampaignArchived(item.campaignStatus)) {
+      archivedCampaigns.push(item);
+    } else {
+      activeCampaigns.push(item);
+    }
+  }
+
+  const isSelectedCampaignArchived =
+    props.selectedCampaignAdvertId !== null &&
+    archivedCampaigns.some((item) => item.advertId === props.selectedCampaignAdvertId);
+
+  useEffect(() => {
+    if (isSelectedCampaignArchived) {
+      setIsArchivedExpanded(true);
+    }
+  }, [isSelectedCampaignArchived]);
+
+  const renderCampaignCard = (item: typeof props.campaignSummaries[number]) => (
+    <div key={item.advertId} className="wb-advertising-campaign-card-wrap">
+      <a
+        href={buildCampaignUrl(item.advertId, props.nmId)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="wb-advertising-campaign-wb-link"
+        title="Открыть РК на Wildberries"
+        aria-label="Открыть РК на Wildberries"
+      >
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path d="M10 7.5V10.5C10 10.776 9.776 11 9.5 11H1.5C1.224 11 1 10.776 1 10.5V2.5C1 2.224 1.224 2 1.5 2H4.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+          <path d="M7 1H11V5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M11 1L5.5 6.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+        </svg>
+      </a>
+      <button
+        className={`wb-advertising-campaign-card ${
+          props.selectedCampaignAdvertId === item.advertId
+            ? "wb-advertising-campaign-card--active"
+            : ""
+        }`}
+        type="button"
+        onClick={() => props.onSelectCampaign(item.advertId)}
+        onMouseEnter={() => props.onCampaignHover?.(item.advertId)}
+      >
+        <span
+          className={`wb-advertising-status-dot wb-advertising-status-dot--${getAdvertisingCampaignStatusTone(item.campaignStatus)}`}
+          aria-label={formatAdvertisingCampaignStatus(item.campaignStatus)}
+          title={formatAdvertisingCampaignStatus(item.campaignStatus)}
+          style={{ flexShrink: 0 }}
+        />
+        <span style={{ minWidth: 0, overflow: "hidden" }}>
+          <span style={{ display: "block", fontSize: "11px", fontWeight: 600, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {getAdvertisingCampaignLabel(item)}
+          </span>
+          {(getPlacementsLabel(item.placementsSearch, item.placementsRecommendations) ?? getBidTypeLabel(item.bidType)) && (
+            <span style={{ display: "block", fontSize: "10px", fontWeight: 400, lineHeight: 1.2, opacity: 0.6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {[getPlacementsLabel(item.placementsSearch, item.placementsRecommendations), getBidTypeLabel(item.bidType)]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          )}
+        </span>
+      </button>
+    </div>
   );
 
   return (
@@ -102,140 +178,160 @@ export function ProductAdvertisingClusterOverview(
       </div>
 
       <div className="wb-advertising-campaign-grid">
-        {sortedCampaigns.map((item) => (
-          <div key={item.advertId} className="wb-advertising-campaign-card-wrap">
-            <a
-              href={buildCampaignUrl(item.advertId, props.nmId)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="wb-advertising-campaign-wb-link"
-              title="Открыть РК на Wildberries"
-              aria-label="Открыть РК на Wildberries"
-            >
-              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                <path d="M10 7.5V10.5C10 10.776 9.776 11 9.5 11H1.5C1.224 11 1 10.776 1 10.5V2.5C1 2.224 1.224 2 1.5 2H4.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-                <path d="M7 1H11V5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M11 1L5.5 6.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-              </svg>
-            </a>
+        {activeCampaigns.length > 0 && (
+          <div style={{ width: "100%" }}>
             <button
-              className={`wb-advertising-campaign-card ${
-                props.selectedCampaignAdvertId === item.advertId
-                  ? "wb-advertising-campaign-card--active"
-                  : ""
-              }`}
               type="button"
-              onClick={() => props.onSelectCampaign(item.advertId)}
-              onMouseEnter={() => props.onCampaignHover?.(item.advertId)}
+              className="wb-advertising-cluster-toggle__arrow-button"
+              style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px", fontWeight: 600, fontSize: "12px", color: "var(--wb-text-main)" }}
+              onClick={() => setIsActiveExpanded(!isActiveExpanded)}
             >
-              <span
-                className={`wb-advertising-status-dot wb-advertising-status-dot--${getAdvertisingCampaignStatusTone(item.campaignStatus)}`}
-                aria-label={formatAdvertisingCampaignStatus(item.campaignStatus)}
-                title={formatAdvertisingCampaignStatus(item.campaignStatus)}
-                style={{ flexShrink: 0 }}
-              />
-              <span style={{ minWidth: 0, overflow: "hidden" }}>
-                <span style={{ display: "block", fontSize: "11px", fontWeight: 600, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {getAdvertisingCampaignLabel(item)}
-                </span>
-                {(getPlacementsLabel(item.placementsSearch, item.placementsRecommendations) ?? getBidTypeLabel(item.bidType)) && (
-                  <span style={{ display: "block", fontSize: "10px", fontWeight: 400, lineHeight: 1.2, opacity: 0.6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {[getPlacementsLabel(item.placementsSearch, item.placementsRecommendations), getBidTypeLabel(item.bidType)]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
-                )}
-              </span>
+              <svg
+                className="wb-advertising-cluster-toggle__arrow"
+                style={{ transform: isActiveExpanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s ease" }}
+                width="10" height="10" viewBox="0 0 10 10" fill="none"
+              >
+                <path d="M3.5 2L7 5L3.5 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              Активные ({activeCampaigns.length})
             </button>
+            {isActiveExpanded && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "6px", marginLeft: "16px" }}>
+                {activeCampaigns.map(renderCampaignCard)}
+              </div>
+            )}
           </div>
-        ))}
+        )}
+
+        {archivedCampaigns.length > 0 && (
+          <div style={{ width: "100%", marginTop: activeCampaigns.length > 0 ? "12px" : 0 }}>
+            <button
+              type="button"
+              className="wb-advertising-cluster-toggle__arrow-button"
+              style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px", fontWeight: 600, fontSize: "12px", color: "var(--wb-text-main)" }}
+              onClick={() => setIsArchivedExpanded(!isArchivedExpanded)}
+            >
+              <svg
+                className="wb-advertising-cluster-toggle__arrow"
+                style={{ transform: isArchivedExpanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s ease" }}
+                width="10" height="10" viewBox="0 0 10 10" fill="none"
+              >
+                <path d="M3.5 2L7 5L3.5 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              Архивированные ({archivedCampaigns.length})
+            </button>
+            {isArchivedExpanded && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "6px", marginLeft: "16px" }}>
+                {archivedCampaigns.map(renderCampaignCard)}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {props.selectedCampaignAdvertId !== null ? (
-        <>
-          <div className="wb-advertising-toolbar">
-            <div className="wb-advertising-filters">
-              <button
-                className={`wb-toggle-pill wb-toggle-pill--compact ${
-                  props.statusFilter === "all" ? "active" : ""
-                }`}
-                type="button"
-                onClick={() => props.onStatusFilterChange("all")}
-              >
-                {`${ui.allClusters} ${String(props.clusterFilterCounts.all)}`}
-              </button>
-              <button
-                className={`wb-toggle-pill wb-toggle-pill--compact ${
-                  props.statusFilter === "active" ? "active" : ""
-                }`}
-                type="button"
-                onClick={() => props.onStatusFilterChange("active")}
-              >
-                {`${ui.activeClusters} ${String(props.clusterFilterCounts.active)}`}
-              </button>
-              <button
-                className={`wb-toggle-pill wb-toggle-pill--compact ${
-                  props.statusFilter === "excluded" ? "active" : ""
-                }`}
-                type="button"
-                onClick={() => props.onStatusFilterChange("excluded")}
-              >
-                {`${ui.excludedClusters} ${String(props.clusterFilterCounts.excluded)}`}
-              </button>
-            </div>
-            {props.canSubmitClusterAction ? (
-              <div className="wb-advertising-actions">
-                {props.selectedExcludedClustersCount > 0 ? (
-                  <button
-                    type="button"
-                    className="wb-toggle-pill wb-toggle-pill--compact"
-                    onClick={() => props.onApplyClusterAction("include")}
-                    disabled={
-                      props.isClusterActionSubmitting || props.hasSelectedPendingClusterActions
-                    }
-                  >
-                    {props.hasSelectedPendingClusterActions
-                      ? "Ожидание..."
-                      : props.isClusterActionSubmitting
-                        ? "Применение..."
-                        : `Включить ${String(props.selectedExcludedClustersCount)}`}
-                  </button>
-                ) : null}
-                {props.selectedActiveClustersCount > 0 ? (
-                  <button
-                    type="button"
-                    className="wb-toggle-pill wb-toggle-pill--compact"
-                    onClick={() => props.onApplyClusterAction("exclude")}
-                    disabled={
-                      props.isClusterActionSubmitting || props.hasSelectedPendingClusterActions
-                    }
-                  >
-                    {props.hasSelectedPendingClusterActions
-                      ? "Ожидание..."
-                      : props.isClusterActionSubmitting
-                        ? "Применение..."
-                        : `Выключить ${String(props.selectedActiveClustersCount)}`}
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-            <ProductAdvertisingDateFilter
-              dateRange={props.dateRange}
-              bounds={props.clusterDailyStatsBounds}
-              allowAllPast
-              onDateRangeChange={props.onDateRangeChange}
-              onPresetHover={props.onPresetHover}
-            />
+      <div className="wb-advertising-toolbar">
+        {hasSelectedCampaign ? (
+          <div className="wb-advertising-filters">
+            <button
+              className={`wb-toggle-pill wb-toggle-pill--compact ${
+                props.statusFilter === "all" ? "active" : ""
+              }`}
+              type="button"
+              onClick={() => props.onStatusFilterChange("all")}
+            >
+              {`${ui.allClusters} ${String(props.clusterFilterCounts.all)}`}
+            </button>
+            <button
+              className={`wb-toggle-pill wb-toggle-pill--compact ${
+                props.statusFilter === "active" ? "active" : ""
+              }`}
+              type="button"
+              onClick={() => props.onStatusFilterChange("active")}
+            >
+              {`${ui.activeClusters} ${String(props.clusterFilterCounts.active)}`}
+            </button>
+            <button
+              className={`wb-toggle-pill wb-toggle-pill--compact ${
+                props.statusFilter === "excluded" ? "active" : ""
+              }`}
+              type="button"
+              onClick={() => props.onStatusFilterChange("excluded")}
+            >
+              {`${ui.excludedClusters} ${String(props.clusterFilterCounts.excluded)}`}
+            </button>
+            <button
+              className={`wb-toggle-pill wb-toggle-pill--compact wb-toggle-pill--history${isChangeLogOpen ? " active" : ""}`}
+              type="button"
+              onClick={handleOpenChangeLog}
+              title="История изменений кластеров"
+            >
+              История изменений
+            </button>
           </div>
+        ) : (
+          <div />
+        )}
+        {hasSelectedCampaign && props.canSubmitClusterAction ? (
+          <div className="wb-advertising-actions">
+            {props.selectedExcludedClustersCount > 0 ? (
+              <button
+                type="button"
+                className="wb-toggle-pill wb-toggle-pill--compact"
+                onClick={() => props.onApplyClusterAction("include")}
+                disabled={
+                  props.isClusterActionSubmitting || props.hasSelectedPendingClusterActions
+                }
+              >
+                {props.hasSelectedPendingClusterActions
+                  ? "Ожидание..."
+                  : props.isClusterActionSubmitting
+                    ? "Применение..."
+                    : `Включить ${String(props.selectedExcludedClustersCount)}`}
+              </button>
+            ) : null}
+            {props.selectedActiveClustersCount > 0 ? (
+              <button
+                type="button"
+                className="wb-toggle-pill wb-toggle-pill--compact"
+                onClick={() => props.onApplyClusterAction("exclude")}
+                disabled={
+                  props.isClusterActionSubmitting || props.hasSelectedPendingClusterActions
+                }
+              >
+                {props.hasSelectedPendingClusterActions
+                  ? "Ожидание..."
+                  : props.isClusterActionSubmitting
+                    ? "Применение..."
+                    : `Выключить ${String(props.selectedActiveClustersCount)}`}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        <ProductAdvertisingDateFilter
+          dateRange={props.dateRange}
+          bounds={props.clusterDailyStatsBounds}
+          allowAllPast
+          onDateRangeChange={props.onDateRangeChange}
+          onPresetHover={props.onPresetHover}
+        />
+      </div>
 
-          {props.bidErrorMessage ? (
-            <p className="wb-advertising-inline-error">{props.bidErrorMessage}</p>
-          ) : null}
-          {props.clusterActionErrorMessage ? (
-            <p className="wb-advertising-inline-error">{props.clusterActionErrorMessage}</p>
-          ) : null}
-        </>
+      {props.bidErrorMessage ? (
+        <p className="wb-advertising-inline-error">{props.bidErrorMessage}</p>
       ) : null}
+      {props.clusterActionErrorMessage ? (
+        <p className="wb-advertising-inline-error">{props.clusterActionErrorMessage}</p>
+      ) : null}
+
+      {isChangeLogOpen &&
+        props.selectedCampaignAdvertId !== null &&
+        props.nmId !== null && (
+          <ProductAdvertisingChangeLogPanel
+            nmId={props.nmId}
+            advertId={props.selectedCampaignAdvertId}
+            onClose={handleCloseChangeLog}
+          />
+        )}
     </>
   );
 }

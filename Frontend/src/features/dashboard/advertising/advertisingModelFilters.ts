@@ -1,3 +1,4 @@
+import type { ProductAdvertisingWorkspaceClusterNumericFilters } from "../../../api/syncClient";
 import type { AdvertisingClusterRow } from "./advertisingModelTypes";
 import {
   readAdvertisingNumericValue,
@@ -89,4 +90,18 @@ export function parseAdvertisingNumericFilterValue(value: string) {
 
   const parsedValue = Number(normalizedValue);
   return Number.isFinite(parsedValue) ? parsedValue : null;
+}
+
+export function toProductAdvertisingWorkspaceNumericFilters(
+  filters: AdvertisingClusterNumericFilters,
+): ProductAdvertisingWorkspaceClusterNumericFilters {
+  return Object.fromEntries(
+    Object.entries(filters).map(([key, bounds]) => [
+      key,
+      {
+        min: parseAdvertisingNumericFilterValue(bounds.min),
+        max: parseAdvertisingNumericFilterValue(bounds.max),
+      },
+    ]),
+  ) as ProductAdvertisingWorkspaceClusterNumericFilters;
 }

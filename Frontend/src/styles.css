@@ -23,6 +23,32 @@
   --wb-radius-lg: 18px;
   --wb-radius-md: 14px;
   --wb-radius-sm: 12px;
+
+  /* ── Table design tokens ─────────────────────────────────────────────────
+     All wb-data-table instances MUST use these values so every table in the
+     project has the same font size, row height, and sticky-cell background.
+     Never hard-code font-size or padding inside th/td inline styles.
+     ────────────────────────────────────────────────────────────────────── */
+  --wb-table-font-size: 12px;
+  --wb-table-line-height: 1.2;
+  /* Padding is split so height-sensitive children (cost cell) can reference the
+     vertical component independently.  To change row height, update only these two. */
+  --wb-table-cell-padding-v: 5px;
+  --wb-table-cell-padding-h: 8px;
+  --wb-table-cell-padding: var(--wb-table-cell-padding-v) var(--wb-table-cell-padding-h);
+  --wb-table-header-bg: #fbf7eb;       /* th sticky background — always opaque */
+  --wb-table-body-bg: #ffffff;          /* td default background */
+  --wb-table-totals-bg: #fffdf5;        /* totals/summary row background */
+  /* Exact header row height — used as `top` offset for the second sticky row
+     (totals, filters…) so there is never a gap between sticky rows.
+     RULE: if you change font-size or padding-v, recalculate this value. */
+  --wb-table-header-row-height: 26px;
+  /* z-index ladder — header/totals cells must always be ABOVE body sticky cells.
+     Use --wb-table-sticky-z-body-col for horizontally-sticky body (td) cells.
+     RULE: never set z-index on sticky td/th outside this ladder. */
+  --wb-table-sticky-z-body-col: 1;     /* horizontally-sticky td in body rows */
+  --wb-table-sticky-z-col: 2;          /* horizontally-sticky th in header/totals */
+  --wb-table-sticky-z-header: 3;       /* vertically-sticky header/totals row */
 }
 
 html {
@@ -310,7 +336,7 @@ input {
   flex-direction: column;
   gap: 14px;
   min-width: 0;
-  padding: 10px 0 0;
+  padding: 10px 0;
   flex: 1;
   overflow: hidden;
 }
@@ -541,6 +567,25 @@ input {
   will-change: scroll-position;
 }
 
+/* Catalog products / cost price sheet — fills the flex chain to the bottom of the viewport.
+   Does NOT use wb-table-wrap base class to avoid max-height: min(72vh, 720px) override. */
+.wb-table-wrap--catalog-restricted {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-x: auto;
+  overflow-y: auto;
+  min-width: 0;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: #fff;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-gutter: stable both-edges;
+  will-change: scroll-position;
+  padding-bottom: 12px;
+}
+
 .wb-table-wrap--products {
   flex: 1;
   max-height: none;
@@ -559,7 +604,11 @@ input {
 .wb-data-table {
   width: 100%;
   min-width: 920px;
-  border-collapse: collapse;
+  /* separate + border-spacing:0 looks identical to collapse visually but
+     does NOT break position:sticky backgrounds — collapse is a known browser
+     bug that makes th/td backgrounds invisible when position:sticky is used. */
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 .wb-data-table--compact {
@@ -568,15 +617,16 @@ input {
 
 .wb-data-table th,
 .wb-data-table td {
-  padding: 9px 11px;
+  padding: var(--wb-table-cell-padding);
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   text-align: left;
-  vertical-align: top;
-  font-size: 12px;
+  vertical-align: middle;
+  font-size: var(--wb-table-font-size);
+  line-height: var(--wb-table-line-height);
 }
 
 .wb-data-table th {
-  background: #fbf7eb;
+  background: var(--wb-table-header-bg);
   color: var(--wb-text-muted);
   font-weight: 700;
   white-space: nowrap;
@@ -584,7 +634,48 @@ input {
   vertical-align: middle;
   position: sticky;
   top: 0;
-  z-index: 3;
+  z-index: var(--wb-table-sticky-z-header);
+  /* Exact height ensures the second sticky row's `top` offset is always correct
+     and there is never a gap between two stacked sticky header rows. */
+  height: var(--wb-table-header-row-height);
+  box-sizing: border-box;
+}
+
+/* ── Second sticky header row (Итого / filters) ───────────────────────────────
+   When <thead> has two rows (column headers + totals/filters), the second row
+   MUST stick at exactly `top: --wb-table-header-row-height` so there is no gap
+   between the two rows.  Apply this class to the <tr> element.
+   ──────────────────────────────────────────────────────────────────────────── */
+.wb-data-table .wb-thead-row--second th {
+  top: var(--wb-table-header-row-height);
+  z-index: var(--wb-table-sticky-z-header);
+  background: var(--wb-table-totals-bg);
+}
+
+/* ── Sticky column utility ────────────────────────────────────────────────────
+   Apply .wb-table-cell--sticky-left to ANY th or td that is position:sticky
+   on the horizontal axis.  This guarantees the cell is always opaque —
+   content scrolling behind it will never bleed through.
+   ──────────────────────────────────────────────────────────────────────────── */
+.wb-data-table .wb-table-cell--sticky-left {
+  position: sticky;
+  /* Body-row sticky columns use z-index=1 so they are always BELOW sticky header
+     rows (z-index 3+).  This prevents body cells from bleeding through the header
+     when both have position:sticky. */
+  z-index: var(--wb-table-sticky-z-body-col);
+  background: var(--wb-table-body-bg);
+}
+
+.wb-data-table thead .wb-table-cell--sticky-left,
+.wb-data-table th.wb-table-cell--sticky-left {
+  background: var(--wb-table-header-bg);
+  z-index: calc(var(--wb-table-sticky-z-header) + 1);
+}
+
+/* Totals row uses a warmer background to stand out, but still opaque */
+.wb-data-table .wb-products-totals-row .wb-table-cell--sticky-left,
+.wb-data-table .wb-products-totals-row th.wb-table-cell--sticky-left {
+  background: var(--wb-table-totals-bg);
 }
 
 .wb-table-cell--numeric {
@@ -657,7 +748,7 @@ input {
 .wb-raw-table-column--sticky-second {
   position: sticky;
   background: #fffdf7;
-  z-index: 2;
+  z-index: var(--wb-table-sticky-z-body-col);
 }
 
 .wb-raw-table-column--dragging {
@@ -1044,6 +1135,23 @@ input {
   white-space: nowrap;
 }
 
+/* Restore original: only vertical sticky for the two header rows (thead + totals).
+   No horizontal column sticky — that was causing the layout shift, gaps and truncation. */
+.wb-data-table--products thead th {
+  position: sticky;
+  top: 0;
+  z-index: var(--wb-table-sticky-z-header);
+  background: var(--wb-table-header-bg);
+}
+
+.wb-data-table--products .wb-products-totals-row th {
+  position: sticky;
+  top: var(--wb-table-header-row-height);
+  background: var(--wb-table-totals-bg);
+  border-bottom: 1px solid rgba(201, 162, 39, 0.3);
+  z-index: var(--wb-table-sticky-z-header);
+}
+
 .wb-products-campaign-count-th,
 .wb-products-campaign-count-td {
   width: 52px;
@@ -1055,10 +1163,10 @@ input {
 
 .wb-products-totals-row th {
   position: sticky;
-  top: 30px;
-  background: #fffdf5;
+  top: var(--wb-table-header-row-height);
+  background: var(--wb-table-totals-bg);
   border-bottom: 1px solid rgba(201, 162, 39, 0.3);
-  z-index: 2;
+  z-index: var(--wb-table-sticky-z-header);
 }
 
 .wb-products-campaign-active-th,
@@ -1101,6 +1209,36 @@ input {
   font: inherit;
   font-weight: 700;
   cursor: pointer;
+}
+
+/* Resize handles use position:absolute — containing block provided by position:sticky on th */
+
+.wb-col-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 10;
+  user-select: none;
+}
+
+.wb-col-resize-handle::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: rgba(0, 0, 0, 0.15);
+  transition: background 0.1s ease;
+}
+
+.wb-col-resize-handle:hover::after,
+.wb-col-resize-handle:active::after {
+  background: rgba(201, 162, 39, 0.7);
+  width: 2px;
 }
 
 .wb-sort-arrow--active {
@@ -1486,7 +1624,7 @@ input {
 }
 
 .wb-data-table--advertising tbody .wb-advertising-column--sticky {
-  z-index: 3;
+  z-index: var(--wb-table-sticky-z-body-col);
 }
 
 .wb-data-table--advertising thead tr:first-child .wb-advertising-column--sticky {
@@ -1806,6 +1944,12 @@ input {
   accent-color: #111111;
   cursor: pointer;
   display: block;
+  outline: none;
+}
+
+.wb-advertising-checkbox:focus,
+.wb-advertising-checkbox:focus-visible {
+  outline: none;
 }
 
 /* Center checkbox in its cell — both header and body */
@@ -2266,8 +2410,7 @@ input {
 
 .wb-advertising-cluster-toggle__arrow-button:focus-visible,
 .wb-advertising-cluster-copy-button:focus-visible {
-  outline: 2px solid #8a6b13;
-  border-radius: 2px;
+  outline: none;
 }
 
 .wb-advertising-cluster-toggle__arrow {
@@ -2500,4 +2643,673 @@ input {
     flex-direction: column;
     align-items: stretch;
   }
+}
+
+/* Change log panel */
+.wb-change-log-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+}
+
+.wb-change-log-panel {
+  width: 560px;
+  max-width: 96vw;
+  height: 100vh;
+  background: var(--wb-surface);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+
+.wb-change-log-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--wb-border);
+  flex-shrink: 0;
+}
+
+.wb-change-log-panel__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--wb-text-main);
+}
+
+.wb-change-log-panel__close {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--wb-text-muted);
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.wb-change-log-panel__close:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.wb-change-log-panel__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 0;
+}
+
+.wb-change-log-empty {
+  padding: 32px 20px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--wb-text-muted);
+}
+.wb-change-log-empty--error {
+  color: #c0392b;
+}
+
+.wb-change-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.wb-change-log-table thead tr {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.wb-change-log-table th {
+  padding: 7px 12px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--wb-text-muted);
+  border-bottom: 1px solid var(--wb-border);
+  white-space: nowrap;
+}
+
+.wb-change-log-table tbody tr:hover {
+  background: rgba(0, 0, 0, 0.025);
+}
+
+.wb-change-log-table tbody tr + tr td {
+  border-top: 1px solid var(--wb-border);
+}
+
+.wb-change-log-td {
+  padding: 8px 12px;
+  vertical-align: middle;
+  color: var(--wb-text-main);
+}
+
+.wb-change-log-td--date {
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--wb-text-muted);
+}
+
+.wb-change-log-td--cluster {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-change-log-td--value {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.wb-change-log-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.wb-change-log-badge--bid {
+  background: rgba(52, 152, 219, 0.12);
+  color: #1a6fa8;
+}
+
+.wb-change-log-badge--include {
+  background: rgba(39, 174, 96, 0.12);
+  color: #1a7a46;
+}
+
+.wb-change-log-badge--exclude {
+  background: rgba(231, 76, 60, 0.1);
+  color: #a93226;
+}
+
+.wb-toggle-pill--history {
+  margin-left: 4px;
+  border: 1px solid var(--wb-border);
+}
+
+/* Cost price column header link */
+.wb-cost-header-link {
+  color: var(--wb-gold-mid, #e8c547);
+  text-decoration: none;
+  cursor: pointer;
+  font-weight: 600;
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.wb-cost-header-link:hover {
+  text-decoration: underline;
+  opacity: 0.85;
+}
+
+/* Cost price display button (non-edit state) */
+/* Cost price display span — fixed height so editing never expands the row */
+.wb-cost-price-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  /* Height = row content height = font * line-height + 2 * vertical padding.
+     This ensures the cost cell is exactly the same height as every other td. */
+  height: calc(
+    var(--wb-table-font-size) * var(--wb-table-line-height) +
+    2 * var(--wb-table-cell-padding-v)
+  );
+  box-sizing: border-box;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: var(--wb-table-font-size);
+  font-family: inherit;
+  font-weight: 500;
+  color: var(--wb-text-main);
+  white-space: nowrap;
+  user-select: none;
+  cursor: default;
+  transition: background 0.1s;
+}
+
+.wb-cost-price-display:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.wb-cost-price-display--selected {
+  background: rgba(66, 133, 244, 0.15);
+  border-radius: 4px;
+}
+
+.wb-cost-price-empty {
+  opacity: 0.35;
+  font-weight: 400;
+}
+
+/* Cost price td — zero vertical padding: height is owned by the child element.
+   Must use .wb-data-table td.wb-table-cell--cost (specificity 0,1,2) to beat
+   the global .wb-data-table td rule (specificity 0,1,1). */
+.wb-data-table td.wb-table-cell--cost {
+  padding: 0 var(--wb-table-cell-padding-h);
+  vertical-align: middle;
+  cursor: default;
+  user-select: none;
+}
+
+.wb-table-cell--cost-selected {
+  background: rgba(66, 133, 244, 0.08) !important;
+}
+
+/* Cost price input — same height formula as .wb-cost-price-display */
+.wb-cost-price-input {
+  display: block;
+  width: 100%;
+  height: calc(
+    var(--wb-table-font-size) * var(--wb-table-line-height) +
+    2 * var(--wb-table-cell-padding-v)
+  );
+  box-sizing: border-box;
+  padding: 0 8px;
+  border: 1.5px solid var(--wb-gold-mid);
+  border-radius: 6px;
+  font-size: var(--wb-table-font-size);
+  font-family: inherit;
+  color: var(--wb-text-main);
+  background: rgba(232, 197, 71, 0.06);
+  text-align: center;
+  outline: none;
+  line-height: calc(
+    var(--wb-table-font-size) * var(--wb-table-line-height) +
+    2 * var(--wb-table-cell-padding-v)
+  );
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.wb-cost-price-input:focus {
+  border-color: var(--wb-gold-mid);
+  background: rgba(232, 197, 71, 0.10);
+}
+
+.wb-cost-price-input::placeholder {
+  color: var(--wb-text-muted);
+  opacity: 0.5;
+  text-align: center;
+}
+
+.wb-cost-price-input--saving {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Dashboard Hub
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.wb-dashboard-hub {
+  padding: 32px 24px;
+  max-width: 720px;
+}
+
+.wb-dashboard-hub__title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--wb-text-main);
+  margin: 0 0 24px;
+}
+
+.wb-dashboard-hub__cards {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.wb-dashboard-hub__card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: 280px;
+  padding: 20px 20px 18px;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 14px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  cursor: pointer;
+  text-align: left;
+  transition: box-shadow 0.14s, border-color 0.14s, transform 0.1s;
+}
+
+.wb-dashboard-hub__card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+  border-color: rgba(0,0,0,0.14);
+  transform: translateY(-1px);
+}
+
+.wb-dashboard-hub__card-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.wb-dashboard-hub__card-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--wb-text-main);
+}
+
+.wb-dashboard-hub__card-desc {
+  font-size: 12px;
+  color: var(--wb-text-muted);
+  line-height: 1.5;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Technical Dashboard
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.wb-tech-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.wb-tech-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Legend */
+.wb-tech-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 0 4px;
+}
+
+.wb-tech-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--wb-text-muted);
+}
+
+.wb-tech-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Block container */
+.wb-tech-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.wb-tech-block__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--wb-text-main);
+  margin: 0;
+}
+
+.wb-tech-block__subtitle {
+  font-size: 11px;
+  color: var(--wb-text-muted);
+  margin: -6px 0 0;
+  line-height: 1.5;
+}
+
+/* Badge */
+.wb-tech-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+/* Task card */
+.wb-tech-task-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.wb-tech-task-card {
+  background: #fff;
+  border: 1px solid rgba(0,0,0,0.07);
+  border-left: 3px solid;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.wb-tech-task-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wb-tech-task-card__name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--wb-text-main);
+  flex: 1;
+  min-width: 0;
+}
+
+.wb-tech-task-card__badges {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.wb-tech-task-card__schedule {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--wb-text-main);
+}
+
+.wb-tech-task-card__desc {
+  font-size: 11px;
+  color: var(--wb-text-muted);
+  line-height: 1.45;
+}
+
+/* ── Weekly timeline ──────────────────────────────────────────────────────── */
+
+.wb-tech-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(0,0,0,0.02);
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 10px;
+  padding: 6px 4px;
+}
+
+.wb-tech-timeline-hour-labels {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  padding: 0 4px 4px;
+}
+
+.wb-tech-timeline-track--labels {
+  position: relative;
+  height: 16px;
+  flex: 1;
+}
+
+.wb-tech-timeline-hour-label {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 9px;
+  color: var(--wb-text-muted);
+  white-space: nowrap;
+}
+
+.wb-tech-timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 32px;
+  padding: 0 4px;
+  border-radius: 6px;
+  transition: background 0.1s;
+}
+
+.wb-tech-timeline-row:hover {
+  background: rgba(0,0,0,0.03);
+}
+
+.wb-tech-timeline-row.is-today {
+  background: rgba(232, 197, 71, 0.08);
+}
+
+.wb-tech-timeline-day-label {
+  width: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wb-tech-timeline-day-short {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--wb-text-muted);
+}
+
+.is-today .wb-tech-timeline-day-short {
+  color: var(--wb-gold-dark);
+}
+
+.wb-tech-timeline-today-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wb-gold-mid);
+  flex-shrink: 0;
+}
+
+.wb-tech-timeline-track {
+  position: relative;
+  flex: 1;
+  height: 24px;
+}
+
+.wb-tech-timeline-gridline {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 1px;
+  background: rgba(0,0,0,0.07);
+  pointer-events: none;
+}
+
+/* Task marker on timeline */
+.wb-tech-timeline-marker {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.1s;
+  z-index: 1;
+}
+
+.wb-tech-timeline-marker:hover {
+  transform: translateY(-50%) scale(1.6);
+  z-index: 2;
+}
+
+/* Time label that appears on hover */
+.wb-tech-timeline-marker-time {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.75);
+  color: #fff;
+  font-size: 9px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.wb-tech-timeline-marker:hover .wb-tech-timeline-marker-time {
+  opacity: 1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Change History Section
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.wb-change-history-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.wb-change-history-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.wb-change-history-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.wb-change-history-table th {
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.wb-change-history-cell {
+  font-size: 12px;
+  color: var(--wb-text-main);
+  padding: 7px 11px;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  vertical-align: middle;
+}
+
+.wb-change-history-cell--date {
+  white-space: nowrap;
+  color: var(--wb-text-muted);
+  font-size: 11px;
+}
+
+.wb-change-history-cell--label {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-change-history-cell--value {
+  text-align: center;
+}
+
+.wb-change-history-row:hover td {
+  background: rgba(0,0,0,0.02);
+}
+
+.wb-change-history-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.wb-change-history-old {
+  font-size: 12px;
+  color: #b71c1c;
+  background: #fce4ec;
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.wb-change-history-new {
+  font-size: 12px;
+  color: #1b5e20;
+  background: #e8f5e9;
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.wb-change-history-empty {
+  color: var(--wb-text-muted);
+  font-size: 12px;
 }

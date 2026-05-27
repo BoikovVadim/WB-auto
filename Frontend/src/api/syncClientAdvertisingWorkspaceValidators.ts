@@ -18,6 +18,7 @@ import {
   isProductAdvertisingWorkspaceClusterNumericFilters,
   isProductAdvertisingWorkspaceDiagnostics,
   isProductAdvertisingWorkspaceReadiness,
+  isProductAdvertisingReadModelRevision,
   isProductAdvertisingWorkspaceClusterSortKey,
   isProductAdvertisingWorkspaceSyncState,
   isProductAdvertisingWorkspaceClusterTableTotals,
@@ -37,6 +38,7 @@ export function assertProductAdvertisingWorkspaceResponse(
     !isNullableNonEmptyString(value.header.productName) ||
     !isNullableNonEmptyString(value.header.brandName) ||
     !isNullableNonEmptyString(value.header.subjectName) ||
+    !isProductAdvertisingReadModelRevision(value.revision) ||
     !isRecord(value.snapshot) ||
     !isRecord(value.range) ||
     !isRecord(value.dateBounds) ||
@@ -75,10 +77,13 @@ export function assertProductAdvertisingWorkspaceClusterTableResponse(
     typeof value.nmId !== "number" ||
     typeof value.advertId !== "number" ||
     !isIsoDateString(value.checkedAt) ||
+    !isProductAdvertisingReadModelRevision(value.revision) ||
     !isProductAdvertisingWorkspaceReadiness(value.readiness) ||
     !Array.isArray(value.rows) ||
     value.rows.some((item) => !isProductAdvertisingWorkspaceClusterRow(item)) ||
-    !isProductAdvertisingWorkspaceQuerySearchIndex(value.querySearchIndex) ||
+    (value.querySearchIndex !== undefined &&
+      value.querySearchIndex !== null &&
+      !isProductAdvertisingWorkspaceQuerySearchIndex(value.querySearchIndex)) ||
     !isProductAdvertisingWorkspaceClusterTableTotals(value.totals) ||
     value.totalsScope !== "filtered_population" ||
     !isRecord(value.filterCounts) ||
@@ -87,6 +92,7 @@ export function assertProductAdvertisingWorkspaceClusterTableResponse(
     typeof value.filterCounts.excluded !== "number" ||
     !isRecord(value.appliedFilters) ||
     typeof value.appliedFilters.search !== "string" ||
+    typeof value.appliedFilters.clusterNameSearch !== "string" ||
     !(value.appliedFilters.status === "all" ||
       value.appliedFilters.status === "active" ||
       value.appliedFilters.status === "excluded") ||
@@ -114,6 +120,7 @@ export function assertProductAdvertisingWorkspaceClusterQueriesResponse(
     !isNonEmptyString(value.clusterKey) ||
     !isNonEmptyString(value.clusterName) ||
     !isIsoDateString(value.checkedAt) ||
+    !isProductAdvertisingReadModelRevision(value.revision) ||
     !isProductAdvertisingWorkspaceReadiness(value.readiness) ||
     !Array.isArray(value.queries) ||
     value.queries.some((item) => !isProductAdvertisingClusterQuery(item)) ||

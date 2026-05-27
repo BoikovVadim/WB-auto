@@ -81,6 +81,7 @@ function clearStoredSortState() {
 const DEFAULT_SORT_STATE = { key: "spend" as AdvertisingClusterSortKey, direction: "desc" as AdvertisingClusterSortDirection };
 
 export function useAdvertisingClusterTableControls(input: {
+  productNmId: number | null;
   selectedCampaignAdvertId: number | null;
   tableRefreshKey: number;
 }) {
@@ -114,6 +115,12 @@ export function useAdvertisingClusterTableControls(input: {
     }
     wasInDetailRef.current = isNowInDetail;
   }, [input.selectedCampaignAdvertId]);
+  useEffect(() => {
+    // При входе в новый товар всегда стартуем с фильтра "Активные",
+    // даже если в прошлом товаре пользователь выбирал "Все"/"Исключенные".
+    setStatusFilter("active");
+    writeStoredStatusFilter("active");
+  }, [input.productNmId]);
   const [page, setPage] = useState(1);
   const pageSize = 5000;
 
@@ -123,9 +130,11 @@ export function useAdvertisingClusterTableControls(input: {
   useEffect(() => {
     setPage(1);
   }, [
+    deferredClusterNameSearch,
     input.selectedCampaignAdvertId,
     input.tableRefreshKey,
     deferredClusterSearch,
+    numericFilters,
     statusFilter,
     sortState,
   ]);

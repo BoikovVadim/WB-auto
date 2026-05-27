@@ -16,6 +16,7 @@ import {
 import type { ProductAdvertisingSheetRequestInput } from "../../../api/productAdvertisingSheetIdentity";
 import { ui } from "../copy";
 import { normalizeDashboardReadError } from "../dashboardErrors";
+import { compareWorkspaceClusterRows } from "./productWorkspaceLocalView";
 
 const EMPTY_NUMERIC_FILTERS = getEmptyClusterNumericFilters();
 
@@ -25,6 +26,7 @@ export function useProductAdvertisingClusterTable(input: {
   advertId: number | null;
   requestInput: ProductAdvertisingSheetRequestInput | null;
   search: string;
+  clusterNameSearch: string;
   status: ProductAdvertisingWorkspaceClusterStatusFilter;
   numericFilters?: ProductAdvertisingWorkspaceClusterNumericFilters;
   sortKey: ProductAdvertisingWorkspaceClusterSortKey;
@@ -40,6 +42,7 @@ export function useProductAdvertisingClusterTable(input: {
     advertId,
     requestInput,
     search,
+    clusterNameSearch,
     status,
     numericFilters = EMPTY_NUMERIC_FILTERS,
     sortKey,
@@ -49,6 +52,9 @@ export function useProductAdvertisingClusterTable(input: {
     refreshKey,
     bootstrapTable,
   } = input;
+  // sortKey и sortDirection намеренно исключены из cacheKey:
+  // смена сортировки не делает повторный запрос — данные пересортировываются
+  // на клиенте через useMemo без сетевого round-trip.
   const cacheKey = useMemo(
     () =>
       nmId !== null && advertId !== null
@@ -57,20 +63,30 @@ export function useProductAdvertisingClusterTable(input: {
             advertId,
             requestInput,
             search,
+            clusterNameSearch,
             status,
             numericFilters,
-            sortKey,
-            sortDirection,
             page,
             pageSize,
           })
         : null,
-    [advertId, nmId, numericFilters, page, pageSize, requestInput, search, sortDirection, sortKey, status],
+    [
+      advertId,
+      clusterNameSearch,
+      nmId,
+      numericFilters,
+      page,
+      pageSize,
+      requestInput,
+      search,
+      status,
+    ],
   );
-  const [table, setTable] = useState<ProductAdvertisingWorkspaceClusterTableResponse | null>(
+  // rawTable хранит данные в порядке, вернённом бэкендом (без клиентской сортировки).
+  const [rawTable, setRawTable] = useState<ProductAdvertisingWorkspaceClusterTableResponse | null>(
     () => (cacheKey ? getCachedProductWorkspaceClusterTable(cacheKey) : null) ?? bootstrapTable ?? null,
   );
-  const tableRef = useRef(table);
+  const tableRef = useRef(rawTable);
   const prevCacheKeyRef = useRef<string | null>(cacheKey);
   const pollingTimerRef = useRef<number | null>(null);
   // Отслеживаем смену продукта/кампании vs смену только дат/фильтров.
@@ -82,8 +98,6 @@ export function useProductAdvertisingClusterTable(input: {
   const [isTableLoading, setIsTableLoading] = useState(false);
   const [isTableRefreshing, setIsTableRefreshing] = useState(false);
 
-  // Отслеживаем изменение refreshKey между рендерами — нужно отличать
-  // оптимистичный патч кеша (не стреляем HTTP) от реальной инвалидации (стреляем).
   const prevRefreshKeyRef = useRef<number | undefined>(refreshKey);
 
   // Ref хранит последние fetch-параметры — нужен внутри эффекта без добавления
@@ -92,6 +106,7 @@ export function useProductAdvertisingClusterTable(input: {
   const fetchParamsRef = useRef({
     requestInput,
     search,
+    clusterNameSearch,
     status,
     numericFilters,
     sortKey,
@@ -104,6 +119,7 @@ export function useProductAdvertisingClusterTable(input: {
     fetchParamsRef.current = {
       requestInput,
       search,
+      clusterNameSearch,
       status,
       numericFilters,
       sortKey,
@@ -115,12 +131,12 @@ export function useProductAdvertisingClusterTable(input: {
   });
 
   useEffect(() => {
-    tableRef.current = table;
-  }, [table]);
+    tableRef.current = rawTable;
+  }, [rawTable]);
 
   useEffect(() => {
     if (!active || nmId === null || advertId === null || !fetchParamsRef.current.requestInput) {
-      setTable(null);
+      setRawTable(null);
       setTableError(null);
       setIsTableLoading(false);
       setIsTableRefreshing(false);
@@ -140,7 +156,7 @@ export function useProductAdvertisingClusterTable(input: {
     prevAdvertIdRef.current = advertId;
     const refreshKeyChanged = prevRefreshKeyRef.current !== refreshKey;
     prevRefreshKeyRef.current = refreshKey;
-    setTable((currentValue) => {
+    setRawTable((currentValue) => {
       if (cachedTable) return cachedTable;
       if (currentBootstrap) return currentBootstrap;
       if (cacheKeyChanged && entityChanged) return null;
@@ -184,23 +200,25 @@ export function useProductAdvertisingClusterTable(input: {
       const {
         requestInput: currentRequestInput,
         search: currentSearch,
+        clusterNameSearch: currentClusterNameSearch,
         status: currentStatus,
         numericFilters: currentNumericFilters,
-        sortKey: currentSortKey,
-        sortDirection: currentSortDirection,
         page: currentPage,
         pageSize: currentPageSize,
       } = fetchParamsRef.current;
 
+      // sortKey/sortDirection не передаём бэкенду — сортировка выполняется
+      // на клиенте через useMemo. Бэкенд возвращает данные в дефолтном порядке.
       void fetchProductAdvertisingWorkspaceClusterTable({
         nmId,
         advertId,
         requestInput: currentRequestInput,
         search: currentSearch,
+        clusterNameSearch: currentClusterNameSearch,
         status: currentStatus,
         numericFilters: currentNumericFilters,
-        sortKey: currentSortKey,
-        sortDirection: currentSortDirection,
+        sortKey: "spend",
+        sortDirection: "desc",
         page: currentPage,
         pageSize: currentPageSize,
       })
@@ -213,7 +231,7 @@ export function useProductAdvertisingClusterTable(input: {
             return;
           }
 
-          setTable(response);
+          setRawTable(response);
           setTableError(null);
           setIsTableLoading(false);
           setIsTableRefreshing(false);
@@ -234,15 +252,8 @@ export function useProductAdvertisingClusterTable(input: {
         });
     };
 
-    // Оптимистичный патч кеша: refreshKey сменился, но cacheKey не изменился
-    // и в памяти уже есть свежие данные (только что записанные патчем).
-    // Сетевой запрос в этом случае вернул бы старое состояние сервера и откатил
-    // бы оптимистичный UI — пропускаем его. Второй onReloadSheet (после завершения
-    // API-вызова) очистит кеш, и тогда эффект отправит запрос за актуальными данными.
-    const isOptimisticCacheRead = refreshKeyChanged && !cacheKeyChanged && cachedTable !== null;
-    if (!isOptimisticCacheRead) {
-      doFetch();
-    }
+    void refreshKeyChanged;
+    doFetch();
 
     return () => {
       isCancelled = true;
@@ -255,13 +266,24 @@ export function useProductAdvertisingClusterTable(input: {
   // остальные параметры запроса. Объекты requestInput/numericFilters/bootstrapTable
   // намеренно убраны из deps: их значения читаются через fetchParamsRef, что
   // исключает ложные перезапуски при смене ссылки без смены данных.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, nmId, advertId, cacheKey, refreshKey]);
+
+  // Клиентская сортировка: данные пересортировываются локально при каждом
+  // изменении sortKey/sortDirection без повторного обращения к бэкенду.
+  // Копируем массив rows чтобы не мутировать кешированный объект.
+  const table = useMemo<ProductAdvertisingWorkspaceClusterTableResponse | null>(() => {
+    const base = rawTable ?? bootstrapTable ?? null;
+    if (!base || base.rows.length === 0) return base;
+    const sortedRows = [...base.rows].sort((a, b) =>
+      compareWorkspaceClusterRows(a, b, sortKey, sortDirection),
+    );
+    return { ...base, rows: sortedRows, sort: { key: sortKey, direction: sortDirection } };
+  }, [rawTable, bootstrapTable, sortKey, sortDirection]);
 
   // Используем bootstrapTable как fallback: при первом рендере detail-режима
   // state ещё null (инициализировался в list-режиме), но bootstrapWorkspace уже
   // несёт initialClusterTable → отображаем его моментально без ожидания эффекта.
-  const displayTable = table ?? bootstrapTable ?? null;
+  const displayTable = table;
   const displayIsLoading = isTableLoading && displayTable === null;
   return {
     productAdvertisingClusterTable: displayTable,

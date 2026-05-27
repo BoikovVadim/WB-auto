@@ -76,6 +76,14 @@ export class WbRuntimeConfigService {
   }
 
   private async persistEnvValue(name: string, value: string) {
+    // Defense-in-depth: a value containing CR/LF (or other control characters)
+    // would inject arbitrary additional lines into the .env file, which are
+    // loaded on next boot. Reject them before writing.
+    // eslint-disable-next-line no-control-regex -- intentionally matching control chars
+    if (/[\r\n\x00]/.test(value)) {
+      throw new Error(`Refusing to persist ${name}: value contains control characters`);
+    }
+
     const envFilePath = await this.getWritableEnvFilePath();
     const envDir = path.dirname(envFilePath);
 

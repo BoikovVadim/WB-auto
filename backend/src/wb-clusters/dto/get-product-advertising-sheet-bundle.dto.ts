@@ -7,6 +7,9 @@ import {
   Min,
 } from "class-validator";
 
+import { IsValidDateRange } from "../../common/validators/date-range.validator";
+
+@IsValidDateRange()
 export class GetProductAdvertisingSheetBundleDto {
   @IsDateString()
   startDate!: string;

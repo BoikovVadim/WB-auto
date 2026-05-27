@@ -175,7 +175,12 @@ export abstract class WbClustersRepositoryBase {
     sourceKind: ClusterSourceKind,
     advertId?: number | null,
   ) {
-    const normalized = this.normalizeAdvertisingIdentity(clusterName);
+    // Must match the normalized_cluster_name column (written via normalizeQuery)
+    // and every JOIN/dedup, which keep punctuation. Using the punctuation-stripping
+    // normalizeAdvertisingIdentity here collapsed names like "клетка-переноска" and
+    // "клетка переноска" onto the same key, so one silently overwrote the other in
+    // wb_clusters while the rest of the system treated them as distinct.
+    const normalized = this.normalizeQuery(clusterName);
     // Stats clusters are product-scoped (shared across campaigns).
     // Active/excluded clusters are campaign-scoped to prevent cross-campaign key collisions
     // when multiple campaigns for the same product share cluster names.
@@ -275,6 +280,109 @@ export abstract class WbClustersRepositoryBase {
       .toLocaleLowerCase("ru")
       .replace(/[_/\\|.,:;!?()[\]{}"'+=*%#№@`~^&-]+/g, " ")
       .replace(/\s+/g, " ");
+  }
+
+  protected normalizedQueryIdentitySql(expression: string) {
+    return `TRIM(REGEXP_REPLACE(REGEXP_REPLACE(LOWER(${expression}), '[^0-9a-zа-яё]+', ' ', 'g'), '\\s+', ' ', 'g'))`;
+  }
+
+  protected normalizedQueryStemSql(expression: string) {
+    return `TRIM(
+      REGEXP_REPLACE(
+        REGEXP_REPLACE(
+          ${this.normalizedQueryIdentitySql(expression)},
+          '(иями|ями|ами|ого|ему|ому|ыми|ими|его|ая|яя|ое|ее|ой|ий|ый|ые|ие|их|ых|ую|юю|ам|ям|ах|ях|ом|ем|ов|ев|ей|а|я|ы|и|у|ю|о|е|ь|й)\\y',
+          '',
+          'gi'
+        ),
+        '\\s+',
+        ' ',
+        'g'
+      )
+    )`;
+  }
+
+  protected buildFrequencyJoinCondition(
+    frequencyAlias: string,
+    normalizedQueryExpression: string,
+  ) {
+    // Exact match only: frequency is assigned only when the query text is
+    // 100 % identical to the text in the WB 300k report (after basic
+    // lowercase+trim+whitespace collapse that both sides share).
+    // No fuzzy / punctuation-stripped matching: "клетка-переноска" ≠ "клетка переноска".
+    return `${frequencyAlias}.normalized_query_text = ${normalizedQueryExpression}`;
+  }
+
+  protected buildAdvertisingStemKey(value: string) {
+    const normalizedIdentity = this.normalizeAdvertisingIdentity(value);
+    return normalizedIdentity
+      .split(/\s+/)
+      .map((token) => token.trim())
+      .filter((token) => token.length > 0)
+      .map((token) => this.stemAdvertisingTokenForIdentity(token))
+      .join(" ");
+  }
+
+  protected stemAdvertisingTokenForIdentity(token: string) {
+    const normalizedToken = token.trim();
+    if (normalizedToken.length <= 3) {
+      return normalizedToken;
+    }
+
+    const suffixes = [
+      "иями",
+      "ями",
+      "ами",
+      "ого",
+      "ему",
+      "ому",
+      "ыми",
+      "ими",
+      "его",
+      "ая",
+      "яя",
+      "ое",
+      "ее",
+      "ой",
+      "ий",
+      "ый",
+      "ые",
+      "ие",
+      "их",
+      "ых",
+      "ую",
+      "юю",
+      "ам",
+      "ям",
+      "ах",
+      "ях",
+      "ом",
+      "ем",
+      "ов",
+      "ев",
+      "ей",
+      "а",
+      "я",
+      "ы",
+      "и",
+      "у",
+      "ю",
+      "о",
+      "е",
+      "ь",
+      "й",
+    ];
+
+    for (const suffix of suffixes) {
+      if (
+        normalizedToken.length > suffix.length + 2 &&
+        normalizedToken.endsWith(suffix)
+      ) {
+        return normalizedToken.slice(0, -suffix.length);
+      }
+    }
+
+    return normalizedToken;
   }
 
   protected toNullableNumber(value: string | null) {

@@ -206,28 +206,37 @@ export abstract class WbClustersRepositoryClusterCorePersistence extends WbClust
     for (const item of items) {
       const normalizedActive = item.activeClusterNames.map((n) => this.normalizeQuery(n));
       const normalizedExcluded = (item.excludedClusterNames ?? []).map((n) => this.normalizeQuery(n));
+      // An empty name array would make `!= ALL('{}')` true for every row and
+      // delete ALL active/excluded clusters for this (advertId, nmId). A transient
+      // or partial WB response (missing normQueries field) is indistinguishable
+      // from a legitimate "list is now empty" here, so we treat empty as "no
+      // authoritative list" and skip the DELETE rather than risk wiping clusters.
       // Pass 1: remove stale 'active' entries (not in current WB active list).
-      await pool.query(
-        `
-          DELETE FROM ${this.tableName("wb_clusters")}
-          WHERE advert_id = $1
-            AND nm_id = $2
-            AND source_kind = 'active'
-            AND normalized_cluster_name != ALL($3::text[])
-        `,
-        [item.advertId, item.nmId, normalizedActive],
-      );
+      if (normalizedActive.length > 0) {
+        await pool.query(
+          `
+            DELETE FROM ${this.tableName("wb_clusters")}
+            WHERE advert_id = $1
+              AND nm_id = $2
+              AND source_kind = 'active'
+              AND normalized_cluster_name != ALL($3::text[])
+          `,
+          [item.advertId, item.nmId, normalizedActive],
+        );
+      }
       // Pass 2: remove stale 'excluded' entries (not in current WB excluded list).
-      await pool.query(
-        `
-          DELETE FROM ${this.tableName("wb_clusters")}
-          WHERE advert_id = $1
-            AND nm_id = $2
-            AND source_kind = 'excluded'
-            AND normalized_cluster_name != ALL($3::text[])
-        `,
-        [item.advertId, item.nmId, normalizedExcluded],
-      );
+      if (normalizedExcluded.length > 0) {
+        await pool.query(
+          `
+            DELETE FROM ${this.tableName("wb_clusters")}
+            WHERE advert_id = $1
+              AND nm_id = $2
+              AND source_kind = 'excluded'
+              AND normalized_cluster_name != ALL($3::text[])
+          `,
+          [item.advertId, item.nmId, normalizedExcluded],
+        );
+      }
     }
   }
 

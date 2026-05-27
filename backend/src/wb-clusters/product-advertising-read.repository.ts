@@ -33,8 +33,9 @@ export class ProductAdvertisingReadRepository {
     nmId: number,
     advertId: number,
     normalizedClusterName: string,
+    period?: { start: string; end: string } | null,
   ): Promise<import("./product-workspace-snapshot.types").ProductAdvertisingWorkspaceClusterQueriesSnapshot> {
-    return this.wbClustersRepository.getWorkspaceClusterQueriesSQL(nmId, advertId, normalizedClusterName);
+    return this.wbClustersRepository.getWorkspaceClusterQueriesSQL(nmId, advertId, normalizedClusterName, period);
   }
 
   getQuerySearchIndexSQL(nmId: number, advertId: number): Promise<Record<string, string[]>> {

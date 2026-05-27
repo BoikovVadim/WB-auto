@@ -9,7 +9,7 @@ import {
 } from "./dashboardViewStateTypes";
 import { readDashboardViewStateFromUrl } from "./dashboardViewUrl";
 
-export type { DashboardSection, DashboardViewState, ProductsMode } from "./dashboardViewStateTypes";
+export type { ActiveSheet, DashboardSection, DashboardViewState, PersistedProductsSortKey, ProductsMode } from "./dashboardViewStateTypes";
 export { hasExplicitProductAdvertisingDateRangeInUrl } from "./dashboardViewUrl";
 export {
   readPersistedCurrentExportSnapshot,
@@ -47,6 +47,10 @@ export function readDashboardViewState(): DashboardViewState {
         productAdvertisingEndDate:
           urlValue.productAdvertisingEndDate ?? storageValue.productAdvertisingEndDate,
         scrollY: storageValue.scrollY,
+        activeSheet: storageValue.activeSheet,
+        productsSearch: storageValue.productsSearch,
+        productsSortKey: storageValue.productsSortKey,
+        productsSortDirection: storageValue.productsSortDirection,
       };
     }
 
@@ -65,6 +69,10 @@ export function readDashboardViewState(): DashboardViewState {
       productAdvertisingEndDate:
         urlValue.productAdvertisingEndDate ?? storageValue.productAdvertisingEndDate,
       scrollY: storageValue.scrollY,
+      activeSheet: storageValue.activeSheet,
+      productsSearch: storageValue.productsSearch,
+      productsSortKey: storageValue.productsSortKey,
+      productsSortDirection: storageValue.productsSortDirection,
     };
   } catch {
     return createDefaultDashboardViewState();

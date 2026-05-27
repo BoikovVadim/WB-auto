@@ -152,6 +152,27 @@ export const appEnv = {
   wbApiRetryMaxDelayMs: parsePositiveIntegerEnv("WB_API_RETRY_MAX_DELAY_MS", "8000"),
   wbDefaultLocale: getOptionalEnv("WB_DEFAULT_LOCALE", "ru"),
   wbApiToken: (process.env.WB_API_TOKEN ?? "").trim(),
+  // WB Statistics API (statistics-api.wildberries.ru) — same token as wbApiToken.
+  // Data: orders, sales. Max lookback: 90 days. Rate limit: 1 req/min.
+  wbStatisticsApiBaseUrl: getOptionalUrlEnv(
+    "WB_STATISTICS_API_BASE_URL",
+    "https://statistics-api.wildberries.ru",
+  ),
+  wbStatisticsApiTimeoutMs: parsePositiveIntegerEnv("WB_STATISTICS_API_TIMEOUT_MS", "60000", 1),
+  // 62 000 ms = just over 1 minute; ensures we never exceed 1 req/min
+  wbStatisticsApiMinIntervalMs: parsePositiveIntegerEnv("WB_STATISTICS_API_MIN_INTERVAL_MS", "62000"),
+  // WB Seller Analytics API (seller-analytics-api.wildberries.ru) — Analytics token category.
+  // Provides "Заказали товаров" metric matching WB dashboard (воронка продаж).
+  // Rate limit: 3 req/min. Data updates: once per hour.
+  wbSellerAnalyticsApiBaseUrl: getOptionalUrlEnv(
+    "WB_SELLER_ANALYTICS_API_BASE_URL",
+    "https://seller-analytics-api.wildberries.ru",
+  ),
+  wbOrdersSyncEnabled: parseBooleanEnv("WB_ORDERS_SYNC_ENABLED", "true"),
+  // Orders CSV sync via Analytics API. WB CSV data updates hourly → sync every hour.
+  wbOrdersSyncCron: getOptionalEnv("WB_ORDERS_SYNC_CRON", "0 0 * * * *").trim() || "0 0 * * * *",
+  // Finalization cron: at 02:00 Moscow (23:00 UTC) re-sync yesterday's data after WB fully closes the day.
+  wbOrdersFinalizeCron: getOptionalEnv("WB_ORDERS_FINALIZE_CRON", "0 0 23 * * *").trim() || "0 0 23 * * *",
   wbClustersWriteApiKey: (process.env.WB_CLUSTERS_WRITE_API_KEY ?? "").trim(),
   wbPromotionApiBaseUrl: getOptionalUrlEnv(
     "WB_PROMOTION_API_BASE_URL",
@@ -233,19 +254,26 @@ export const appEnv = {
     "WB_PROMOTION_ENABLE_MONTHLY_FREQUENCY_IN_FULL_SYNC",
     "true",
   ),
-  // JAM today-only refresh runs as part of every full sync.
-  // The 65-minute per-(nmId,date) cooldown in wasJamAttemptedRecently prevents
-  // actual WB calls more than once per hour; subsequent sync cycles are near-instant
-  // (only DB cooldown checks). Historical 30-day backfill is handled by the
-  // separate 6-hour JAM cron (WB_PROMOTION_JAM_SYNC_CRON).
+  wbPromotionMonthlyFrequencySyncCron:
+    getOptionalEnv("WB_PROMOTION_MONTHLY_FREQUENCY_SYNC_CRON", "0 4 * * 0").trim() ||
+    "0 4 * * 0",
+  // Automatic JAM inside ordinary full sync is disabled by default so the
+  // shared search-texts quota is not consumed by background promotion refreshes.
+  // Historical backfill and yesterday finalization stay on the dedicated JAM cron
+  // and on explicit manual backfill calls.
   wbPromotionEnableJamInFullSync: parseBooleanEnv(
     "WB_PROMOTION_ENABLE_JAM_IN_FULL_SYNC",
-    "true",
+    "false",
   ),
   wbPromotionJamSyncEnabled: parseBooleanEnv("WB_PROMOTION_JAM_SYNC_ENABLED", "true"),
-  // Set to false to prevent the one-time backfill loop from starting on boot.
-  // Useful when debugging a specific nmId manually via POST /jam/sync/:nmId.
-  wbPromotionJamBackfillLoopEnabled: parseBooleanEnv("WB_PROMOTION_JAM_BACKFILL_LOOP_ENABLED", "true"),
+  // Boot-time JAM backfill is disabled by default. This prevents PM2 restarts
+  // and deploys from immediately spending the shared WB search-texts quota.
+  // Historical catch-up stays available via the nightly JAM cron and explicit
+  // manual backfill requests.
+  wbPromotionJamBackfillLoopEnabled: parseBooleanEnv(
+    "WB_PROMOTION_JAM_BACKFILL_LOOP_ENABLED",
+    "false",
+  ),
   // Runs once a day at 03:00 UTC (06:00 MSK) to finalize the previous day's JAM
   // search-text snapshots for all known nmIds.  By 06:00 MSK WB's API returns
   // fully closed daily numbers for the previous calendar day.

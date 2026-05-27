@@ -56,6 +56,11 @@ export type ProductAdvertisingWorkspaceMaterializationStatus =
   | "sql_direct"
   | "pending";
 
+export interface ProductAdvertisingReadModelRevision {
+  key: string;
+  builtAt: string;
+}
+
 export interface ProductAdvertisingWorkspaceReadiness {
   scope: ProductAdvertisingWorkspaceReadinessScope;
   status: ProductAdvertisingWorkspaceReadinessStatus;
@@ -66,6 +71,7 @@ export interface ProductAdvertisingWorkspaceReadiness {
 export interface ProductAdvertisingWorkspaceResponse {
   nmId: number;
   checkedAt: string;
+  revision: ProductAdvertisingReadModelRevision;
   readiness: ProductAdvertisingWorkspaceReadiness;
   header: {
     nmId: number;
@@ -239,9 +245,10 @@ export interface ProductAdvertisingWorkspaceClusterTableResponse {
   nmId: number;
   advertId: number;
   checkedAt: string;
+  revision: ProductAdvertisingReadModelRevision;
   readiness: ProductAdvertisingWorkspaceReadiness;
   rows: ProductAdvertisingWorkspaceClusterRow[];
-  querySearchIndex: Record<string, string[]>;
+  querySearchIndex?: Record<string, string[]>;
   totals: ProductAdvertisingWorkspaceClusterTableTotals;
   totalsScope: "filtered_population";
   filterCounts: {
@@ -251,6 +258,7 @@ export interface ProductAdvertisingWorkspaceClusterTableResponse {
   };
   appliedFilters: {
     search: string;
+    clusterNameSearch: string;
     status: ProductAdvertisingWorkspaceClusterStatusFilter;
     numericFilters: ProductAdvertisingWorkspaceClusterNumericFilters;
   };
@@ -277,6 +285,7 @@ export interface ProductAdvertisingWorkspaceClusterQueriesResponse {
   clusterKey: string;
   clusterName: string;
   checkedAt: string;
+  revision: ProductAdvertisingReadModelRevision;
   readiness: ProductAdvertisingWorkspaceReadiness;
   queries: ProductAdvertisingClusterQuery[];
   sort: {

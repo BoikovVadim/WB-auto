@@ -73,6 +73,17 @@ export function isProductAdvertisingWorkspaceReadiness(
   );
 }
 
+export function isProductAdvertisingReadModelRevision(
+  value: unknown,
+): value is ProductAdvertisingWorkspaceResponse["revision"] {
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value.key) &&
+    isNullableIsoDateString(value.builtAt) &&
+    value.builtAt !== null
+  );
+}
+
 export function isProductAdvertisingWorkspaceClusterRow(
   value: unknown,
 ): value is ProductAdvertisingWorkspaceClusterRow {
@@ -193,7 +204,7 @@ export function isProductAdvertisingWorkspaceClusterTableTotals(
 
 export function isProductAdvertisingWorkspaceQuerySearchIndex(
   value: unknown,
-): value is ProductAdvertisingWorkspaceClusterTableResponse["querySearchIndex"] {
+): value is Record<string, string[]> {
   if (!isRecord(value)) {
     return false;
   }

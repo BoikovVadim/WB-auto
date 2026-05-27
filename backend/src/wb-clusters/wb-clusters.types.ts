@@ -61,6 +61,7 @@ export type {
 } from "./types/product-advertising-sheet.types";
 
 export type {
+  ProductAdvertisingReadModelRevision,
   ProductAdvertisingWorkspaceCampaignTab,
   ProductAdvertisingWorkspaceCampaignTotals,
   ProductAdvertisingWorkspaceClusterNumericFilterKey,

@@ -11,7 +11,7 @@ import {
   formatCalendarDateValue,
   type AdvertisingDateRange,
 } from "./advertising/date";
-import { thStyle, tdStyle, mutedStyle } from "./RawTableSection";
+import { mutedStyle, tdStyle, thStyle } from "./RawTableSection.styles";
 
 type JamTab = "data" | "progress";
 

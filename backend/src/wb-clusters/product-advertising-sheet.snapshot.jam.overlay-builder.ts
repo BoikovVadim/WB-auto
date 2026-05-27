@@ -180,7 +180,8 @@ export function buildProductAdvertisingSheetJamOverlay(input: {
       jamAvgPositionCount: 0,
     };
 
-    const isJamFrequencyBackedByMonthlyFrequency = query.monthlyFrequency !== null;
+    const isJamFrequencyBackedByMonthlyFrequency =
+      query.monthlyFrequency !== null || query.mappingSource === "stem-fallback";
     if (isJamFrequencyBackedByMonthlyFrequency) {
       aggregate.jamQueryCount += 1;
       aggregate.jamFrequency += metrics?.jamFrequency ?? 0;

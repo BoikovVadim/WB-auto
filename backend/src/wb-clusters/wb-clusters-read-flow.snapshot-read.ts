@@ -6,7 +6,6 @@ import {
   enrichProductAdvertisingSheetWithJam as enrichProductAdvertisingSheetWithJamValue,
   invalidateProductAdvertisingSheetCaches as invalidateProductAdvertisingSheetCachesValue,
 } from "./product-advertising-sheet.snapshot";
-import { buildProductAdvertisingWorkspaceClusterQueriesResponse } from "./product-workspace-cluster-queries.builder";
 import { buildProductAdvertisingWorkspaceClusterTableResponse } from "./product-workspace-cluster-table.builder";
 import { withEmptyJamMetrics as withEmptyJamMetricsValue } from "./product-advertising-sheet.builder";
 import type { SearchQueryTextView } from "../wb-sync/wb-sync.types";
@@ -89,42 +88,10 @@ export async function getProductAdvertisingWorkspace(
       ? { syncRunId: currentRefresh.syncRunId, startedAt: currentRefresh.startedAt }
       : null,
   });
-
-  const selectedCampaignAdvertId = workspace.selectedCampaignSummary?.advertId ?? null;
-  if (selectedCampaignAdvertId === null) {
-    return workspace;
-  }
-
-  try {
-    const storedRows = await self.productWorkspaceSnapshotResolver.resolveWorkspaceCampaignRows({
-      nmId,
-      advertId: selectedCampaignAdvertId,
-      currentPeriod,
-      schemaVersion: self.productAdvertisingSheetSnapshotSchemaVersion,
-    });
-
-    if (storedRows) {
-      return {
-        ...workspace,
-        initialClusterTable: self.productAdvertisingWorkspaceReadService.buildClusterTableResponse({
-          nmId,
-          snapshot: storedRows.payload,
-          advertId: selectedCampaignAdvertId,
-          status: "all",
-          search: "",
-          sortKey: "spend",
-          sortDirection: "desc",
-          page: 1,
-          pageSize: 5000,
-        }),
-      };
-    }
-  } catch (error) {
-    if (!(error instanceof ServiceUnavailableException)) {
-      throw error;
-    }
-  }
-
+  // Keep workspace endpoint shell-only.
+  // Loading initialClusterTable here can block the entire product opening path
+  // because cluster rows require heavier SQL (including JAM joins).
+  // Table data is fetched via dedicated table/bundle endpoints.
   return workspace;
 }
 
@@ -194,6 +161,7 @@ export async function getProductAdvertisingWorkspaceClusterTable(
     endDate?: string;
     status?: "all" | "active" | "excluded";
     search?: string;
+    clusterNameSearch?: string;
     numericFilters?: string;
     sortKey?: string;
     sortDirection?: string;
@@ -201,123 +169,63 @@ export async function getProductAdvertisingWorkspaceClusterTable(
     pageSize?: number;
   },
 ) {
-
   const currentPeriod =
     input?.startDate && input?.endDate
       ? self.normalizeAdvertisingSheetJamRange(input.startDate, input.endDate)
       : null;
+  const responseSortKey =
+    (input?.sortKey as ProductAdvertisingWorkspaceClusterTableResponse["sort"]["key"] | undefined) ??
+    "spend";
+  const responseSortDirection =
+    (input?.sortDirection as
+      | ProductAdvertisingWorkspaceClusterTableResponse["sort"]["direction"]
+      | undefined) ?? "desc";
+  const responseStatus = input?.status ?? "all";
+  const responseSearch = input?.search ?? "";
+  const responseClusterNameSearch = input?.clusterNameSearch ?? "";
 
-  // The early "return pending when PATH B in-flight" check was removed. The SQL
-  // fast path now stores real rows in wb_product_workspace_campaign_rows before
-  // PATH B starts, so resolveWorkspaceCampaignRows always finds data on the
-  // second request. PATH B runs in the background with setImmediate yields and
-  // overwrites with richer data (querySearchIndex, exact canonical counts) when done.
+  if (currentPeriod) {
+    try {
+      const sqlRows = await self.productWorkspaceSnapshotResolver.resolveWorkspaceCampaignRows({
+        nmId,
+        advertId,
+        currentPeriod,
+        schemaVersion: self.productAdvertisingSheetSnapshotSchemaVersion,
+      });
+      const querySearchIndex = await getOrBuildQuerySearchIndex(self, nmId, advertId);
 
-  let storedRows: Awaited<ReturnType<typeof self.productWorkspaceSnapshotResolver.resolveWorkspaceCampaignRows>> | null;
-  try {
-    storedRows = await self.productWorkspaceSnapshotResolver.resolveWorkspaceCampaignRows({
-      nmId,
-      advertId,
-      currentPeriod,
-      schemaVersion: self.productAdvertisingSheetSnapshotSchemaVersion,
-    });
-  } catch (error) {
-    if (error instanceof ServiceUnavailableException) {
-      storedRows = null;
-    } else {
-      throw error;
-    }
-  }
-  if (!storedRows) {
-    // SQL fast path: compute cluster rows directly from DB aggregations in < 500 ms.
-    // Runs without PATH B. querySearchIndex is built separately from DB in < 100 ms
-    // and included so the frontend can do local search immediately.
-    if (currentPeriod) {
-      const sqlPayload = await self.productAdvertisingReadRepository
-        .getWorkspaceClusterRowsSQL(nmId, advertId, currentPeriod)
-        .catch(() => null);
-
-      if (sqlPayload !== null) {
-        // Save to DB so next resolveWorkspaceCampaignRows call hits stored rows instantly.
-        void self.productWorkspaceSnapshotResolver
-          .saveWorkspaceCampaignRows({
-            nmId,
-            startDate: currentPeriod.start,
-            endDate: currentPeriod.end,
-            schemaVersion: self.productAdvertisingSheetSnapshotSchemaVersion,
-            advertId,
-            payload: sqlPayload,
-          })
-          .catch(() => null);
-
-        // Attach query search index so the frontend can filter locally without PATH B.
-        const querySearchIndex = await getOrBuildQuerySearchIndex(self, nmId, advertId);
-        const snapshotWithIndex = { ...sqlPayload, querySearchIndex };
-
-        const sqlTableResponse = self.productAdvertisingWorkspaceReadService.buildClusterTableResponse({
+      return {
+        ...self.productAdvertisingWorkspaceReadService.buildClusterTableResponse({
           nmId,
-          snapshot: snapshotWithIndex,
+          snapshot: {
+            ...sqlRows.payload,
+            querySearchIndex,
+          },
           advertId,
-          status: input?.status ?? "all",
-          search: input?.search ?? "",
+          status: responseStatus,
+          search: responseSearch,
+          clusterNameSearch: responseClusterNameSearch,
           numericFilters: input?.numericFilters,
-          sortKey:
-            (input?.sortKey as ProductAdvertisingWorkspaceClusterTableResponse["sort"]["key"] | undefined) ??
-            "spend",
-          sortDirection:
-            (input?.sortDirection as
-              | ProductAdvertisingWorkspaceClusterTableResponse["sort"]["direction"]
-              | undefined) ?? "desc",
+          sortKey: responseSortKey,
+          sortDirection: responseSortDirection,
           page: input?.page ?? 1,
           pageSize: input?.pageSize ?? 200,
-        });
-
-        const sqlFastPathResponse: ProductAdvertisingWorkspaceClusterTableResponse = {
-          ...sqlTableResponse,
-          readiness: {
-            scope: "cluster_table",
-            status: "ready",
-            source: "workspace_snapshot",
-            materializationStatus: "materialized",
-          },
-        };
-
-        return sqlFastPathResponse;
+        }),
+        readiness: {
+          scope: "cluster_table",
+          status: "ready",
+          source: "sql_direct",
+          materializationStatus: "sql_direct",
+        },
+      } satisfies ProductAdvertisingWorkspaceClusterTableResponse;
+    } catch (error) {
+      if (!(error instanceof ServiceUnavailableException)) {
+        throw error;
       }
     }
 
-    // No date range: load the latest persisted DB snapshot (fast DB lookup, no PATH B).
-    if (!currentPeriod) {
-      const fallbackSheet = await self.productAdvertisingSnapshotResolver.resolve({
-        nmId,
-        currentPeriod: null,
-        schemaVersion: self.productAdvertisingSheetSnapshotSchemaVersion,
-      });
-      const fallbackResponse = buildProductAdvertisingWorkspaceClusterTableResponse({
-        sheet: fallbackSheet,
-        advertId,
-        status: input?.status ?? "all",
-        search: input?.search ?? "",
-        numericFilters: self.productAdvertisingWorkspaceReadService.normalizeWorkspaceClusterNumericFilters(
-          input?.numericFilters,
-        ),
-        sortKey:
-          (input?.sortKey as
-            | ProductAdvertisingWorkspaceClusterTableResponse["sort"]["key"]
-            | undefined) ?? "spend",
-        sortDirection:
-          (input?.sortDirection as
-            | ProductAdvertisingWorkspaceClusterTableResponse["sort"]["direction"]
-            | undefined) ?? "desc",
-        page: input?.page ?? 1,
-        pageSize: input?.pageSize ?? 200,
-      });
-      return fallbackResponse;
-    }
-
-    // No cluster data yet for this campaign/period (campaign was just created or
-    // the first sync has not run yet). Return an empty pending table — the frontend
-    // will retry and pick up real data after the next sync cycle.
+    // Exact explicit range: if Postgres has no rows yet, return an exact empty shell
+    // for this period instead of reviving another period or rebuilding from sheet fallback.
     return {
       ...self.productAdvertisingWorkspaceReadService.buildClusterTableResponse({
         nmId,
@@ -328,15 +236,12 @@ export async function getProductAdvertisingWorkspaceClusterTable(
           querySearchIndex: {},
         },
         advertId,
-        status: "all",
-        search: "",
-        sortKey:
-          (input?.sortKey as ProductAdvertisingWorkspaceClusterTableResponse["sort"]["key"] | undefined) ??
-          "spend",
-        sortDirection:
-          (input?.sortDirection as
-            | ProductAdvertisingWorkspaceClusterTableResponse["sort"]["direction"]
-            | undefined) ?? "desc",
+        status: responseStatus,
+        search: responseSearch,
+        clusterNameSearch: responseClusterNameSearch,
+        numericFilters: input?.numericFilters,
+        sortKey: responseSortKey,
+        sortDirection: responseSortDirection,
         page: input?.page ?? 1,
         pageSize: input?.pageSize ?? 200,
       }),
@@ -346,44 +251,74 @@ export async function getProductAdvertisingWorkspaceClusterTable(
         source: "sql_direct",
         materializationStatus: "pending",
       },
-    } as ProductAdvertisingWorkspaceClusterTableResponse;
+    } satisfies ProductAdvertisingWorkspaceClusterTableResponse;
   }
 
-  // storedRows now always comes from SQL (resolveWorkspaceCampaignRows always uses
-  // the SQL fast path). SQL reads sourceKind/isActive from wb_clusters +
-  // wb_cluster_actions override and bids from wb_cluster_bids — always fresh.
-  // No bid merge or snapshot compat layer needed.
-  const querySearchIndex = await getOrBuildQuerySearchIndex(self, nmId, advertId);
-  const snapshotForResponse = { ...storedRows.payload, querySearchIndex };
-  const searchStr = input?.search ?? "";
-
-  const storedRowsResponse = {
-    ...self.productAdvertisingWorkspaceReadService.buildClusterTableResponse({
+  let storedRows: Awaited<
+    ReturnType<typeof self.productWorkspaceSnapshotResolver.resolveWorkspaceCampaignRows>
+  > | null;
+  try {
+    storedRows = await self.productWorkspaceSnapshotResolver.resolveWorkspaceCampaignRows({
       nmId,
-      snapshot: snapshotForResponse,
       advertId,
-      status: input?.status ?? "all",
-      search: searchStr,
-      numericFilters: input?.numericFilters,
-      sortKey:
-        (input?.sortKey as
-          | ProductAdvertisingWorkspaceClusterTableResponse["sort"]["key"]
-          | undefined) ?? "spend",
-      sortDirection:
-        (input?.sortDirection as
-          | ProductAdvertisingWorkspaceClusterTableResponse["sort"]["direction"]
-          | undefined) ?? "desc",
-      page: input?.page ?? 1,
-      pageSize: input?.pageSize ?? 200,
-    }),
-    readiness: {
-      scope: "cluster_table",
-      status: "ready",
-      source: "workspace_snapshot",
-      materializationStatus: "materialized",
-    },
-  } as ProductAdvertisingWorkspaceClusterTableResponse;
-  return storedRowsResponse;
+      currentPeriod: null,
+      schemaVersion: self.productAdvertisingSheetSnapshotSchemaVersion,
+    });
+  } catch (error) {
+    if (error instanceof ServiceUnavailableException) {
+      storedRows = null;
+    } else {
+      throw error;
+    }
+  }
+
+  if (storedRows) {
+    const querySearchIndex = await getOrBuildQuerySearchIndex(self, nmId, advertId);
+    return {
+      ...self.productAdvertisingWorkspaceReadService.buildClusterTableResponse({
+        nmId,
+        snapshot: {
+          ...storedRows.payload,
+          querySearchIndex,
+        },
+        advertId,
+        status: responseStatus,
+        search: responseSearch,
+        clusterNameSearch: responseClusterNameSearch,
+        numericFilters: input?.numericFilters,
+        sortKey: responseSortKey,
+        sortDirection: responseSortDirection,
+        page: input?.page ?? 1,
+        pageSize: input?.pageSize ?? 200,
+      }),
+      readiness: {
+        scope: "cluster_table",
+        status: "ready",
+        source: "workspace_snapshot",
+        materializationStatus: "materialized",
+      },
+    } satisfies ProductAdvertisingWorkspaceClusterTableResponse;
+  }
+
+  const fallbackSheet = await self.productAdvertisingSnapshotResolver.resolve({
+    nmId,
+    currentPeriod: null,
+    schemaVersion: self.productAdvertisingSheetSnapshotSchemaVersion,
+  });
+  return buildProductAdvertisingWorkspaceClusterTableResponse({
+    sheet: fallbackSheet,
+    advertId,
+    status: responseStatus,
+    search: responseSearch,
+    clusterNameSearch: responseClusterNameSearch,
+    numericFilters: self.productAdvertisingWorkspaceReadService.normalizeWorkspaceClusterNumericFilters(
+      input?.numericFilters,
+    ),
+    sortKey: responseSortKey,
+    sortDirection: responseSortDirection,
+    page: input?.page ?? 1,
+    pageSize: input?.pageSize ?? 200,
+  });
 }
 
 export async function getProductAdvertisingWorkspaceClusterQueries(
@@ -408,99 +343,91 @@ export async function getProductAdvertisingWorkspaceClusterQueries(
     : input.clusterName?.trim()
       ? `${advertId}:${self.normalizeAdvertisingText(input.clusterName)}`
       : null;
-  const storedQueries = clusterKey
-    ? await self.productWorkspaceSnapshotResolver.resolveWorkspaceClusterQueries({
+  const responseSortKey =
+    (input.sortKey as ProductAdvertisingWorkspaceClusterQueriesResponse["sort"]["key"] | undefined) ??
+    "spend";
+  const responseSortDirection =
+    (input.sortDirection as
+      | ProductAdvertisingWorkspaceClusterQueriesResponse["sort"]["direction"]
+      | undefined) ?? "desc";
+
+  if (!clusterKey) {
+    return {
+      ...self.productAdvertisingWorkspaceReadService.buildClusterQueriesResponse({
         nmId,
+        snapshot: createEmptyWorkspaceClusterQueriesSnapshot(),
         advertId,
-        clusterKey,
-        currentPeriod,
-        schemaVersion: self.productAdvertisingSheetSnapshotSchemaVersion,
-      })
-    : null;
-  if (clusterKey && !storedQueries) {
-    // SQL fast path: read queries directly from wb_cabinet_cluster_queries + wb_cluster_queries.
-    // Indexed by (nm_id, advert_id, normalized_cluster_name) — expected latency < 100 ms.
-    // The normalizedClusterName is the part of clusterKey after the advertId prefix.
+        clusterKey: undefined,
+        clusterName: input.clusterName ?? undefined,
+        sortKey: responseSortKey,
+        sortDirection: responseSortDirection,
+        normalizeAdvertisingText: (value: string) => self.normalizeAdvertisingText(value),
+      }),
+      readiness: {
+        scope: "cluster_queries",
+        status: "ready",
+        source: currentPeriod ? "sql_direct" : "sheet_snapshot",
+        materializationStatus: currentPeriod ? "sql_direct" : "fallback_sheet",
+      },
+    };
+  }
+
+  if (currentPeriod) {
     const normalizedClusterName = clusterKey.startsWith(`${advertId}:`)
       ? clusterKey.slice(`${advertId}:`.length)
       : input.clusterName
         ? self.normalizeAdvertisingText(input.clusterName)
         : null;
+    const sqlSnapshot = normalizedClusterName
+      ? await self.productAdvertisingReadRepository
+          .getWorkspaceClusterQueriesSQL(nmId, advertId, normalizedClusterName, currentPeriod)
+          .catch(() => null)
+      : null;
 
-    if (normalizedClusterName) {
-      const sqlSnapshot = await self.productAdvertisingReadRepository
-        .getWorkspaceClusterQueriesSQL(nmId, advertId, normalizedClusterName)
-        .catch(() => null);
-
-      if (sqlSnapshot !== null) {
-        return {
-          ...self.productAdvertisingWorkspaceReadService.buildClusterQueriesResponse({
-            nmId,
-            snapshot: sqlSnapshot,
-            advertId,
-            clusterKey,
-            clusterName: input.clusterName ?? normalizedClusterName,
-            sortKey:
-              (input.sortKey as ProductAdvertisingWorkspaceClusterQueriesResponse["sort"]["key"] | undefined) ??
-              "monthlyFrequency",
-            sortDirection:
-              (input.sortDirection as
-                | ProductAdvertisingWorkspaceClusterQueriesResponse["sort"]["direction"]
-                | undefined) ?? "desc",
-            normalizeAdvertisingText: (value: string) => self.normalizeAdvertisingText(value),
-          }),
-          readiness: {
-            scope: "cluster_queries",
-            status: "ready",
-            source: "workspace_snapshot",
-            materializationStatus: "materialized",
-          },
-        };
-      }
-    }
-
-    // SQL fast path failed: fall back to PATH B sheet (legacy path).
-    const fallbackSheet = await self.productAdvertisingSnapshotResolver.resolve({
-      nmId,
-      currentPeriod,
-      schemaVersion: self.productAdvertisingSheetSnapshotSchemaVersion,
-    });
-    return buildProductAdvertisingWorkspaceClusterQueriesResponse({
-      sheet: fallbackSheet,
-      advertId,
-      clusterKey,
-      clusterName: input.clusterName,
-      sortKey:
-        (input.sortKey as ProductAdvertisingWorkspaceClusterQueriesResponse["sort"]["key"] | undefined) ??
-        "spend",
-      sortDirection:
-        (input.sortDirection as
-          | ProductAdvertisingWorkspaceClusterQueriesResponse["sort"]["direction"]
-          | undefined) ?? "desc",
-    });
+    return {
+      ...self.productAdvertisingWorkspaceReadService.buildClusterQueriesResponse({
+        nmId,
+        snapshot: sqlSnapshot ?? createEmptyWorkspaceClusterQueriesSnapshot(),
+        advertId,
+        clusterKey,
+        clusterName: input.clusterName ?? normalizedClusterName ?? clusterKey,
+        sortKey: responseSortKey,
+        sortDirection: responseSortDirection,
+        normalizeAdvertisingText: (value: string) => self.normalizeAdvertisingText(value),
+      }),
+      readiness: {
+        scope: "cluster_queries",
+        status: "ready",
+        source: "sql_direct",
+        materializationStatus: "sql_direct",
+      },
+    };
   }
+
+  const storedQueries = await self.productWorkspaceSnapshotResolver.resolveWorkspaceClusterQueries({
+    nmId,
+    advertId,
+    clusterKey,
+    currentPeriod: null,
+    schemaVersion: self.productAdvertisingSheetSnapshotSchemaVersion,
+  });
 
   return {
     ...self.productAdvertisingWorkspaceReadService.buildClusterQueriesResponse({
       nmId,
       snapshot: storedQueries?.payload ?? createEmptyWorkspaceClusterQueriesSnapshot(),
       advertId,
-      clusterKey: clusterKey ?? undefined,
-      clusterName: storedQueries?.clusterName ?? input.clusterName ?? undefined,
-      sortKey:
-        (input.sortKey as ProductAdvertisingWorkspaceClusterQueriesResponse["sort"]["key"] | undefined) ??
-        "spend",
-      sortDirection:
-        (input.sortDirection as
-          | ProductAdvertisingWorkspaceClusterQueriesResponse["sort"]["direction"]
-          | undefined) ?? "desc",
+      clusterKey,
+      clusterName: storedQueries?.clusterName ?? input.clusterName ?? clusterKey,
+      sortKey: responseSortKey,
+      sortDirection: responseSortDirection,
       normalizeAdvertisingText: (value: string) => self.normalizeAdvertisingText(value),
     }),
     readiness: {
       scope: "cluster_queries",
       status: "ready",
-      source: clusterKey ? "workspace_snapshot" : "sheet_snapshot",
-      materializationStatus: clusterKey ? "materialized" : "fallback_sheet",
+      source: "workspace_snapshot",
+      materializationStatus: "materialized",
     },
   };
 }
@@ -518,11 +445,9 @@ export async function getProductAdvertisingSheetBundle(
     new Set(input.nmIds.filter((value) => Number.isInteger(value) && value > 0)),
   );
 
-  const sheets = await self.productAdvertisingSnapshotResolver.resolveMany({
-    nmIds: uniqueNmIds,
-    currentPeriod,
-    schemaVersion: self.productAdvertisingSheetSnapshotSchemaVersion,
-  });
+  const sheets = await Promise.all(
+    uniqueNmIds.map((nmId) => getOrLoadProductAdvertisingSheetSnapshot(self, nmId, currentPeriod)),
+  );
 
   return {
     checkedAt: new Date().toISOString(),
@@ -579,11 +504,24 @@ export async function getOrLoadProductAdvertisingSheetSnapshot(
     return pendingValue;
   }
 
-  const loadPromise = self.productAdvertisingSnapshotResolver.resolve({
-    nmId,
-    currentPeriod,
-    schemaVersion: self.productAdvertisingSheetSnapshotSchemaVersion,
-  });
+  const loadPromise = (async () => {
+    const sheet = self.withEmptyJamMetrics(
+      await self.productAdvertisingReadRepository.getProductAdvertisingSheet(
+        nmId,
+        currentPeriod,
+      ),
+    );
+    const enrichedSheet = await self.enrichProductAdvertisingSheetWithJam(
+      sheet,
+      nmId,
+      currentPeriod,
+    );
+    return self.productAdvertisingSnapshotResolver.attachLiveMetadata(
+      enrichedSheet,
+      currentPeriod,
+      "ready",
+    );
+  })();
   self.productAdvertisingSheetSnapshotInFlight.set(cacheKey, loadPromise);
 
   try {

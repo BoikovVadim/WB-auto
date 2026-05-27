@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import type { Pool } from "pg";
 import type { SearchQueryTextView } from "../wb-sync/wb-sync.types";
 import type {
   StoredProductSearchTextRangeRecord,
@@ -127,7 +128,7 @@ export abstract class WbClustersRepositorySearchTextStorage extends WbClustersRe
     await this.ensureSchemaOrThrow();
     const pool = this.getPool();
 
-    // 1. Try exact match first (fastest path, covers live-fetched multi-day snapshots)
+    // 1. Exact date-range match — catches any pre-stored snapshot for this exact range.
     const snapshotResult = await pool.query<StoredProductSearchTextRangeSnapshotRow>(
       `
         SELECT snapshot_key, row_count, synced_at
@@ -139,75 +140,81 @@ export abstract class WbClustersRepositorySearchTextStorage extends WbClustersRe
       `,
       [input.nmId, input.startDate, input.endDate],
     );
-
     const snapshot = snapshotResult.rows[0] ?? null;
     if (snapshot) {
-      if (snapshot.row_count === 0) {
-        return [] as StoredProductSearchTextRangeRecord;
-      }
-
-      const rowsResult = await pool.query<StoredProductSearchTextRangeRow>(
-        `
-          SELECT
-            query_text,
-            frequency::text AS frequency,
-            week_frequency::text AS week_frequency,
-            avg_position_current::text AS avg_position_current,
-            avg_position_dynamics::text AS avg_position_dynamics,
-            orders_current::text AS orders_current,
-            orders_dynamics::text AS orders_dynamics,
-            open_card_current::text AS open_card_current,
-            open_card_dynamics::text AS open_card_dynamics,
-            add_to_cart_current::text AS add_to_cart_current,
-            add_to_cart_dynamics::text AS add_to_cart_dynamics,
-            open_to_cart_current::text AS open_to_cart_current,
-            open_to_cart_dynamics::text AS open_to_cart_dynamics
-          FROM ${this.tableName("wb_product_search_text_range_rows")}
-          WHERE snapshot_key = $1
-          ORDER BY open_card_current DESC NULLS LAST, frequency DESC NULLS LAST, query_text ASC
-        `,
-        [snapshot.snapshot_key],
-      );
-
-      return rowsResult.rows.map((row) => ({
-        text: row.query_text,
-        frequency: this.toNullableNumber(row.frequency),
-        weekFrequency: this.toNullableNumber(row.week_frequency),
-        wbCluster: null,
-        avgPosition: {
-          current: this.toNullableNumber(row.avg_position_current),
-          dynamics: this.toNullableNumber(row.avg_position_dynamics),
-        },
-        orders: {
-          current: this.toNullableNumber(row.orders_current),
-          dynamics: this.toNullableNumber(row.orders_dynamics),
-        },
-        openCard: {
-          current: this.toNullableNumber(row.open_card_current),
-          dynamics: this.toNullableNumber(row.open_card_dynamics),
-        },
-        addToCart: {
-          current: this.toNullableNumber(row.add_to_cart_current),
-          dynamics: this.toNullableNumber(row.add_to_cart_dynamics),
-        },
-        openToCart: {
-          current: this.toNullableNumber(row.open_to_cart_current),
-          dynamics: this.toNullableNumber(row.open_to_cart_dynamics),
-        },
-      }));
+      return this.loadSnapshotRows(pool, snapshot);
     }
 
-    // 2. For single-day with no exact match: return null so caller triggers a live fetch
-    //    which will be stored as a 1-day snapshot for future instant reads.
+    // 2. For single-day with no exact match: return null so the caller triggers a live
+    //    fetch which stores a 1-day snapshot for future instant reads.
     if (input.startDate === input.endDate) {
       return null as StoredProductSearchTextRangeRecord;
     }
 
-    // 3. For multi-day ranges: aggregate from per-day snapshots stored in DB.
-    //    This is the primary read path once the daily backfill has run.
-    //    frequency/orders/openCard are additive (daily counts). Position uses a
-    //    click-weighted average. Dynamics are nulled (not meaningful across days).
+    // 3. Aggregate from per-day snapshots within the requested range.
+    //    Works for any range length — a week, a month, two months, etc.
+    //    Partial coverage is fine: if 5 of 7 days have data, those 5 are aggregated.
+    //    Returns null only when no daily snapshots exist at all for the range.
     return this.getAggregatedDailyProductSearchTextRange(input);
+  }
+
+  private async loadSnapshotRows(
+    pool: Pool,
+    snapshot: StoredProductSearchTextRangeSnapshotRow,
+  ): Promise<StoredProductSearchTextRangeRecord> {
+    if (snapshot.row_count === 0) {
+      return [] as StoredProductSearchTextRangeRecord;
+    }
+
+    const rowsResult = await pool.query<StoredProductSearchTextRangeRow>(
+      `
+        SELECT
+          query_text,
+          frequency::text AS frequency,
+          week_frequency::text AS week_frequency,
+          avg_position_current::text AS avg_position_current,
+          avg_position_dynamics::text AS avg_position_dynamics,
+          orders_current::text AS orders_current,
+          orders_dynamics::text AS orders_dynamics,
+          open_card_current::text AS open_card_current,
+          open_card_dynamics::text AS open_card_dynamics,
+          add_to_cart_current::text AS add_to_cart_current,
+          add_to_cart_dynamics::text AS add_to_cart_dynamics,
+          open_to_cart_current::text AS open_to_cart_current,
+          open_to_cart_dynamics::text AS open_to_cart_dynamics
+        FROM ${this.tableName("wb_product_search_text_range_rows")}
+        WHERE snapshot_key = $1
+        ORDER BY open_card_current DESC NULLS LAST, frequency DESC NULLS LAST, query_text ASC
+      `,
+      [snapshot.snapshot_key],
+    );
+
+    return rowsResult.rows.map((row) => ({
+      text: row.query_text,
+      frequency: this.toNullableNumber(row.frequency),
+      weekFrequency: this.toNullableNumber(row.week_frequency),
+      wbCluster: null,
+      avgPosition: {
+        current: this.toNullableNumber(row.avg_position_current),
+        dynamics: this.toNullableNumber(row.avg_position_dynamics),
+      },
+      orders: {
+        current: this.toNullableNumber(row.orders_current),
+        dynamics: this.toNullableNumber(row.orders_dynamics),
+      },
+      openCard: {
+        current: this.toNullableNumber(row.open_card_current),
+        dynamics: this.toNullableNumber(row.open_card_dynamics),
+      },
+      addToCart: {
+        current: this.toNullableNumber(row.add_to_cart_current),
+        dynamics: this.toNullableNumber(row.add_to_cart_dynamics),
+      },
+      openToCart: {
+        current: this.toNullableNumber(row.open_to_cart_current),
+        dynamics: this.toNullableNumber(row.open_to_cart_dynamics),
+      },
+    }));
   }
 
   private async getAggregatedDailyProductSearchTextRange(input: {

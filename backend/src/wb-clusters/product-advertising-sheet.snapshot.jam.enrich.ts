@@ -144,7 +144,8 @@ export function enrichProductAdvertisingSheetWithJam(input: {
       jamAddToCart: metrics?.jamAddToCart ?? null,
       jamOrders: metrics?.jamOrders ?? null,
       jamAvgPosition: metrics?.jamAvgPosition ?? null,
-      monthlyFrequency: monthlyFrequencyByGroup.get(aggregateFrequencyGroupKey) ?? null,
+      monthlyFrequency:
+        monthlyFrequencyByGroup.get(aggregateFrequencyGroupKey) ?? null,
       updatedAt: query.updatedAt,
     });
   }

@@ -1,13 +1,20 @@
 import type { Pool } from "pg";
 
 import {
+  getCabinetQueryMapDeduplicationStatements,
   getCampaignAlterStatements,
   getCampaignProductAlterStatements,
   getCatalogAlterStatements,
+  getChangeLogCreateStatements,
+  getCostPriceCreateStatements,
+  getJamDailyCreateStatements,
+  getProductDailyOrdersCreateStatements,
+  getSystemChangeLogCreateStatements,
   getClusterKeyMigrationStatements,
   getClusterStatsAlterStatements,
   getClusterWriteAlterStatements,
   getClusterWriteBackfillStatements,
+  getMonthlyFrequencyAlterStatements,
   getSnapshotAlterStatements,
   getSyncRunAlterStatements,
 } from "./wb-clusters.schema.alter-backfill";
@@ -46,7 +53,14 @@ export async function initializeWbClustersSchema(input: {
   await executeSchemaStatements(context, getClusterWriteAlterStatements(context));
   await executeSchemaStatements(context, getClusterWriteBackfillStatements(context));
   await executeSchemaStatements(context, getReadModelCreateStatements(context));
+  await executeSchemaStatements(context, getMonthlyFrequencyAlterStatements(context));
   await executeSchemaStatements(context, getSnapshotAlterStatements(context));
   await executeSchemaStatements(context, getArchiveCreateStatements(context));
   await executeSchemaStatements(context, getIndexStatements(context));
+  await executeSchemaStatements(context, getCabinetQueryMapDeduplicationStatements(context));
+  await executeSchemaStatements(context, getChangeLogCreateStatements(context));
+  await executeSchemaStatements(context, getCostPriceCreateStatements(context));
+  await executeSchemaStatements(context, getSystemChangeLogCreateStatements(context));
+  await executeSchemaStatements(context, getProductDailyOrdersCreateStatements(context));
+  await executeSchemaStatements(context, getJamDailyCreateStatements(context));
 }

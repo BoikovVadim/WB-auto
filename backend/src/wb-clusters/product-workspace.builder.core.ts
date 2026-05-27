@@ -3,6 +3,7 @@ import type {
   ProductAdvertisingWorkspaceResponse,
   ProductCatalogItem,
 } from "./wb-clusters.types";
+import { buildProductAdvertisingReadModelRevision } from "./product-advertising-read-model-revision";
 import { buildWorkspaceCampaignTabs } from "./product-workspace.builder.campaign-tabs";
 import {
   mergeWorkspaceClusters,
@@ -46,6 +47,13 @@ export function buildProductAdvertisingWorkspaceResponse(input: {
   return {
     nmId: input.sheet.nmId,
     checkedAt: input.sheet.checkedAt,
+    revision: buildProductAdvertisingReadModelRevision({
+      scope: "workspace",
+      nmId: input.sheet.nmId,
+      requestedStartDate: input.sheet.range.startDate,
+      requestedEndDate: input.sheet.range.endDate,
+      builtAt: input.sheet.checkedAt,
+    }),
     readiness: input.readiness ?? {
       scope: "workspace",
       status: "ready",

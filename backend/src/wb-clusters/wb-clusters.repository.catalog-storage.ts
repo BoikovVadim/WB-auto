@@ -93,6 +93,50 @@ export abstract class WbClustersRepositoryCatalogStorage extends WbClustersRepos
     return upsertedCount;
   }
 
+  /**
+   * Bulk-updates category_name for all products matching a given subject_name.
+   * Called after fetching the WB /content/v2/object/all subject→category mapping.
+   */
+  async updateCategoryNamesBySubject(
+    mapping: Map<string, { categoryName: string; subjectId?: number | null }>,
+  ): Promise<number> {
+    if (mapping.size === 0) return 0;
+    await this.ensureSchemaOrThrow();
+    const pool = this.getPool();
+    let updatedCount = 0;
+    for (const [subjectName, { categoryName, subjectId }] of mapping) {
+      const result = await pool.query(
+        `UPDATE ${this.tableName("wb_product_catalog")}
+         SET category_name = $1, subject_id = COALESCE($2, subject_id)
+         WHERE subject_name = $3`,
+        [categoryName, subjectId ?? null, subjectName],
+      );
+      updatedCount += result.rowCount ?? 0;
+    }
+    return updatedCount;
+  }
+
+  async getSubjectIdsByCategory(): Promise<Map<string, number[]>> {
+    await this.ensureSchemaOrThrow();
+    const pool = this.getPool();
+    const result = await pool.query<{ category_name: string; subject_id: string }>(
+      `SELECT DISTINCT category_name, subject_id::text AS subject_id
+       FROM ${this.tableName("wb_product_catalog")}
+       WHERE category_name IS NOT NULL
+         AND subject_id IS NOT NULL
+       ORDER BY category_name`,
+    );
+    const map = new Map<string, number[]>();
+    for (const row of result.rows) {
+      const id = Number(row.subject_id);
+      if (!Number.isFinite(id)) continue;
+      const existing = map.get(row.category_name) ?? [];
+      existing.push(id);
+      map.set(row.category_name, existing);
+    }
+    return map;
+  }
+
   async listProductCatalogItems(): Promise<ProductCatalogItem[]> {
     await this.ensureSchemaOrThrow();
     const pool = this.getPool();
@@ -115,6 +159,8 @@ export abstract class WbClustersRepositoryCatalogStorage extends WbClustersRepos
           p.product_name,
           p.brand_name,
           p.subject_name,
+          p.subject_id::text AS subject_id,
+          p.category_name,
           p.source_export_request_id,
           p.first_seen_at::text AS first_seen_at,
           p.last_seen_at::text  AS last_seen_at,
@@ -147,6 +193,8 @@ export abstract class WbClustersRepositoryCatalogStorage extends WbClustersRepos
         name: row.product_name,
         brandName: row.brand_name,
         subjectName: row.subject_name,
+        subjectId: row.subject_id != null ? Number(row.subject_id) : null,
+        categoryName: row.category_name ?? null,
         sourceExportRequestId: row.source_export_request_id,
         firstSeenAt: row.first_seen_at,
         lastSeenAt: row.last_seen_at,
@@ -159,6 +207,17 @@ export abstract class WbClustersRepositoryCatalogStorage extends WbClustersRepos
         },
       }))
       .filter((item) => Number.isFinite(item.nmId));
+  }
+
+  async getDistinctSubjectNames(): Promise<string[]> {
+    await this.ensureSchemaOrThrow();
+    const pool = this.getPool();
+    const result = await pool.query<{ subject_name: string }>(
+      `SELECT DISTINCT subject_name FROM ${this.tableName("wb_product_catalog")}
+       WHERE subject_name <> '' AND subject_name <> '-'
+       ORDER BY subject_name`,
+    );
+    return result.rows.map((r) => r.subject_name);
   }
 
   async getKnownCatalogNmIds(): Promise<number[]> {
@@ -205,6 +264,8 @@ export abstract class WbClustersRepositoryCatalogStorage extends WbClustersRepos
           p.product_name,
           p.brand_name,
           p.subject_name,
+          p.subject_id::text AS subject_id,
+          p.category_name,
           p.source_export_request_id,
           p.first_seen_at::text AS first_seen_at,
           p.last_seen_at::text AS last_seen_at,
@@ -248,6 +309,8 @@ export abstract class WbClustersRepositoryCatalogStorage extends WbClustersRepos
       name: row.product_name,
       brandName: row.brand_name,
       subjectName: row.subject_name,
+      subjectId: row.subject_id != null ? Number(row.subject_id) : null,
+      categoryName: row.category_name ?? null,
       sourceExportRequestId: row.source_export_request_id,
       firstSeenAt: row.first_seen_at,
       lastSeenAt: row.last_seen_at,
@@ -312,7 +375,7 @@ export abstract class WbClustersRepositoryCatalogStorage extends WbClustersRepos
           CASE WHEN c.campaign_status = 9 THEN 0
                WHEN c.campaign_status = 11 THEN 1
                ELSE 2 END,
-          c.advert_id
+          c.advert_id DESC
       `,
       [nmId],
     );

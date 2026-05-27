@@ -2,13 +2,7 @@ import type { ReactNode } from "react";
 
 import { ui } from "./copy";
 import { ProductsWorkspaceSection } from "./ProductsWorkspaceSection";
-import type { ProductListSortKey } from "./useDashboardProductsWorkspace";
-
-type ProductListItem = {
-  vendorCode: string;
-  nmId: number | null;
-  campaignCounts?: { total: number; active: number; paused: number; disabled: number };
-};
+import type { ProductListItem, ProductListSortKey } from "./useDashboardProductsWorkspace";
 
 type DashboardProductsSectionProps = {
   productsMode: "list" | "detail";
@@ -32,7 +26,16 @@ type DashboardProductsSectionProps = {
 export function DashboardProductsSection(props: DashboardProductsSectionProps) {
   const detailTitle = props.resolvedCatalogProduct
     ? props.resolvedCatalogProduct.nmId !== null
-      ? `${props.resolvedCatalogProduct.nmId} ${props.resolvedCatalogProduct.vendorCode}`
+      ? (
+          <span style={{ display: "inline-flex", alignItems: "baseline", gap: "8px" }}>
+            <span>{props.resolvedCatalogProduct.nmId} {props.resolvedCatalogProduct.vendorCode}</span>
+            {props.resolvedCatalogProduct.subjectName && (
+              <span style={{ fontSize: "0.55em", fontWeight: 400, opacity: 0.6 }}>
+                {props.resolvedCatalogProduct.subjectName}
+              </span>
+            )}
+          </span>
+        )
       : props.resolvedCatalogProduct.vendorCode
     : `${ui.productsWorkspace} (${props.productCatalogCount})`;
 

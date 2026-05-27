@@ -6,8 +6,6 @@ import type {
   ProductSnapshotReadinessItem,
 } from "./syncClientTypes";
 import {
-  isIsoDateString,
-  isNonEmptyString,
   isNullableDateOnlyString,
   isNullableIsoDateString,
   isNullableNonEmptyString,
@@ -58,6 +56,7 @@ export function isProductCatalogItem(value: unknown): value is ProductCatalogIte
     typeof value.name === "string" &&
     typeof value.brandName === "string" &&
     typeof value.subjectName === "string" &&
+    (value.categoryName === null || value.categoryName === undefined || typeof value.categoryName === "string") &&
     isNullableNonEmptyString(value.sourceExportRequestId) &&
     isNullableIsoDateString(value.firstSeenAt) &&
     isNullableIsoDateString(value.lastSeenAt) &&

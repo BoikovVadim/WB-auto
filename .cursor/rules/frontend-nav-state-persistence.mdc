@@ -1,0 +1,77 @@
+# Frontend navigation state persistence
+
+## Rule: every view-routing state MUST survive a page reload
+
+The user MUST land on the exact same screen after any reload (manual F5,
+deploy-triggered auto-reload, browser restart, new tab at the same URL).
+
+---
+
+## What counts as "navigation / view state"
+
+- Which top-level section is active (`activeSection`)
+- Which overlay / sheet is open (`activeSheet`)
+- Which entity / export is selected
+- Which product detail is open
+- Products table search string and sort settings
+- Advertising date range
+- Window scroll position
+
+**Not** navigation state (do not persist):
+
+- Data caches (cost prices, orders matrix, JAM rows — they have their own cache keys)
+- Loading / saving / error flags
+- Token input text
+- UI-only transient state (hover, focus, resize drag)
+
+---
+
+## Where persistence lives
+
+| File | Responsibility |
+|------|----------------|
+| `persistence/dashboardViewStateTypes.ts` | `DashboardViewState` type, defaults, validators |
+| `persistence/dashboardViewSession.ts` | localStorage read/write (key `wb-dashboard-view-state-v2`) |
+| `persistence/dashboardViewUrl.ts` | URL param read/write (method + products deep links) |
+| `persistence/dashboardViewState.ts` | Public API merging both sources |
+| `useDashboardBrowserEffects.ts` | Writes on every state change, restores scroll |
+
+---
+
+## Checklist when adding new navigation state
+
+1. Add the field to `DashboardViewState` in `dashboardViewStateTypes.ts`
+2. Add a validator (`isXxx`) in the same file
+3. Read and validate the field in `readDashboardViewStateFromSessionStorage` (dashboardViewSession.ts)
+4. Write it in `writeDashboardViewStateToSessionStorage`
+5. Re-export the type from `dashboardViewState.ts` if used outside persistence/
+6. Accept the new field in `useDashboardBrowserEffects` input and add it to the `writeDashboardViewState` call
+7. In `WbDashboard.tsx`: initialise `useState` from `persistedViewState.<field>` (not a hardcoded default)
+8. Pass the state value to `useDashboardBrowserEffects`
+
+**If you skip any of these 8 steps the state will reset on reload.**
+
+---
+
+## Storage key versioning
+
+The key is `wb-dashboard-view-state-v2` (localStorage).
+Bump the suffix (`-v3`, etc.) only when you remove a field or change its
+meaning so that stale stored values would cause a broken UI. Adding new
+fields with safe defaults does NOT require a key bump.
+
+---
+
+## Sheet / overlay consolidation
+
+All mutually exclusive overlay sheets within `catalog-products` are
+represented by a single `activeSheet: ActiveSheet` enum
+(`"none" | "cost-price" | "orders" | "jam"`) rather than separate boolean
+flags. When adding a new overlay sheet:
+
+- Add its value to `ActiveSheet` union in `dashboardViewStateTypes.ts`
+- Add it to the `isActiveSheet` validator
+- In `WbDashboard.tsx`, derive the boolean (`const isXxxOpen = activeSection === "catalog-products" && activeSheet === "xxx"`)
+- Call `setActiveSheet("xxx")` / `setActiveSheet("none")` in the open/close handlers
+
+Do NOT add new `boolean` sheet flags alongside the `activeSheet` field.

@@ -7,9 +7,8 @@ import { fetchProductAdvertisingWorkspace } from "../../../api/syncClient";
 // Все видимые в viewport продукты грузим сразу — нет смысла ограничивать,
 // т.к. visibleNmIds уже ограничен видимой областью списка.
 const visibleWorkspacePrefetchLimit = 100;
-// Параллельно по 8 запросов вместо 4 — ускоряет заполнение кеша.
-const workspacePrefetchChunkSize = 8;
-const backgroundWorkspacePrefetchDelayMs = 600;
+// Держим умеренный параллелизм, чтобы не забирать сокеты у пользовательского клика.
+const workspacePrefetchChunkSize = 4;
 // Workspace считается устаревшим через 60 секунд — то же значение, что и в
 // shouldBackgroundRefreshWorkspace. Prefetch обновляет устаревший workspace
 // заранее, пока пользователь читает список, чтобы клик на любой товар был
@@ -25,7 +24,6 @@ export function useProductAdvertisingWorkspacePrefetch(input: {
   active: boolean;
   requestInput: ProductAdvertisingSheetRequestInput | null;
   visibleNmIds: number[];
-  allNmIds: number[];
 }) {
   const requestedKeysRef = useRef<Set<string>>(new Set());
 
@@ -63,7 +61,9 @@ export function useProductAdvertisingWorkspacePrefetch(input: {
 
             requestedKeysRef.current.add(requestKey);
             try {
-              await fetchProductAdvertisingWorkspace(nmId, requestInput);
+              await fetchProductAdvertisingWorkspace(nmId, requestInput, {
+                source: "prefetch",
+              });
             } catch {
               requestedKeysRef.current.delete(requestKey);
             }
@@ -79,19 +79,10 @@ export function useProductAdvertisingWorkspacePrefetch(input: {
     const visibleNmIds = input.visibleNmIds.slice(0, visibleWorkspacePrefetchLimit);
     void prefetchNmIds(visibleNmIds);
 
-    const timeoutId = window.setTimeout(() => {
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-        return;
-      }
-
-      void prefetchNmIds(input.allNmIds);
-    }, backgroundWorkspacePrefetchDelayMs);
-
     return () => {
       isCancelled = true;
-      window.clearTimeout(timeoutId);
     };
-  }, [input.active, input.allNmIds, input.requestInput, input.visibleNmIds]);
+  }, [input.active, input.requestInput, input.visibleNmIds]);
 }
 
 function buildWorkspacePrefetchKey(nmId: number, requestInput: ProductAdvertisingSheetRequestInput) {

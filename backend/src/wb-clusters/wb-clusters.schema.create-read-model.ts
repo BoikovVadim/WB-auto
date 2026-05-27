@@ -59,6 +59,8 @@ export function getReadModelCreateStatements({
     `
       CREATE TABLE IF NOT EXISTS ${tableName("wb_search_query_frequencies")} (
         normalized_query_text TEXT PRIMARY KEY,
+        normalized_query_identity TEXT NOT NULL,
+        normalized_query_stem TEXT NOT NULL,
         query_text TEXT NOT NULL,
         monthly_frequency NUMERIC NOT NULL,
         report_type TEXT NOT NULL,
@@ -66,7 +68,21 @@ export function getReadModelCreateStatements({
         download_id TEXT NULL,
         report_start_date DATE NOT NULL,
         report_end_date DATE NOT NULL,
+        subject_name TEXT NULL,
         synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `,
+    `
+      CREATE TABLE IF NOT EXISTS ${tableName("wb_query_frequency_history")} (
+        id BIGSERIAL PRIMARY KEY,
+        normalized_query_text TEXT NOT NULL,
+        query_text TEXT NOT NULL,
+        monthly_frequency NUMERIC NOT NULL,
+        report_start_date DATE NOT NULL,
+        report_end_date DATE NOT NULL,
+        snapshotted_week DATE NOT NULL,
+        snapshotted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (normalized_query_text, snapshotted_week)
       )
     `,
     `

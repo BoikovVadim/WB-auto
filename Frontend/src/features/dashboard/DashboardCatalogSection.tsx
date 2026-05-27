@@ -49,6 +49,7 @@ export function DashboardCatalogSection(props: { onBack?: () => void }) {
       item.name.toLowerCase().includes(q) ||
       item.brandName.toLowerCase().includes(q) ||
       item.subjectName.toLowerCase().includes(q) ||
+      (item.categoryName ?? "").toLowerCase().includes(q) ||
       String(item.nmId).includes(q)
     );
   });
@@ -101,6 +102,7 @@ export function DashboardCatalogSection(props: { onBack?: () => void }) {
                   <th style={thStyle}>Артикул</th>
                   <th style={thStyle}>Название</th>
                   <th style={thStyle}>Бренд</th>
+                  <th style={thStyle}>Категория</th>
                   <th style={thStyle}>Предмет</th>
                   <th style={thStyle}>Кампаний</th>
                   <th style={thStyle}>Активных РК</th>
@@ -122,6 +124,7 @@ export function DashboardCatalogSection(props: { onBack?: () => void }) {
                       {item.name || "—"}
                     </td>
                     <td style={tdStyle}>{item.brandName || "—"}</td>
+                    <td style={tdStyle}>{item.categoryName || "—"}</td>
                     <td style={tdStyle}>{item.subjectName || "—"}</td>
                     <td style={{ ...tdStyle, textAlign: "center" }}>{item.campaignCounts.total}</td>
                     <td style={{ ...tdStyle, textAlign: "center" }}>

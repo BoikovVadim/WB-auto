@@ -36,8 +36,15 @@ import {
   buildWbClustersWriteHeaders,
   productAdvertisingSheetRequestInFlight,
 } from "./syncClientHttp";
+import { isRecord } from "./syncClientValidatorUtils";
 
-const productWorkspaceRequestInFlight = new Map<string, Promise<ProductAdvertisingWorkspaceResponse>>();
+type WorkspaceRequestSource = "user" | "prefetch";
+type WorkspaceRequestInFlightEntry = {
+  source: WorkspaceRequestSource;
+  promise: Promise<ProductAdvertisingWorkspaceResponse>;
+};
+
+const productWorkspaceRequestInFlight = new Map<string, WorkspaceRequestInFlightEntry>();
 const productWorkspaceBundleRequestInFlight =
   new Map<string, Promise<ProductAdvertisingWorkspaceBundleResponse>>();
 const productWorkspaceClusterTableRequestInFlight =
@@ -93,6 +100,9 @@ export async function fetchProductAdvertisingSheet(
 export async function fetchProductAdvertisingWorkspace(
   nmId: number,
   input?: ProductAdvertisingSheetRequestInput,
+  options?: {
+    source?: WorkspaceRequestSource;
+  },
 ) {
   const requestKey = [
     "workspace",
@@ -100,9 +110,16 @@ export async function fetchProductAdvertisingWorkspace(
     input?.startDate ?? "none",
     input?.endDate ?? "none",
   ].join(":");
+  const requestSource = options?.source ?? "user";
   const inFlightRequest = productWorkspaceRequestInFlight.get(requestKey);
   if (inFlightRequest) {
-    return inFlightRequest;
+    // If a background prefetch got stuck, do not block the interactive open.
+    // Start a fresh user request so product open remains responsive.
+    const shouldReuseInFlight =
+      !(requestSource === "user" && inFlightRequest.source === "prefetch");
+    if (shouldReuseInFlight) {
+      return inFlightRequest.promise;
+    }
   }
 
   const requestPromise = apiClient
@@ -129,10 +146,9 @@ export async function fetchProductAdvertisingWorkspace(
           advertId: tab.advertId,
           requestInput: input,
           search: "",
+          clusterNameSearch: "",
           status: "all",
           numericFilters: getEmptyClusterNumericFilters(),
-          sortKey: "spend",
-          sortDirection: "desc",
           page: 1,
           pageSize: 5000,
         });
@@ -147,10 +163,9 @@ export async function fetchProductAdvertisingWorkspace(
           advertId: response.data.initialClusterTable.advertId,
           requestInput: input,
           search: "",
+          clusterNameSearch: "",
           status: "all",
           numericFilters: getEmptyClusterNumericFilters(),
-          sortKey: "spend",
-          sortDirection: "desc",
           page: 1,
           pageSize: response.data.initialClusterTable.pagination.pageSize,
         });
@@ -162,10 +177,16 @@ export async function fetchProductAdvertisingWorkspace(
       return response.data;
     })
     .finally(() => {
-      productWorkspaceRequestInFlight.delete(requestKey);
+      const current = productWorkspaceRequestInFlight.get(requestKey);
+      if (current?.promise === requestPromise) {
+        productWorkspaceRequestInFlight.delete(requestKey);
+      }
     });
 
-  productWorkspaceRequestInFlight.set(requestKey, requestPromise);
+  productWorkspaceRequestInFlight.set(requestKey, {
+    source: requestSource,
+    promise: requestPromise,
+  });
   return requestPromise;
 }
 
@@ -202,10 +223,9 @@ export async function fetchProductAdvertisingWorkspaceBundle(
           advertId: Number(advertIdStr),
           requestInput: input,
           search: "",
+          clusterNameSearch: "",
           status: "all",
           numericFilters: getEmptyClusterNumericFilters(),
-          sortKey: table.sort.key,
-          sortDirection: table.sort.direction,
           page: table.pagination.page,
           pageSize: table.pagination.pageSize,
         });
@@ -227,10 +247,9 @@ export async function fetchProductAdvertisingWorkspaceBundle(
           advertId: tab.advertId,
           requestInput: input,
           search: "",
+          clusterNameSearch: "",
           status: "all",
           numericFilters: getEmptyClusterNumericFilters(),
-          sortKey: "spend",
-          sortDirection: "desc",
           page: 1,
           pageSize: 5000,
         });
@@ -255,8 +274,18 @@ export async function fetchProductAdvertisingWorkspaceBundle(
         : undefined,
     })
     .then((response) => {
-      const data = response.data as ProductAdvertisingWorkspaceBundleResponse;
+      if (!isRecord(response.data)) {
+        throw new Error("workspace-bundle response is not an object");
+      }
+      const data = response.data as unknown as ProductAdvertisingWorkspaceBundleResponse;
       assertProductAdvertisingWorkspaceResponse(data.workspace);
+
+      // clusterTables must be a plain object map keyed by advertId. A non-object
+      // (array, string, null) would make Object.entries below yield garbage keys
+      // and NaN cache keys without throwing, so reject it explicitly.
+      if (data.clusterTables != null && !isRecord(data.clusterTables)) {
+        throw new Error("workspace-bundle clusterTables is not an object map");
+      }
 
       // Cache workspace (memory + sessionStorage).
       cacheProductWorkspace(nmId, input, data.workspace);
@@ -269,10 +298,9 @@ export async function fetchProductAdvertisingWorkspaceBundle(
           advertId: Number(advertIdStr),
           requestInput: input,
           search: "",
+          clusterNameSearch: "",
           status: "all",
           numericFilters: getEmptyClusterNumericFilters(),
-          sortKey: table.sort.key,
-          sortDirection: table.sort.direction,
           page: table.pagination.page,
           pageSize: table.pagination.pageSize,
         });
@@ -304,6 +332,7 @@ export async function fetchProductAdvertisingWorkspaceClusterTable(input: {
   advertId: number;
   requestInput?: ProductAdvertisingSheetRequestInput | null;
   search?: string;
+  clusterNameSearch?: string;
   status?: ProductAdvertisingWorkspaceClusterStatusFilter;
   numericFilters?: ProductAdvertisingWorkspaceClusterNumericFilters;
   sortKey?: ProductAdvertisingWorkspaceClusterSortKey;
@@ -329,6 +358,7 @@ export async function fetchProductAdvertisingWorkspaceClusterTable(input: {
           startDate: input.requestInput?.startDate,
           endDate: input.requestInput?.endDate,
           search: input.search?.trim() ?? "",
+          clusterNameSearch: input.clusterNameSearch?.trim() ?? "",
           status: input.status ?? ("all" satisfies ProductAdvertisingWorkspaceClusterStatusFilter),
           numericFilters: JSON.stringify(input.numericFilters ?? getEmptyClusterNumericFilters()),
           sortKey: input.sortKey ?? ("spend" satisfies ProductAdvertisingWorkspaceClusterSortKey),
@@ -496,4 +526,36 @@ export function getEmptyClusterNumericFilters(): ProductAdvertisingWorkspaceClus
     viewToOrder: { min: null, max: null },
     spend: { min: null, max: null },
   };
+}
+
+export type ClusterChangeLogEntry = {
+  id: string;
+  nmId: number;
+  advertId: number;
+  clusterName: string;
+  changeType: "status_change" | "bid_change";
+  oldValue: string | null;
+  newValue: string;
+  jobId: string | null;
+  appliedAt: string;
+};
+
+export async function fetchClusterChangeLog(
+  nmId: number,
+  advertId: number,
+): Promise<ClusterChangeLogEntry[]> {
+  const response = await apiClient.get<{ entries: ClusterChangeLogEntry[] }>(
+    `/wb-clusters/products/${String(nmId)}/campaigns/${String(advertId)}/clusters/change-log`,
+    { timeout: advertisingApiTimeoutMs },
+  );
+  const data = response.data;
+  if (
+    !data ||
+    typeof data !== "object" ||
+    !("entries" in data) ||
+    !Array.isArray((data as { entries: unknown }).entries)
+  ) {
+    return [];
+  }
+  return (data as { entries: ClusterChangeLogEntry[] }).entries;
 }

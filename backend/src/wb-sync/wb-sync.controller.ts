@@ -1,5 +1,15 @@
-import { Body, Controller, Delete, Get, Inject, Param, Post } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Param,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
 
+import { WbClustersWriteGuard } from "../common/guards/wb-clusters-write.guard";
 import { ExportWbDataDto } from "./dto/export-wb-data.dto";
 import { GetProductSearchTextsRangeDto } from "./dto/get-product-search-texts-range.dto";
 import { RunSyncDto } from "./dto/run-sync.dto";
@@ -29,11 +39,13 @@ export class WbSyncController {
   }
 
   @Post("token")
+  @UseGuards(WbClustersWriteGuard)
   setRuntimeToken(@Body() body: SetWbTokenDto) {
     return this.wbSyncService.setRuntimeToken(body.token);
   }
 
   @Delete("token")
+  @UseGuards(WbClustersWriteGuard)
   clearRuntimeToken() {
     return this.wbSyncService.clearRuntimeToken();
   }

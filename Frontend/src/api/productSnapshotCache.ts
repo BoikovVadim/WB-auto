@@ -5,21 +5,10 @@ import {
 } from "./productAdvertisingSheetIdentity";
 import type { ProductAdvertisingSheetResponse } from "./syncClientTypes";
 import {
-  deleteProductAdvertisingSheetFromIndexedDb,
-  readProductAdvertisingSheetFromIndexedDb,
-  writeProductAdvertisingSheetToIndexedDb,
-} from "./productSnapshotCacheIndexedDb";
-import {
-  clearLatestProductAdvertisingSheetFromSessionStorage,
-  clearLocalStorageProductAdvertisingSheet,
   deleteMemoryCachedProductAdvertisingSheet,
   getMemoryCachedProductAdvertisingSheetByKey,
-  readLatestProductAdvertisingSheetFromSessionStorage,
-  readLocalStorageProductAdvertisingSheet,
   setMemoryCachedProductAdvertisingSheet,
   type PreparedProductAdvertisingSheetMap,
-  writeLatestProductAdvertisingSheetToSessionStorage,
-  writeLocalStorageProductAdvertisingSheet,
 } from "./productSnapshotCacheStorage";
 
 export type { PreparedProductAdvertisingSheetMap } from "./productSnapshotCacheStorage";
@@ -34,11 +23,7 @@ export function cacheProductAdvertisingSheet(
 ) {
   const cacheKey = buildProductAdvertisingSheetCacheKey(nmId, input);
   setMemoryCachedProductAdvertisingSheet(cacheKey, value);
-  writeLatestProductAdvertisingSheetToSessionStorage(cacheKey, value);
-  void writeProductAdvertisingSheetToIndexedDb(cacheKey, value);
-  if (options?.persistToLocalStorage === true) {
-    writeLocalStorageProductAdvertisingSheet(cacheKey, value);
-  }
+  void options;
 }
 
 export function getMemoryCachedProductAdvertisingSheet(
@@ -53,22 +38,9 @@ export function getCachedProductAdvertisingSheet(
   nmId: number,
   input?: ProductAdvertisingSheetRequestInput,
 ) {
-  const cacheKey = buildProductAdvertisingSheetCacheKey(nmId, input);
   const memoryCached = getMemoryCachedProductAdvertisingSheet(nmId, input);
   if (memoryCached) {
     return memoryCached;
-  }
-
-  const latestSessionValue = readLatestProductAdvertisingSheetFromSessionStorage(cacheKey);
-  if (latestSessionValue) {
-    setMemoryCachedProductAdvertisingSheet(cacheKey, latestSessionValue);
-    return latestSessionValue;
-  }
-
-  const persistedLocalValue = readLocalStorageProductAdvertisingSheet(cacheKey);
-  if (persistedLocalValue) {
-    setMemoryCachedProductAdvertisingSheet(cacheKey, persistedLocalValue);
-    return persistedLocalValue;
   }
 
   return null;
@@ -80,28 +52,13 @@ export function invalidateCachedProductAdvertisingSheet(
 ) {
   const cacheKey = buildProductAdvertisingSheetCacheKey(nmId, input);
   deleteMemoryCachedProductAdvertisingSheet(cacheKey);
-  clearLatestProductAdvertisingSheetFromSessionStorage(cacheKey);
-  clearLocalStorageProductAdvertisingSheet(cacheKey);
-  void deleteProductAdvertisingSheetFromIndexedDb(cacheKey);
 }
 
 export async function getCachedProductAdvertisingSheetAsync(
   nmId: number,
   input?: ProductAdvertisingSheetRequestInput,
 ) {
-  const syncValue = getCachedProductAdvertisingSheet(nmId, input);
-  if (syncValue) {
-    return syncValue;
-  }
-
-  const cacheKey = buildProductAdvertisingSheetCacheKey(nmId, input);
-  const indexedDbValue = await readProductAdvertisingSheetFromIndexedDb(cacheKey);
-  if (indexedDbValue) {
-    setMemoryCachedProductAdvertisingSheet(cacheKey, indexedDbValue);
-    return indexedDbValue;
-  }
-
-  return null;
+  return getCachedProductAdvertisingSheet(nmId, input);
 }
 
 export function readPreparedPresetSheetsForProduct(

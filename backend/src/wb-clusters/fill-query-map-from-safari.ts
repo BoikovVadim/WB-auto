@@ -130,8 +130,12 @@ async function replaceCabinetClusterQueries(
             capture_mode,
             source_endpoint,
             captured_at,
-            synced_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,NOW())
+            synced_at,
+            monthly_frequency
+          )
+          SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,NOW(), f.monthly_frequency
+          FROM (SELECT 1) dummy
+          LEFT JOIN public.wb_search_query_frequencies f ON f.normalized_query_text = $7
           ON CONFLICT (cabinet_query_key) DO UPDATE
           SET
             cluster_name = EXCLUDED.cluster_name,
@@ -141,7 +145,8 @@ async function replaceCabinetClusterQueries(
             capture_mode = EXCLUDED.capture_mode,
             source_endpoint = EXCLUDED.source_endpoint,
             captured_at = EXCLUDED.captured_at,
-            synced_at = NOW()
+            synced_at = NOW(),
+            monthly_frequency = COALESCE(EXCLUDED.monthly_frequency, public.wb_cabinet_cluster_queries.monthly_frequency)
         `,
         [
           cabinetQueryKey,

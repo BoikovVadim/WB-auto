@@ -1,0 +1,26 @@
+# Backend/Postgres truth
+
+1. For any user-facing `GET` with an explicit range, filter, sort, page, or entity selector, canonical truth must come from one backend-owned/Postgres-backed read model for that exact request.
+2. If exact/current data for the requested scope is absent, return a machine-readable empty or unavailable response for that same scope. Do not silently substitute `closest_range`, `most_recent`, archive payloads, sheet-derived shells, or frontend reconstruction.
+3. Degraded or alternative reads are allowed only when they are explicit:
+ - separate endpoint, or
+ - machine-readable mode/status/source such as `latest`, `historical_preview`, `unavailable`, `compatibility_snapshot`
+4. Frontend must not own business read semantics. Totals, filter counts, semantic ordering, pagination math, readiness, revision/invalidation, and requested-vs-actual metadata belong to backend contracts.
+5. Browser persistence is UX-only unless a cache entry is opaque, revision-bound, and always revalidated by the backend before becoming visible. Do not let browser storage resurrect stale business truth after refresh.
+6. After writes, the frontend should invalidate and re-fetch canonical read models. Do not keep optimistic business-state mutations that can outlive refresh unless the backend contract explicitly supports them with revision-safe reconciliation.
+7. Before changing a bounded context, name its canonical read owner explicitly:
+ - `wb-sync`: backend export/archive/status/readiness projections
+ - `wb-clusters`: backend/Postgres advertising sheet, workspace, cluster-table, and cluster-query projections
+ - `catalog`: backend/Postgres product catalog projections
+ - `pricing`: backend/Postgres pricing rules, preview, and publish-state projections
+ - `stocks`: backend/Postgres warehouse and stock projections
+ - `orders`: backend/Postgres order ingestion and operational projections
+ - `analytics`: backend/Postgres report/query projections and derived aggregates
+8. Repeatable cutover checklist for any context:
+ - identify every explicit user read path and its current fallback chain
+ - define one canonical backend/Postgres projection family
+ - move filtering/sorting/pagination/totals/count semantics to backend DTOs
+ - remove silent cross-period/archive/raw-payload fallback from interactive GETs
+ - reduce browser persistence to UX-only or revision-bound transport cache
+ - add backend-owned readiness/revision/invalidation contract for refresh after writes or sync
+ - update `README.md`, `docs/module-map.md`, and nearby rules/docs when the ownership decision becomes durable

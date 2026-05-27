@@ -5,6 +5,7 @@ import { WbRuntimeConfigModule } from "../wb-runtime-config/wb-runtime-config.mo
 import { WbApiClient } from "../wb-sync/wb-api.client";
 import { WbCabinetPrivateApiClient } from "./wb-cabinet-private-api.client";
 import { WbCmpSafariClient } from "./wb-cmp-safari.client";
+import { WbSellerPortalPlaywrightClient } from "./wb-seller-portal-playwright.client";
 import { WbClustersController } from "./wb-clusters.controller";
 import { WbClustersActionQueueService } from "./wb-clusters-action-queue.service";
 import { WbClustersBidQueueService } from "./wb-clusters-bid-queue.service";
@@ -36,6 +37,7 @@ import { WbPromotionApiClient } from "./wb-promotion-api.client";
   providers: [
     WbCabinetPrivateApiClient,
     WbCmpSafariClient,
+    WbSellerPortalPlaywrightClient,
     WbClustersWriteGuard,
     WbClustersCabinetService,
     WbClustersSchemaInitService,

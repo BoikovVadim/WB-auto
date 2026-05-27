@@ -8,6 +8,7 @@ import {
   completeAdvertisingUxBudget,
   startAdvertisingUxBudget,
 } from "./advertisingUxBudgets";
+import { buildPendingProductAdvertisingWorkspace } from "./productAdvertisingWorkspacePendingState";
 import { ui } from "../copy";
 import { normalizeDashboardReadError } from "../dashboardErrors";
 
@@ -64,17 +65,17 @@ export function useProductAdvertisingWorkspace(input: {
       }
 
       // При смене дат (пресет) — оставляем stale-воркспейс того же товара видимым
-      // пока грузятся новые данные. Экран не мигает пустотой.
+      // пока грузятся новые данные. Но range-scoped summary/counts и bootstrap-таблицу
+      // убираем: иначе на новом диапазоне можно увидеть старые счётчики РК и пустую таблицу.
       // При смене товара (nmId) — очищаем: чужой воркспейс показывать нельзя.
       if (currentValue?.nmId === input.nmId) {
-        return currentValue;
+        return buildPendingProductAdvertisingWorkspace(currentValue);
       }
 
       return null;
     });
     setProductAdvertisingWorkspaceError(null);
   // requestKey (строка) вместо input.requestInput (объект) — стабильный dep.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bootstrapWorkspace, input.nmId, requestKey]);
 
   useEffect(() => {
@@ -109,36 +110,52 @@ export function useProductAdvertisingWorkspace(input: {
     }
 
     let isCancelled = false;
+    let retryTimerId: ReturnType<typeof setTimeout> | null = null;
     setIsProductAdvertisingWorkspaceLoading(bootstrapWorkspace === null);
-    void fetchProductAdvertisingWorkspace(input.nmId, currentRequestInput)
-      .then((response) => {
-        if (isCancelled) {
-          return;
-        }
 
-        setProductAdvertisingWorkspace(response);
-        setProductAdvertisingWorkspaceError(null);
-        setIsProductAdvertisingWorkspaceLoading(false);
-        completeAdvertisingUxBudget(budgetKey);
-      })
-      .catch((error) => {
-        if (isCancelled) {
-          return;
-        }
+    const attemptFetch = () => {
+      const nmId = input.nmId;
+      if (isCancelled || nmId === null) return;
+      void fetchProductAdvertisingWorkspace(nmId, currentRequestInput)
+        .then((response) => {
+          if (isCancelled) {
+            return;
+          }
 
-        setProductAdvertisingWorkspaceError(
-          normalizeDashboardReadError(error, ui.productAdvertisingWorkspaceLoadError),
-        );
-        setIsProductAdvertisingWorkspaceLoading(false);
-      });
+          setProductAdvertisingWorkspace(response);
+          setProductAdvertisingWorkspaceError(null);
+          setIsProductAdvertisingWorkspaceLoading(false);
+          completeAdvertisingUxBudget(budgetKey);
+        })
+        .catch((error) => {
+          if (isCancelled) {
+            return;
+          }
+
+          const message = normalizeDashboardReadError(error, ui.productAdvertisingWorkspaceLoadError);
+          setProductAdvertisingWorkspaceError(message);
+
+          if (message === null) {
+            // Тихая ошибка (503/502/504/network): автоматически повторить через 5с,
+            // сохраняя isLoading=true чтобы не показывать пустую страницу.
+            retryTimerId = setTimeout(attemptFetch, 5_000);
+          } else {
+            setIsProductAdvertisingWorkspaceLoading(false);
+          }
+        });
+    };
+
+    attemptFetch();
 
     return () => {
       isCancelled = true;
+      if (retryTimerId !== null) {
+        clearTimeout(retryTimerId);
+      }
     };
   // requestKey (строка) вместо input.requestInput (объект). bootstrapWorkspace и
   // cachedWorkspace — объекты, но они обновляются только при смене requestKey,
   // поэтому не создают лишних перезапусков.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     input.active,
     input.nmId,

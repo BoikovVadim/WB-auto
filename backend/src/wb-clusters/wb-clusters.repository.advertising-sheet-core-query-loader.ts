@@ -164,17 +164,13 @@ export abstract class WbClustersRepositoryAdvertisingSheetCoreQueryLoader extend
           a.action_sync_status,
           a.action_retry_at::text AS action_retry_at,
           a.action_last_error,
-          COALESCE(
-          f.monthly_frequency,
-          cluster_name_frequency.monthly_frequency
-          )::text AS monthly_frequency,
+          f.monthly_frequency::text AS monthly_frequency,
           GREATEST(
           c.synced_at,
           COALESCE(s.synced_at, c.synced_at),
           COALESCE(b.synced_at, c.synced_at),
           COALESCE(a.synced_at, c.synced_at),
-          COALESCE(f.synced_at, c.synced_at),
-          COALESCE(cluster_name_frequency.synced_at, c.synced_at)
+          COALESCE(f.synced_at, c.synced_at)
           )::text AS updated_at
           FROM ${this.tableName("wb_clusters")} c
           LEFT JOIN ${this.tableName("wb_campaigns")} campaign
@@ -204,18 +200,24 @@ export abstract class WbClustersRepositoryAdvertisingSheetCoreQueryLoader extend
           advert_id,
           nm_id,
           normalized_cluster_name,
-          normalized_query_text
+          normalized_query_text AS lookup_text
           FROM canonical_cluster_queries
+          UNION
+          SELECT DISTINCT
+          c.advert_id,
+          c.nm_id,
+          c.normalized_cluster_name,
+          c.normalized_cluster_name AS lookup_text
+          FROM ${this.tableName("wb_clusters")} c
+          WHERE c.nm_id = $1
           ) x
           JOIN ${this.tableName("wb_search_query_frequencies")} f
-          ON f.normalized_query_text = x.normalized_query_text
+          ON f.normalized_query_text = x.lookup_text
           GROUP BY x.advert_id, x.nm_id, x.normalized_cluster_name
           ) f
           ON f.advert_id = c.advert_id
           AND f.nm_id = c.nm_id
           AND f.normalized_cluster_name = c.normalized_cluster_name
-          LEFT JOIN ${this.tableName("wb_search_query_frequencies")} cluster_name_frequency
-          ON cluster_name_frequency.normalized_query_text = c.normalized_cluster_name
           WHERE c.nm_id = $1
           ORDER BY
           COALESCE(c.advert_id, 0),

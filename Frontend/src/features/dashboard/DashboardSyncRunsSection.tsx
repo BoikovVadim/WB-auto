@@ -1,7 +1,8 @@
 import { useCallback } from "react";
 
 import { fetchRawSyncRuns, type RawSyncRunRow } from "../../api/syncClientCore";
-import { RawTableSection, type ColumnDef, mutedStyle } from "./RawTableSection";
+import { RawTableSection, type ColumnDef } from "./RawTableSection";
+import { mutedStyle } from "./RawTableSection.styles";
 
 function StatusBadge({ status }: { status: string | null }) {
   if (!status) return <span style={mutedStyle}>—</span>;

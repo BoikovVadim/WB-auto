@@ -4,6 +4,7 @@ export type DashboardSection =
   | "exports"
   | "method"
   | "products"
+  | "catalog-products"
   | "jam"
   | "catalog"
   | "campaigns"
@@ -11,9 +12,29 @@ export type DashboardSection =
   | "cluster-stats"
   | "daily-stats"
   | "minus-phrases"
-  | "query-frequencies";
+  | "query-frequencies"
+  | "dashboard"
+  | "dashboard-tech"
+  | "dashboard-cabinet"
+  | "change-history";
+
 export type ProductsMode = "list" | "detail";
 
+// Overlay sheet active within catalog-products section.
+// "none" means the main products table is shown.
+export type ActiveSheet = "none" | "cost-price" | "orders" | "jam";
+
+// Valid sort keys for the products table — must stay in sync with ProductListSortKey.
+export type PersistedProductsSortKey =
+  | "id" | "name" | "category" | "subject"
+  | "total" | "active" | "paused" | "disabled";
+
+// ─── DashboardViewState ───────────────────────────────────────────────────────
+// RULE: Every piece of navigation/view state that affects which screen the user
+// sees MUST be listed here and handled in read/write functions below.
+// If you add a new useState in WbDashboard.tsx that affects routing/overlays,
+// add it here too — see docs/module-map.md § "nav-state-persistence".
+// ─────────────────────────────────────────────────────────────────────────────
 export type DashboardViewState = {
   activeSection: DashboardSection;
   productsMode: ProductsMode;
@@ -24,6 +45,12 @@ export type DashboardViewState = {
   productAdvertisingStartDate: string | null;
   productAdvertisingEndDate: string | null;
   scrollY: number;
+  // ── Overlay / sheet state ──────────────────────────────────────────────────
+  activeSheet: ActiveSheet;
+  // ── Products table view state ─────────────────────────────────────────────
+  productsSearch: string;
+  productsSortKey: PersistedProductsSortKey;
+  productsSortDirection: "asc" | "desc";
 };
 
 export function createDefaultDashboardViewState(): DashboardViewState {
@@ -37,7 +64,22 @@ export function createDefaultDashboardViewState(): DashboardViewState {
     productAdvertisingStartDate: null,
     productAdvertisingEndDate: null,
     scrollY: 0,
+    activeSheet: "none",
+    productsSearch: "",
+    productsSortKey: "name",
+    productsSortDirection: "asc",
   };
+}
+
+export function isActiveSheet(value: unknown): value is ActiveSheet {
+  return value === "none" || value === "cost-price" || value === "orders" || value === "jam";
+}
+
+export function isPersistedProductsSortKey(value: unknown): value is PersistedProductsSortKey {
+  return (
+    value === "id" || value === "name" || value === "category" || value === "subject" ||
+    value === "total" || value === "active" || value === "paused" || value === "disabled"
+  );
 }
 
 export function isDashboardSection(value: unknown): value is DashboardSection {
@@ -45,6 +87,7 @@ export function isDashboardSection(value: unknown): value is DashboardSection {
     value === "exports" ||
     value === "method" ||
     value === "products" ||
+    value === "catalog-products" ||
     value === "jam" ||
     value === "catalog" ||
     value === "campaigns" ||
@@ -52,7 +95,11 @@ export function isDashboardSection(value: unknown): value is DashboardSection {
     value === "cluster-stats" ||
     value === "daily-stats" ||
     value === "minus-phrases" ||
-    value === "query-frequencies"
+    value === "query-frequencies" ||
+    value === "dashboard" ||
+    value === "dashboard-tech" ||
+    value === "dashboard-cabinet" ||
+    value === "change-history"
   );
 }
 

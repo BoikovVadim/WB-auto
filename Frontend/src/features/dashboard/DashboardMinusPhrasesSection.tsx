@@ -1,7 +1,8 @@
 import { useCallback } from "react";
 
 import { fetchRawMinusPhrases, type RawMinusPhraseRow } from "../../api/syncClientCore";
-import { RawTableSection, type ColumnDef, mutedStyle } from "./RawTableSection";
+import { RawTableSection, type ColumnDef } from "./RawTableSection";
+import { mutedStyle } from "./RawTableSection.styles";
 
 const columns: ColumnDef<RawMinusPhraseRow>[] = [
   { key: "advertId", label: "ID кампании", width: 100, render: (r) => <span style={{ fontFamily: "monospace" }}>{r.advertId}</span> },

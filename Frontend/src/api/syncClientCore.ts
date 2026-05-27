@@ -339,17 +339,45 @@ export type RawQueryFrequencyRow = {
   normalizedQueryText: string;
   queryText: string;
   monthlyFrequency: number | null;
-  reportType: string | null;
   reportStartDate: string | null;
   reportEndDate: string | null;
   syncedAt: string | null;
+  subjectName: string | null;
 };
 
 export async function fetchRawQueryFrequencies(limit?: number): Promise<RawQueryFrequencyRow[]> {
   const qs = limit != null ? `?limit=${limit}` : "";
-  const response = await apiClient.get<unknown>(`/wb-clusters/raw/query-frequencies${qs}`);
+  const response = await apiClient.get<unknown>(`/wb-clusters/raw/query-frequencies${qs}`, { timeout: 60_000 });
   if (!Array.isArray(response.data)) throw new Error("Invalid raw query frequencies response.");
   return response.data as RawQueryFrequencyRow[];
+}
+
+export type QueryFrequenciesPage = {
+  rows: RawQueryFrequencyRow[];
+  total: number;
+};
+
+export async function fetchQueryFrequenciesPage(opts: {
+  limit: number;
+  offset: number;
+  search?: string;
+  sortBy?: string;
+  dir?: string;
+}): Promise<QueryFrequenciesPage> {
+  const params = new URLSearchParams({
+    limit: String(opts.limit),
+    offset: String(opts.offset),
+  });
+  if (opts.search) params.set("search", opts.search);
+  if (opts.sortBy) params.set("sortBy", opts.sortBy);
+  if (opts.dir) params.set("dir", opts.dir);
+  const response = await apiClient.get<unknown>(
+    `/wb-clusters/raw/query-frequencies?${params}`,
+    { timeout: 10_000 },
+  );
+  const data = response.data as Record<string, unknown>;
+  if (!data || !Array.isArray(data.rows)) throw new Error("Invalid paginated query frequencies response.");
+  return { rows: data.rows as RawQueryFrequencyRow[], total: Number(data.total ?? 0) };
 }
 
 export async function fetchProductSearchTextsRange(input: {

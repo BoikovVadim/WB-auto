@@ -8,6 +8,7 @@ import type {
   ProductAdvertisingWorkspaceClusterRow,
   ProductAdvertisingWorkspaceResponse,
 } from "./wb-clusters.types";
+import { buildProductAdvertisingReadModelRevision } from "./product-advertising-read-model-revision";
 
 export function normalizeStoredWorkspacePayload(input: {
   payload: unknown;
@@ -41,9 +42,29 @@ export function normalizeStoredWorkspacePayload(input: {
       ? input.payload.defaultCampaignId
       : selectedCampaignSummary?.advertId ?? campaignTabs[0]?.advertId ?? null;
   const basePayload = input.payload as unknown as ProductAdvertisingWorkspaceResponse;
+  const revisionValue = isRecord(input.payload.revision) ? input.payload.revision : null;
+  const builtAt =
+    typeof basePayload.checkedAt === "string" && basePayload.checkedAt.trim()
+      ? basePayload.checkedAt
+      : new Date().toISOString();
 
   return {
     ...basePayload,
+    revision:
+      revisionValue &&
+      typeof revisionValue.key === "string" &&
+      typeof revisionValue.builtAt === "string"
+        ? {
+            key: revisionValue.key,
+            builtAt: revisionValue.builtAt,
+          }
+        : buildProductAdvertisingReadModelRevision({
+            scope: "workspace",
+            nmId: basePayload.nmId,
+            requestedStartDate: readNullableString(basePayload.range?.startDate),
+            requestedEndDate: readNullableString(basePayload.range?.endDate),
+            builtAt,
+          }),
     campaignTabs,
     defaultCampaignId,
     selectedCampaignSummary:

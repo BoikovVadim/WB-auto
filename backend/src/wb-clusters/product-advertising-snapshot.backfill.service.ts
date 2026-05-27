@@ -17,13 +17,11 @@ export class ProductAdvertisingSnapshotBackfillService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    setTimeout(() => {
-      void this.backfillSnapshotsMissingCurrentSchema().catch((error: unknown) => {
-        const message =
-          error instanceof Error ? error.message : "Unknown product advertising snapshot backfill error";
-        this.logger.error(`Unable to backfill product advertising snapshots on startup: ${message}`);
-      });
-    }, startupProductSnapshotBackfillDelayMs);
+    // Startup backfill отключён: система использует SQL-direct path (source: "sql_direct"),
+    // поэтому пересборка старых снапшотов при старте не нужна и вызывала OOM-краши
+    // из-за параллельного парсинга огромных JSONB-полезных нагрузок.
+    // Снапшоты обновляются only on explicit /products/:nmId/refresh или after sync.
+    this.logger.log("Startup snapshot backfill is disabled; SQL-direct path is active.");
   }
 
   async backfillSnapshotsMissingCurrentSchema() {

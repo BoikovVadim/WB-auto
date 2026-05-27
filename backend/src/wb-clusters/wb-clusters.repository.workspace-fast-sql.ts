@@ -18,6 +18,7 @@ import {
   buildWorkspaceClusterKey,
   normalizeClusterSearchText,
 } from "./product-workspace-cluster-table.filters";
+import { buildProductAdvertisingReadModelRevision } from "./product-advertising-read-model-revision";
 import { WbClustersRepositoryAdvertisingSheetBuilder } from "./wb-clusters.repository.advertising-sheet-builder";
 
 interface WorkspaceFastSqlRow {
@@ -101,23 +102,80 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
           AND stat_date BETWEEN $3::date AND $4::date
         GROUP BY advert_id, LOWER(TRIM(cluster_name))
       ),
+      -- Единый MATERIALIZED скан cabinet queries: читаем таблицу один раз,
+      -- затем получаем COUNT и SUM из in-memory результата без JOIN в 1.5М строк.
+      cabinet_distinct AS MATERIALIZED (
+        SELECT DISTINCT
+          $2::bigint            AS advert_id,
+          $1::bigint            AS nm_id,
+          normalized_cluster_name,
+          normalized_query_text,
+          monthly_frequency
+        FROM ${this.tableName("wb_cabinet_cluster_queries")}
+        WHERE nm_id = $1 AND advert_id = $2
+      ),
       query_counts AS (
+        -- COUNT из cabinet + promotion (fallback для старых кампаний).
         SELECT
           advert_id,
-          LOWER(TRIM(cluster_name))                           AS norm_cluster_name,
-          COUNT(DISTINCT normalized_query_text)::text         AS cnt
-        FROM ${this.tableName("wb_cabinet_cluster_queries")}
+          nm_id,
+          normalized_cluster_name,
+          COUNT(DISTINCT normalized_query_text)::text AS cnt
+        FROM (
+          SELECT advert_id, nm_id, normalized_cluster_name, normalized_query_text
+          FROM cabinet_distinct
+          UNION ALL
+          SELECT advert_id, nm_id, normalized_cluster_name, normalized_query_text
+          FROM ${this.tableName("wb_cluster_queries")}
+          WHERE nm_id = $1 AND advert_id = $2
+        ) combined
+        GROUP BY advert_id, nm_id, normalized_cluster_name
+      ),
+      frequency_by_cluster AS (
+        -- SUM pre-stored monthly_frequency из cabinet_distinct (in-memory, мгновенно).
+        -- monthly_frequency денормализована при импорте cabinet queries.
+        SELECT
+          advert_id,
+          nm_id,
+          normalized_cluster_name,
+          NULLIF(SUM(monthly_frequency), 0) AS monthly_frequency
+        FROM cabinet_distinct
+        GROUP BY advert_id, nm_id, normalized_cluster_name
+      ),
+      -- Дневные снапшоты JAM внутри выбранного диапазона дат.
+      -- Если дневных данных нет — падаем на последний bulk-месячный снапшот (>= 28 дней).
+      daily_jam_snapshots AS (
+        SELECT snapshot_key
+        FROM ${this.tableName("wb_product_search_text_range_snapshots")}
+        WHERE nm_id     = $1
+          AND start_date = end_date
+          AND start_date BETWEEN $3::date AND $4::date
+      ),
+      bulk_jam_snapshot AS (
+        SELECT snapshot_key
+        FROM ${this.tableName("wb_product_search_text_range_snapshots")}
         WHERE nm_id = $1
-          AND advert_id = $2
-        GROUP BY advert_id, LOWER(TRIM(cluster_name))
+          AND (end_date - start_date) >= 28
+        ORDER BY synced_at DESC
+        LIMIT 1
+      ),
+      effective_jam_snapshot_keys AS (
+        SELECT snapshot_key FROM daily_jam_snapshots
+        UNION ALL
+        -- Fallback на bulk-месячный только когда:
+        -- 1) нет дневных данных за выбранный период, И
+        -- 2) выбранный период сам >= 28 дней (иначе показываем пустые JAM-метрики).
+        SELECT snapshot_key FROM bulk_jam_snapshot
+        WHERE NOT EXISTS (SELECT 1 FROM daily_jam_snapshots)
+          AND ($4::date - $3::date) >= 28
       ),
       jam_by_cluster AS (
         SELECT
           cq.advert_id,
           LOWER(TRIM(cq.cluster_name))                                    AS norm_cluster_name,
           COUNT(DISTINCT r.normalized_query_text)
-            FILTER (WHERE r.frequency IS NOT NULL)::text                  AS jam_query_count,
-          SUM(r.frequency)::text                                          AS jam_frequency,
+            FILTER (WHERE COALESCE(r.frequency, r.week_frequency) IS NOT NULL)::text AS jam_query_count,
+          SUM(COALESCE(r.frequency, r.week_frequency))::text              AS jam_frequency,
           SUM(r.open_card_current)::text                                  AS jam_clicks,
           SUM(r.add_to_cart_current)::text                                AS jam_add_to_cart,
           SUM(r.orders_current)::text                                     AS jam_orders,
@@ -128,17 +186,12 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
             ELSE AVG(r.avg_position_current)
           END)::text                                                      AS jam_avg_position
         FROM ${this.tableName("wb_cabinet_cluster_queries")} cq
-        JOIN ${this.tableName("wb_product_search_text_range_snapshots")} s
-          ON s.nm_id = cq.nm_id
+        JOIN effective_jam_snapshot_keys ejsk ON TRUE
         JOIN ${this.tableName("wb_product_search_text_range_rows")} r
-          ON r.snapshot_key = s.snapshot_key
+          ON r.snapshot_key = ejsk.snapshot_key
          AND r.normalized_query_text = cq.normalized_query_text
         WHERE cq.nm_id     = $1
           AND cq.advert_id = $2
-          AND s.nm_id      = $1
-          AND s.start_date >= $3::date
-          AND s.end_date   <= $4::date
-          AND s.start_date  = s.end_date
         GROUP BY cq.advert_id, LOWER(TRIM(cq.cluster_name))
       )
       SELECT
@@ -196,10 +249,13 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
         a.action_retry_at::text                                      AS action_retry_at,
         a.action_last_error,
         qc.cnt                                                       AS query_count,
-        COALESCE(f.monthly_frequency, cn_f.monthly_frequency)::text  AS monthly_frequency,
+        freq.monthly_frequency::text                                       AS monthly_frequency,
         pm.updated_at                                                AS updated_at,
         jbc.jam_query_count,
-        jbc.jam_frequency,
+        -- Частотность: берём из кабинетных данных (monthly_frequency), которые охватывают
+        -- все запросы кластера, а не только топ-30 по заказам из JAM-снапшотов.
+        -- Заказы/клики/позиция остаются date-sensitive из JAM-снапшотов.
+        freq.monthly_frequency::text                                     AS jam_frequency,
         jbc.jam_clicks,
         jbc.jam_add_to_cart,
         jbc.jam_orders,
@@ -222,11 +278,12 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
         AND pm.norm_cluster_name = LOWER(TRIM(c.cluster_name))
       LEFT JOIN query_counts qc
         ON qc.advert_id = c.advert_id
-        AND qc.norm_cluster_name = LOWER(TRIM(c.cluster_name))
-      LEFT JOIN ${this.tableName("wb_search_query_frequencies")} f
-        ON f.normalized_query_text = c.normalized_cluster_name
-      LEFT JOIN ${this.tableName("wb_search_query_frequencies")} cn_f
-        ON cn_f.normalized_query_text = LOWER(TRIM(c.cluster_name))
+        AND qc.nm_id = c.nm_id
+        AND qc.normalized_cluster_name = c.normalized_cluster_name
+      LEFT JOIN frequency_by_cluster freq
+        ON freq.advert_id = c.advert_id
+        AND freq.nm_id = c.nm_id
+        AND freq.normalized_cluster_name = c.normalized_cluster_name
       LEFT JOIN jam_by_cluster jbc
         ON jbc.advert_id = c.advert_id
         AND jbc.norm_cluster_name = LOWER(TRIM(c.cluster_name))
@@ -420,6 +477,7 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
       product_name: string | null;
       brand_name: string | null;
       subject_name: string | null;
+      has_pending_cluster_sync: boolean;
     };
 
     const result = await pool.query<ShellRow>(
@@ -459,6 +517,23 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
         WHERE nm_id = $1
           AND (source_kind IN ('active', 'excluded') OR is_active = FALSE)
         GROUP BY advert_id
+      ),
+      pending_sync AS (
+        SELECT
+          EXISTS (
+            SELECT 1
+            FROM ${this.tableName("wb_cluster_bids")}
+            WHERE nm_id = $1
+              AND bid_sync_status IS NOT NULL
+              AND bid_sync_status <> 'confirmed'
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM ${this.tableName("wb_cluster_actions")}
+            WHERE nm_id = $1
+              AND action_sync_status IS NOT NULL
+              AND action_sync_status <> 'confirmed'
+          ) AS has_pending_cluster_sync
       )
       SELECT
         cam.advert_id::text,
@@ -484,11 +559,13 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
         cat.vendor_code,
         cat.product_name,
         cat.brand_name,
-        cat.subject_name
+        cat.subject_name,
+        ps.has_pending_cluster_sync
       FROM ${this.tableName("wb_campaigns")} cam
       JOIN ${this.tableName("wb_campaign_products")} cp
         ON cp.advert_id = cam.advert_id AND cp.nm_id = $1
       CROSS JOIN date_bounds db
+      CROSS JOIN pending_sync ps
       LEFT JOIN period_agg pa
         ON pa.advert_id = cam.advert_id
       LEFT JOIN cluster_counts cc
@@ -496,7 +573,15 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
       LEFT JOIN ${this.tableName("wb_product_catalog")} cat
         ON cat.nm_id = $1
       WHERE cp.nm_id = $1
-      ORDER BY COALESCE(pa.spend, 0) DESC, cam.advert_id
+      ORDER BY
+        CASE
+          WHEN cam.campaign_status = 9 THEN 0
+          WHEN cam.campaign_status = 11 THEN 1
+          WHEN cam.campaign_status IS NULL THEN 2
+          WHEN cam.campaign_status >= 12 THEN 3
+          ELSE 2
+        END ASC,
+        cam.advert_id DESC
       `,
       [nmId, period.start, period.end],
     );
@@ -554,10 +639,18 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
     });
 
     const defaultCampaignId = campaignTabs[0]?.advertId ?? null;
+    const checkedAt = new Date().toISOString();
 
     return {
       nmId,
-      checkedAt: new Date().toISOString(),
+      checkedAt,
+      revision: buildProductAdvertisingReadModelRevision({
+        scope: "workspace",
+        nmId,
+        requestedStartDate: period.start,
+        requestedEndDate: period.end,
+        builtAt: checkedAt,
+      }),
       readiness: {
         scope: "workspace",
         status: "ready",
@@ -575,7 +668,7 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
         status: "ready" as const,
         fit: "exact" as const,
         source: "live_read_model" as const,
-        builtAt: new Date().toISOString(),
+        builtAt: checkedAt,
         requestedStartDate: period.start,
         requestedEndDate: period.end,
         snapshotStartDate: period.start,
@@ -600,7 +693,7 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
       selectedCampaignSummary: campaignTabs.find((t) => t.advertId === defaultCampaignId) ?? null,
       initialClusterTable: null,
       syncState: {
-        hasPendingClusterSync: false,
+        hasPendingClusterSync: firstRow.has_pending_cluster_sync,
         refreshStatus: "idle",
         syncRunId: null,
         startedAt: null,
@@ -626,6 +719,7 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
     nmId: number,
     advertId: number,
     normalizedClusterName: string,
+    period?: { start: string; end: string } | null,
   ): Promise<ProductAdvertisingWorkspaceClusterQueriesSnapshot> {
     await this.ensureSchemaOrThrow();
     const pool = this.getPool();
@@ -633,7 +727,67 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
     // Cabinet queries are authoritative. Try cabinet first; fall back to wb_cluster_queries
     // only when no cabinet data exists for this cluster (older promotion-type campaigns).
     // The NOT EXISTS approach was O(n²) — replaced with two sequential queries.
-    const cabinetResult = await pool.query<{
+    //
+    // JAM per-query metrics must reflect the SAME period as the cluster row the
+    // user expanded. We mirror getProductWorkspaceCampaignRowsSQL: prefer daily
+    // snapshots inside the requested range, fall back to the latest bulk monthly
+    // snapshot only when there are no daily rows AND the range itself is >= 28
+    // days. When no period is given we keep the original latest-bulk behaviour.
+    const hasPeriod = !!period;
+    const jamSnapshotKeysCte = hasPeriod
+      ? `effective_jam AS (
+          SELECT snapshot_key
+          FROM ${this.tableName("wb_product_search_text_range_snapshots")}
+          WHERE nm_id = $1
+            AND start_date = end_date
+            AND start_date BETWEEN $4::date AND $5::date
+          UNION ALL
+          SELECT snapshot_key
+          FROM ${this.tableName("wb_product_search_text_range_snapshots")}
+          WHERE nm_id = $1
+            AND (end_date - start_date) >= 28
+            AND NOT EXISTS (
+              SELECT 1 FROM ${this.tableName("wb_product_search_text_range_snapshots")} d
+              WHERE d.nm_id = $1 AND d.start_date = d.end_date
+                AND d.start_date BETWEEN $4::date AND $5::date
+            )
+            AND ($5::date - $4::date) >= 28
+          ORDER BY snapshot_key
+        )`
+      : `effective_jam AS (
+          SELECT snapshot_key
+          FROM ${this.tableName("wb_product_search_text_range_snapshots")}
+          WHERE nm_id = $1 AND (end_date - start_date) >= 28
+          ORDER BY synced_at DESC LIMIT 1
+        )`;
+
+    // Aggregate JAM metrics per query across ALL selected snapshot keys (one per
+    // day when daily, or a single bulk key). Matches the SUM/weighted-avg shape
+    // used for the cluster row in getProductWorkspaceCampaignRowsSQL.
+    const jamByQueryCte = `jam_by_query AS (
+        SELECT
+          r.normalized_query_text,
+          SUM(COALESCE(r.frequency, r.week_frequency))::text AS jam_frequency,
+          SUM(r.open_card_current)::text                     AS jam_clicks,
+          SUM(r.add_to_cart_current)::text                   AS jam_add_to_cart,
+          SUM(r.orders_current)::text                        AS jam_orders,
+          SUM(r.open_to_cart_current)::text                  AS jam_open_to_cart,
+          (CASE
+            WHEN SUM(r.open_card_current) > 0
+              THEN SUM(r.avg_position_current * r.open_card_current)
+                     / SUM(r.open_card_current)
+            ELSE AVG(r.avg_position_current)
+          END)::text                                         AS jam_avg_position
+        FROM ${this.tableName("wb_product_search_text_range_rows")} r
+        JOIN effective_jam ej ON ej.snapshot_key = r.snapshot_key
+        GROUP BY r.normalized_query_text
+      )`;
+
+    const params = hasPeriod
+      ? [nmId, advertId, normalizedClusterName, period!.start, period!.end]
+      : [nmId, advertId, normalizedClusterName];
+
+    type ClusterQueryRow = {
       query_text: string;
       normalized_query_text: string;
       source_kind: ClusterSourceKind | null;
@@ -642,8 +796,17 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
       is_cabinet_backed: boolean;
       monthly_frequency: string | null;
       updated_at: string | null;
-    }>(
+      jam_frequency: string | null;
+      jam_clicks: string | null;
+      jam_add_to_cart: string | null;
+      jam_orders: string | null;
+      jam_avg_position: string | null;
+      jam_open_to_cart: string | null;
+    };
+    const cabinetResult = await pool.query<ClusterQueryRow>(
       `
+      WITH ${jamSnapshotKeysCte},
+      ${jamByQueryCte}
       SELECT DISTINCT ON (cq.normalized_query_text)
         cq.query_text,
         cq.normalized_query_text,
@@ -652,36 +815,37 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
         cq.captured_at::text                          AS cabinet_snapshot_at,
         TRUE                                          AS is_cabinet_backed,
         f.monthly_frequency::text                     AS monthly_frequency,
-        cq.synced_at::text                            AS updated_at
+        cq.synced_at::text                            AS updated_at,
+        jam.jam_frequency                             AS jam_frequency,
+        jam.jam_clicks                                AS jam_clicks,
+        jam.jam_add_to_cart                           AS jam_add_to_cart,
+        jam.jam_orders                                AS jam_orders,
+        jam.jam_avg_position                          AS jam_avg_position,
+        jam.jam_open_to_cart                          AS jam_open_to_cart
       FROM ${this.tableName("wb_cabinet_cluster_queries")} cq
       LEFT JOIN ${this.tableName("wb_clusters")} cl
         ON cl.nm_id = cq.nm_id
         AND cl.advert_id = cq.advert_id
         AND cl.normalized_cluster_name = cq.normalized_cluster_name
       LEFT JOIN ${this.tableName("wb_search_query_frequencies")} f
-        ON f.normalized_query_text = cq.normalized_query_text
+        ON ${this.buildFrequencyJoinCondition("f", "cq.normalized_query_text")}
+      LEFT JOIN jam_by_query jam
+        ON jam.normalized_query_text = cq.normalized_query_text
       WHERE cq.nm_id = $1
         AND cq.advert_id = $2
         AND cq.normalized_cluster_name = $3
       ORDER BY cq.normalized_query_text, f.monthly_frequency DESC NULLS LAST, cq.captured_at DESC
       `,
-      [nmId, advertId, normalizedClusterName],
+      params,
     );
 
     // If cabinet has data, use it exclusively. Otherwise fall back to promotion queries.
     const result = cabinetResult.rows.length > 0
       ? cabinetResult
-      : await pool.query<{
-          query_text: string;
-          normalized_query_text: string;
-          source_kind: ClusterSourceKind | null;
-          is_active: boolean | null;
-          cabinet_snapshot_at: string | null;
-          is_cabinet_backed: boolean;
-          monthly_frequency: string | null;
-          updated_at: string | null;
-        }>(
+      : await pool.query<ClusterQueryRow>(
           `
+          WITH ${jamSnapshotKeysCte},
+          ${jamByQueryCte}
           SELECT DISTINCT ON (cq.normalized_query_text)
             cq.query_text,
             cq.normalized_query_text,
@@ -690,20 +854,28 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
             NULL                                          AS cabinet_snapshot_at,
             FALSE                                         AS is_cabinet_backed,
             f.monthly_frequency::text                     AS monthly_frequency,
-            cq.synced_at::text                            AS updated_at
+            cq.synced_at::text                            AS updated_at,
+            jam.jam_frequency                             AS jam_frequency,
+            jam.jam_clicks                                AS jam_clicks,
+            jam.jam_add_to_cart                           AS jam_add_to_cart,
+            jam.jam_orders                                AS jam_orders,
+            jam.jam_avg_position                          AS jam_avg_position,
+            jam.jam_open_to_cart                          AS jam_open_to_cart
           FROM ${this.tableName("wb_cluster_queries")} cq
           LEFT JOIN ${this.tableName("wb_clusters")} cl
             ON cl.nm_id = cq.nm_id
             AND cl.advert_id = cq.advert_id
             AND cl.normalized_cluster_name = cq.normalized_cluster_name
           LEFT JOIN ${this.tableName("wb_search_query_frequencies")} f
-            ON f.normalized_query_text = cq.normalized_query_text
+            ON ${this.buildFrequencyJoinCondition("f", "cq.normalized_query_text")}
+          LEFT JOIN jam_by_query jam
+            ON jam.normalized_query_text = cq.normalized_query_text
           WHERE cq.nm_id = $1
             AND cq.advert_id = $2
             AND cq.normalized_cluster_name = $3
           ORDER BY cq.normalized_query_text, f.monthly_frequency DESC NULLS LAST, cq.synced_at DESC
           `,
-          [nmId, advertId, normalizedClusterName],
+          params,
         );
 
     // Deduplicate across both sources: cabinet takes priority for the same query text.
@@ -733,12 +905,12 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
         orders: null,
         addToCart: null,
         shks: null,
-        jamFrequency: null,
-        jamClicks: null,
-        jamAddToCart: null,
-        jamOrders: null,
-        jamAvgPosition: null,
-        jamOpenToCart: null,
+        jamFrequency: row.jam_frequency !== null ? Number(row.jam_frequency) : null,
+        jamClicks: row.jam_clicks !== null ? Number(row.jam_clicks) : null,
+        jamAddToCart: row.jam_add_to_cart !== null ? Number(row.jam_add_to_cart) : null,
+        jamOrders: row.jam_orders !== null ? Number(row.jam_orders) : null,
+        jamAvgPosition: row.jam_avg_position !== null ? Number(row.jam_avg_position) : null,
+        jamOpenToCart: row.jam_open_to_cart !== null ? Number(row.jam_open_to_cart) : null,
         monthlyFrequency: row.monthly_frequency !== null ? Number(row.monthly_frequency) : null,
         updatedAt: row.updated_at,
       });

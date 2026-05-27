@@ -6,6 +6,7 @@ export const dashboardUiCopyShell = {
   viewExports: "Выгрузки",
   viewMethod: "Лист метода",
   viewProducts: "Реклама",
+  viewCatalogProducts: "Товары",
   viewJam: "JAM",
   viewToken: "Токен",
   refresh: "Обновить",

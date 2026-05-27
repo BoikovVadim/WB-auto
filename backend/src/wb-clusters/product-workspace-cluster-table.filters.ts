@@ -74,6 +74,18 @@ export function matchesClusterSearch(
   return queries.some((query) => query.includes(normalizedSearch));
 }
 
+export function matchesClusterNameSearch(
+  row: ProductAdvertisingWorkspaceClusterRow,
+  search: string,
+) {
+  const normalizedSearch = normalizeClusterSearchText(search);
+  if (!normalizedSearch) {
+    return true;
+  }
+
+  return normalizeClusterSearchText(row.clusterName).includes(normalizedSearch);
+}
+
 export function matchesClusterStatusFilter(
   row: ProductAdvertisingWorkspaceClusterRow,
   status: ProductAdvertisingWorkspaceClusterStatusFilter,

@@ -47,31 +47,33 @@ async function main() {
     });
 
   const safariClient = new WbCmpSafariClient();
+
+  console.log(`Starting free WB monthly frequency import for ${period.from}..${period.to}.`);
+  console.log(`Report name: ${reportName}`);
+
+  const downloadedReport = await safariClient.exportFreeSearchAnalyticsReport({
+    periodFrom: period.from,
+    periodTo: period.to,
+    reportName,
+  });
+
+  const rows = parseMonthlyFrequencyWorkbookBuffer({
+    workbookBuffer: downloadedReport.workbookBuffer,
+    readOptionalString,
+    normalizeAdvertisingText,
+  });
+  if (rows.length === 0) {
+    throw new Error(
+      `WB seller portal report ${reportName} was downloaded, but monthly frequency rows could not be parsed from the XLSX headers.`,
+    );
+  }
+
+  // Connect to PostgreSQL only after the download is complete to avoid connection timeout.
   const client = new Client(getRequiredMonthlyFrequencyPostgresConfig());
   await client.connect();
 
   try {
     await ensureMonthlyFrequencyTable(client);
-
-    console.log(`Starting free WB monthly frequency import for ${period.from}..${period.to}.`);
-    console.log(`Report name: ${reportName}`);
-
-    const downloadedReport = await safariClient.exportFreeSearchAnalyticsReport({
-      periodFrom: period.from,
-      periodTo: period.to,
-      reportName,
-    });
-
-    const rows = parseMonthlyFrequencyWorkbookBuffer({
-      workbookBuffer: downloadedReport.workbookBuffer,
-      readOptionalString,
-      normalizeAdvertisingText,
-    });
-    if (rows.length === 0) {
-      throw new Error(
-        `WB seller portal report ${reportName} was downloaded, but monthly frequency rows could not be parsed from the XLSX headers.`,
-      );
-    }
 
     const rowsUpserted = await replaceMonthlyFrequencySnapshot(client, {
       rows,

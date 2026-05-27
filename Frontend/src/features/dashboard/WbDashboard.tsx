@@ -18,9 +18,10 @@ import {
 } from "../../api/syncClient";
 import { ui } from "./copy";
 import { getSafeMessage } from "./dashboardErrors";
-import {
-  type ProductsMode,
-  type DashboardSection,
+import type {
+  ActiveSheet,
+  ProductsMode,
+  DashboardSection,
 } from "./persistence/dashboardViewState";
 import {
   formatCalendarDateValue,
@@ -38,6 +39,8 @@ import {
   startAdvertisingUxBudget,
 } from "./advertising/advertisingUxBudgets";
 import { WbDashboardShell } from "./WbDashboardShell";
+import { useCostPrices } from "./useCostPrices";
+import { useOrders } from "./useOrders";
 import { useDashboardBootstrap } from "./useDashboardBootstrap";
 import { useDashboardBrowserEffects } from "./useDashboardBrowserEffects";
 import { useDashboardExportView } from "./useDashboardExportView";
@@ -114,9 +117,19 @@ export function WbDashboard() {
   const [isTokenSaving, setIsTokenSaving] = useState(false);
   const [isExportLoading, setIsExportLoading] = useState(false);
   const [isArchiveLoading, setIsArchiveLoading] = useState(false);
-  const [productsSearch, setProductsSearch] = useState("");
-  const [productsSortKey, setProductsSortKey] = useState<import("./useDashboardProductsWorkspace").ProductListSortKey>("name");
-  const [productsSortDirection, setProductsSortDirection] = useState<"asc" | "desc">("asc");
+  const [productsSearch, setProductsSearch] = useState(persistedViewState.productsSearch);
+  const [productsSortKey, setProductsSortKey] = useState<import("./useDashboardProductsWorkspace").ProductListSortKey>(persistedViewState.productsSortKey);
+  const [productsSortDirection, setProductsSortDirection] = useState<"asc" | "desc">(persistedViewState.productsSortDirection);
+  const [activeSheet, setActiveSheet] = useState<ActiveSheet>(
+    persistedViewState.activeSection === "catalog-products"
+      ? persistedViewState.activeSheet
+      : "none",
+  );
+  const isCostPriceSheetOpen = activeSection === "catalog-products" && activeSheet === "cost-price";
+  const isOrdersSheetOpen    = activeSection === "catalog-products" && activeSheet === "orders";
+  const isJamSheetOpen       = activeSection === "catalog-products" && activeSheet === "jam";
+  const { costPrices, isCostPricesLoading, prefetchCostPrices, handleCostSaved, handleCostCleared } = useCostPrices();
+  const { orderCounts } = useOrders();
   const invalidateProductAdvertisingDetail = useCallback(
     (target: ProductAdvertisingDetailInvalidationTarget = "all") => {
       setProductAdvertisingDetailRevisions((currentValue) =>
@@ -153,6 +166,10 @@ export function WbDashboard() {
     persistedAdvertisingEndDate,
     currentExport,
     exportHistoryLength: exportHistory.length,
+    activeSheet,
+    productsSearch,
+    productsSortKey,
+    productsSortDirection,
   });
 
   const currentMethod = useMemo(() => {
@@ -423,6 +440,34 @@ export function WbDashboard() {
         void openProductsWorkspace();
       }}
       onPrefetchProductsSection={prefetchProductsWorkspace}
+      onPrefetchCatalogProductsSection={() => {
+        prefetchProductsWorkspace();
+        prefetchCostPrices();
+      }}
+      onOpenCatalogProductsSection={() => {
+        prefetchProductsWorkspace();
+        prefetchCostPrices();
+        setActiveSheet("none");
+        setActiveSection("catalog-products");
+      }}
+      onOpenDashboardSection={() => { setActiveSection("dashboard"); }}
+      onOpenDashboardTechSection={() => { setActiveSection("dashboard-tech"); }}
+      onOpenDashboardCabinetSection={() => { setActiveSection("dashboard-cabinet"); }}
+      onOpenChangeHistorySection={() => { setActiveSection("change-history"); }}
+      isCostPriceSheetOpen={isCostPriceSheetOpen}
+      isOrdersSheetOpen={isOrdersSheetOpen}
+      isJamSheetOpen={isJamSheetOpen}
+      orderCounts={orderCounts}
+      isCostPricesLoading={isCostPricesLoading}
+      costPrices={costPrices}
+      onOpenCostPriceSheet={() => { setActiveSheet("cost-price"); }}
+      onCloseCostPriceSheet={() => { setActiveSheet("none"); }}
+      onOpenOrdersSheet={() => { setActiveSection("catalog-products"); setActiveSheet("orders"); }}
+      onCloseOrdersSheet={() => { setActiveSheet("none"); }}
+      onOpenJamSheet={() => { setActiveSection("catalog-products"); setActiveSheet("jam"); }}
+      onCloseJamSheet={() => { setActiveSheet("none"); }}
+      onCostSaved={handleCostSaved}
+      onCostCleared={handleCostCleared}
       onRefresh={() => void handleDashboardRefresh()}
       onTokenInputChange={setTokenInput}
       onSaveToken={handleSaveToken}

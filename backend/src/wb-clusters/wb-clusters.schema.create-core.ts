@@ -68,6 +68,8 @@ export function getCoreCreateStatements({
         product_name TEXT NOT NULL,
         brand_name TEXT NOT NULL,
         subject_name TEXT NOT NULL,
+        subject_id BIGINT NULL,
+        category_name TEXT NULL,
         source_export_request_id TEXT NULL,
         first_seen_at TIMESTAMPTZ NULL,
         last_seen_at TIMESTAMPTZ NULL,

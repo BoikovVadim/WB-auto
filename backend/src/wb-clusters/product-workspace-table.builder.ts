@@ -1,10 +1,12 @@
 import {
   matchesClusterNumericFilters,
+  matchesClusterNameSearch,
   matchesClusterSearch,
   matchesClusterStatusFilter,
 } from "./product-workspace-cluster-table.filters";
 import { compareWorkspaceClusterRows } from "./product-workspace-cluster-table.sort";
 import { buildClusterTableTotals } from "./product-workspace-cluster-table.totals";
+import { buildProductAdvertisingReadModelRevision } from "./product-advertising-read-model-revision";
 import {
   isWorkspaceClusterActive,
   isWorkspaceClusterExcluded,
@@ -24,6 +26,7 @@ export function buildProductAdvertisingWorkspaceTableResponse(input: {
   snapshot: ProductAdvertisingWorkspaceCampaignRowsSnapshot;
   status: ProductAdvertisingWorkspaceClusterStatusFilter;
   search: string;
+  clusterNameSearch: string;
   numericFilters: ProductAdvertisingWorkspaceClusterNumericFilters;
   sortKey: ProductAdvertisingWorkspaceClusterSortKey;
   sortDirection: ProductAdvertisingWorkspaceClusterSortDirection;
@@ -31,6 +34,7 @@ export function buildProductAdvertisingWorkspaceTableResponse(input: {
   pageSize: number;
 }): ProductAdvertisingWorkspaceClusterTableResponse {
   const searchValue = input.search.trim();
+  const clusterNameSearchValue = input.clusterNameSearch.trim();
   const querySearchIndex = new Map(Object.entries(input.snapshot.querySearchIndex));
   // Exclude stats-only clusters that are not explicitly managed (active or excluded).
   // Old snapshots may contain gray clusters; this filter removes them at read time.
@@ -40,6 +44,7 @@ export function buildProductAdvertisingWorkspaceTableResponse(input: {
   const filteredRows = managedRows
     .filter((row) => matchesClusterStatusFilter(row, input.status))
     .filter((row) => matchesClusterSearch(row, searchValue, querySearchIndex))
+    .filter((row) => matchesClusterNameSearch(row, clusterNameSearchValue))
     .filter((row) => matchesClusterNumericFilters(row, input.numericFilters))
     .sort((left, right) =>
       compareWorkspaceClusterRows(left, right, input.sortKey, input.sortDirection),
@@ -55,6 +60,12 @@ export function buildProductAdvertisingWorkspaceTableResponse(input: {
     nmId: input.nmId,
     advertId: input.advertId,
     checkedAt: input.snapshot.checkedAt,
+    revision: buildProductAdvertisingReadModelRevision({
+      scope: "cluster_table",
+      nmId: input.nmId,
+      advertId: input.advertId,
+      builtAt: input.snapshot.checkedAt,
+    }),
     readiness: {
       scope: "cluster_table",
       status: "ready",
@@ -62,7 +73,6 @@ export function buildProductAdvertisingWorkspaceTableResponse(input: {
       materializationStatus: "materialized",
     },
     rows: filteredRows.slice(startIndex, startIndex + pageSize),
-    querySearchIndex: input.snapshot.querySearchIndex,
     totals: buildClusterTableTotals(filteredRows),
     totalsScope: "filtered_population",
     filterCounts: {
@@ -72,6 +82,7 @@ export function buildProductAdvertisingWorkspaceTableResponse(input: {
     },
     appliedFilters: {
       search: searchValue,
+      clusterNameSearch: clusterNameSearchValue,
       status: input.status,
       numericFilters: input.numericFilters,
     },

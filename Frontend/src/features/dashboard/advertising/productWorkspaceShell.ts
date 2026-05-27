@@ -18,6 +18,7 @@ import {
   isClusterExcluded,
 } from "./model";
 import { getAdvertisingSourcePriority } from "./advertisingModelStatus";
+import { normalizeAdvertisingText } from "./snapshot";
 
 type WorkspaceShellClusterRow = ProductAdvertisingSheetResponse["clusters"][number];
 
@@ -34,10 +35,24 @@ export function buildInstantProductWorkspaceFromSheet(input: {
   const campaignTabs = buildWorkspaceShellCampaignTabs(input.sheet.campaigns, projectedClusters);
   const defaultCampaignId = campaignTabs[0]?.advertId ?? null;
   const dailyStatsBounds = getWorkspaceShellDailyStatsBounds(input.sheet.dailyStats);
+  const revisionBuiltAt = input.sheet.checkedAt;
 
   return {
     nmId: input.sheet.nmId,
     checkedAt: input.sheet.checkedAt,
+    revision: {
+      key: [
+        "wb-product-advertising",
+        "workspace",
+        String(input.sheet.nmId),
+        "none",
+        "none",
+        input.sheet.range.startDate ?? "none",
+        input.sheet.range.endDate ?? "none",
+        revisionBuiltAt,
+      ].join(":"),
+      builtAt: revisionBuiltAt,
+    },
     readiness: {
       scope: "workspace",
       status: "ready",
@@ -218,6 +233,9 @@ function projectWorkspaceShellClustersForRange(
       continue;
     }
 
+    // stat.advertId типизирован как number (не nullable), поэтому "none"-ветка
+    // (как в buildWorkspaceShellClusterKey) тут невозможна. Lookup ниже (строка ~269)
+    // выполняется только для строк с row.advertId !== null, так что ключи совпадают.
     const key = `${stat.advertId}:${normalizeWorkspaceShellText(stat.clusterName)}`;
     const aggregate = aggregates.get(key) ?? {
       views: null,
@@ -452,7 +470,10 @@ function isWorkspaceShellDisplayCluster(row: WorkspaceShellClusterRow) {
 }
 
 function normalizeWorkspaceShellText(value: string) {
-  return value.trim().toLocaleLowerCase("ru");
+  // Single source of truth for cluster-identity normalization (matches the
+  // backend normalizeQuery). Previously this only lowercased, so it disagreed
+  // with the snapshot-layer normalizer and split/merged clusters inconsistently.
+  return normalizeAdvertisingText(value);
 }
 
 function pickPreferredNullableNumber(

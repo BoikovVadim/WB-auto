@@ -10,6 +10,7 @@ import {
   getWorkspaceRatio,
 } from "./product-workspace.builder";
 import { normalizeWorkspaceText } from "./product-workspace.builder";
+import { buildProductAdvertisingReadModelRevision } from "./product-advertising-read-model-revision";
 import { buildWorkspaceClusterKey } from "./product-workspace-cluster-table.builder";
 
 export function buildProductAdvertisingWorkspaceClusterQueriesResponse(input: {
@@ -38,6 +39,15 @@ export function buildProductAdvertisingWorkspaceClusterQueriesResponse(input: {
     clusterKey: input.clusterKey,
     clusterName: resolvedClusterName,
     checkedAt: input.sheet.checkedAt,
+    revision: buildProductAdvertisingReadModelRevision({
+      scope: "cluster_queries",
+      nmId: input.sheet.nmId,
+      advertId: input.advertId,
+      clusterKey: input.clusterKey,
+      requestedStartDate: input.sheet.range.startDate,
+      requestedEndDate: input.sheet.range.endDate,
+      builtAt: input.sheet.checkedAt,
+    }),
     readiness: {
       scope: "cluster_queries",
       status: "ready",

@@ -8,6 +8,9 @@ import type { ProductCatalogResponse } from "./wb-clusters.types";
 const WB_CONTENT_API_CARDS_URL =
   "https://content-api.wildberries.ru/content/v2/get/cards/list";
 
+const WB_CONTENT_API_OBJECTS_URL =
+  "https://content-api.wildberries.ru/content/v2/object/all";
+
 interface WbContentCardRaw {
   nmID?: number;
   vendorCode?: string;
@@ -19,6 +22,18 @@ interface WbContentCardRaw {
 type ContentApiResponse = {
   cards?: WbContentCardRaw[];
   cursor?: { updatedAt?: string; nmID?: number; total?: number };
+};
+
+interface WbObjectRow {
+  subjectID?: number;
+  subjectName?: string;
+  parentName?: string;
+}
+
+type ObjectAllApiResponse = {
+  data?: WbObjectRow[];
+  error?: boolean;
+  errorText?: string;
 };
 
 @Injectable()
@@ -210,5 +225,92 @@ export class ProductCatalogService {
     }
 
     return totalSynced;
+  }
+
+  /**
+   * Fetches the full WB subject→category mapping from /content/v2/object/all
+   * and bulk-updates category_name in wb_product_catalog for every known subject.
+   *
+   * Runs once at startup (after content card sync) and once per day.
+   * Safe to re-run: uses UPDATE WHERE subject_name = ?, idempotent.
+   */
+  /**
+   * Fetches the WB subject→category mapping by querying /content/v2/object/all
+   * once per distinct subject name in wb_product_catalog (exact match on subjectName).
+   *
+   * The endpoint's `top` parameter does not paginate — it limits unfiltered results
+   * to 30. Using `?name=X` returns subjects matching X, allowing exact lookup per subject.
+   *
+   * Runs once at startup (after content card sync) and once per day. Idempotent.
+   */
+  async syncCategoryNames(): Promise<number> {
+    const token = this.wbRuntimeConfigService.getResolvedToken();
+    if (!token) {
+      this.logger.warn("WB token not configured — skipping category name sync.");
+      return 0;
+    }
+
+    const subjectNames = await this.wbClustersRepository.getDistinctSubjectNames();
+    if (subjectNames.length === 0) {
+      this.logger.log("No subjects in catalog — skipping category name sync.");
+      return 0;
+    }
+
+    this.logger.log(
+      `Fetching category names for ${String(subjectNames.length)} subjects from WB /content/v2/object/all...`,
+    );
+
+    const mapping = new Map<string, { categoryName: string; subjectId: number | null }>();
+
+    for (const subjectName of subjectNames) {
+      try {
+        const response = await fetch(
+          `${WB_CONTENT_API_OBJECTS_URL}?name=${encodeURIComponent(subjectName)}&top=10&locale=ru`,
+          {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(15_000),
+          },
+        );
+
+        if (!response.ok) {
+          this.logger.warn(`WB object/all [${subjectName}] responded ${String(response.status)} — skipping.`);
+          continue;
+        }
+
+        const data = (await response.json()) as ObjectAllApiResponse;
+        const rows = data.data ?? [];
+
+        // Exact match: subjectName must equal our catalog value exactly.
+        const match = rows.find((r) => r.subjectName?.trim() === subjectName);
+        if (match?.parentName) {
+          mapping.set(subjectName, {
+            categoryName: match.parentName.trim(),
+            subjectId: typeof match.subjectID === "number" ? match.subjectID : null,
+          });
+        }
+
+        // Rate-limit: stay well within WB Content API limits (~5 req/sec).
+        await new Promise<void>((resolve) => setTimeout(resolve, 250));
+      } catch (err) {
+        this.logger.warn(
+          `WB object/all [${subjectName}] failed: ${err instanceof Error ? err.message : String(err)} — skipping.`,
+        );
+      }
+    }
+
+    this.logger.log(
+      `Category mapping resolved: ${String(mapping.size)} of ${String(subjectNames.length)} subjects matched.`,
+    );
+
+    if (mapping.size === 0) {
+      return 0;
+    }
+
+    const updatedCount = await this.wbClustersRepository.updateCategoryNamesBySubject(mapping);
+    this.logger.log(`Category names updated: ${String(updatedCount)} product rows.`);
+
+    this.invalidateCatalogCache();
+    return updatedCount;
   }
 }

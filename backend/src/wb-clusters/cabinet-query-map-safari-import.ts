@@ -78,6 +78,44 @@ export async function replaceCabinetQueryMapRows(
     sourceEndpoint: string | null;
   },
 ) {
+  // Deduplicate by normalized_query_text: one cluster per query per campaign.
+  // When the same query appears in multiple clusters (common in WB data), prefer
+  // the row where the cluster IS named after the query (most canonical assignment).
+  // This prevents the lookup from picking a "random" cluster for ambiguous queries.
+  const bestByQueryText = new Map<
+    string,
+    { clusterName: string; normalizedClusterName: string; queryText: string }
+  >();
+
+  for (const row of input.rows) {
+    const normalizedClusterName = normalizeCabinetQueryMapText(row.clusterName);
+    const normalizedQueryText = normalizeCabinetQueryMapText(row.queryText);
+    const existing = bestByQueryText.get(normalizedQueryText);
+    if (!existing) {
+      bestByQueryText.set(normalizedQueryText, { clusterName: row.clusterName, normalizedClusterName, queryText: row.queryText });
+      continue;
+    }
+    // Prefer the row where cluster name === query text (exact cluster match wins).
+    if (existing.normalizedClusterName !== normalizedQueryText && normalizedClusterName === normalizedQueryText) {
+      bestByQueryText.set(normalizedQueryText, { clusterName: row.clusterName, normalizedClusterName, queryText: row.queryText });
+    }
+  }
+
+  const keys: string[] = [];
+  const clusterNames: string[] = [];
+  const normalizedClusterNames: string[] = [];
+  const queryTexts: string[] = [];
+  const normalizedQueryTexts: string[] = [];
+
+  for (const [normalizedQueryText, best] of bestByQueryText) {
+    // Key no longer includes cluster name — one stable key per (advertId, nmId, query).
+    keys.push(`${input.advertId}:${input.nmId}:cabinet:${normalizedQueryText}`);
+    clusterNames.push(best.clusterName);
+    normalizedClusterNames.push(best.normalizedClusterName);
+    queryTexts.push(best.queryText);
+    normalizedQueryTexts.push(normalizedQueryText);
+  }
+
   await client.query("BEGIN");
   try {
     await client.query(
@@ -85,51 +123,51 @@ export async function replaceCabinetQueryMapRows(
       [input.advertId, input.nmId],
     );
 
-    const seenRows = new Set<string>();
-    for (const row of input.rows) {
-      const normalizedClusterName = normalizeCabinetQueryMapText(row.clusterName);
-      const normalizedQueryText = normalizeCabinetQueryMapText(row.queryText);
-      const rowKey = `${normalizedClusterName}:${normalizedQueryText}`;
-      if (seenRows.has(rowKey)) {
-        continue;
-      }
-      seenRows.add(rowKey);
-
-      const cabinetQueryKey = `${input.advertId}:${input.nmId}:cabinet:${normalizedClusterName}:${normalizedQueryText}`;
+    if (keys.length > 0) {
       await client.query(
         `
           INSERT INTO public.wb_cabinet_cluster_queries (
-            cabinet_query_key,
-            advert_id,
-            nm_id,
-            cluster_name,
-            normalized_cluster_name,
-            query_text,
-            normalized_query_text,
-            capture_mode,
-            source_endpoint,
-            captured_at,
-            synced_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,NOW())
-          ON CONFLICT (cabinet_query_key) DO UPDATE
-          SET
-            cluster_name = EXCLUDED.cluster_name,
+            cabinet_query_key, advert_id, nm_id,
+            cluster_name, normalized_cluster_name,
+            query_text, normalized_query_text,
+            capture_mode, source_endpoint, captured_at, synced_at,
+            monthly_frequency
+          )
+          SELECT
+            u.cabinet_query_key, $2, $3,
+            u.cluster_name, u.normalized_cluster_name,
+            u.query_text, u.normalized_query_text,
+            $8, $9, $10::timestamptz, NOW(),
+            f.monthly_frequency
+          FROM (
+            SELECT
+              UNNEST($1::text[]) AS cabinet_query_key,
+              UNNEST($4::text[]) AS cluster_name,
+              UNNEST($5::text[]) AS normalized_cluster_name,
+              UNNEST($6::text[]) AS query_text,
+              UNNEST($7::text[]) AS normalized_query_text
+          ) u
+          LEFT JOIN public.wb_search_query_frequencies f
+            ON f.normalized_query_text = u.normalized_query_text
+          ON CONFLICT (nm_id, advert_id, normalized_query_text) DO UPDATE SET
+            cabinet_query_key       = EXCLUDED.cabinet_query_key,
+            cluster_name            = EXCLUDED.cluster_name,
             normalized_cluster_name = EXCLUDED.normalized_cluster_name,
-            query_text = EXCLUDED.query_text,
-            normalized_query_text = EXCLUDED.normalized_query_text,
-            capture_mode = EXCLUDED.capture_mode,
-            source_endpoint = EXCLUDED.source_endpoint,
-            captured_at = EXCLUDED.captured_at,
-            synced_at = NOW()
+            query_text              = EXCLUDED.query_text,
+            capture_mode            = EXCLUDED.capture_mode,
+            source_endpoint         = EXCLUDED.source_endpoint,
+            captured_at             = EXCLUDED.captured_at,
+            synced_at               = NOW(),
+            monthly_frequency       = COALESCE(EXCLUDED.monthly_frequency, public.wb_cabinet_cluster_queries.monthly_frequency)
         `,
         [
-          cabinetQueryKey,
+          keys,
           input.advertId,
           input.nmId,
-          row.clusterName,
-          normalizedClusterName,
-          row.queryText,
-          normalizedQueryText,
+          clusterNames,
+          normalizedClusterNames,
+          queryTexts,
+          normalizedQueryTexts,
           input.captureMode,
           input.sourceEndpoint,
           input.capturedAt,
@@ -138,7 +176,7 @@ export async function replaceCabinetQueryMapRows(
     }
 
     await client.query("COMMIT");
-    return seenRows.size;
+    return bestByQueryText.size;
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

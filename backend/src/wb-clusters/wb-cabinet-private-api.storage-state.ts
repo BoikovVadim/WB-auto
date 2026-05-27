@@ -50,6 +50,34 @@ export function parseWbCabinetStorageState(rawState: string): PlaywrightStorageS
   return parsedState;
 }
 
+export async function mergeSellerPortalLocalStorage(
+  items: Array<{ name: string; value: string }>,
+) {
+  let currentState: PlaywrightStorageState;
+  try {
+    currentState = await readWbCabinetStorageState();
+  } catch {
+    currentState = { cookies: [], origins: [] };
+  }
+
+  const sellerOrigin = "https://seller.wildberries.ru";
+  const origins = (currentState.origins ?? []).filter((o) => o.origin !== sellerOrigin);
+  origins.push({ origin: sellerOrigin, localStorage: items });
+
+  const updatedState: PlaywrightStorageState = {
+    ...currentState,
+    origins,
+  };
+
+  const parentDirectory = path.dirname(appEnv.wbCabinetStorageStatePath);
+  await mkdir(parentDirectory, { recursive: true });
+  await writeFile(
+    appEnv.wbCabinetStorageStatePath,
+    JSON.stringify(updatedState, null, 2),
+    "utf8",
+  );
+}
+
 export function extractSupplierIdFromStorageState(storageState: PlaywrightStorageState) {
   const supplierCookie =
     storageState.cookies?.find((cookie) => cookie.name === "x-supplier-id-external") ?? null;

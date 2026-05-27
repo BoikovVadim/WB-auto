@@ -1,6 +1,7 @@
 import { Type } from "class-transformer";
 import { IsDateString, IsIn, IsInt, IsOptional, IsString, Min } from "class-validator";
 
+import { IsValidDateRange } from "../../common/validators/date-range.validator";
 import type {
   ProductAdvertisingWorkspaceClusterSortDirection,
   ProductAdvertisingWorkspaceClusterSortKey,
@@ -44,6 +45,7 @@ const clusterSortKeys: ProductAdvertisingWorkspaceClusterSortKey[] = [
   "spend",
 ];
 
+@IsValidDateRange()
 export class GetProductWorkspaceClusterTableDto {
   @IsOptional()
   @IsDateString()
@@ -59,6 +61,10 @@ export class GetProductWorkspaceClusterTableDto {
 
   @IsOptional()
   search?: string;
+
+  @IsOptional()
+  @IsString()
+  clusterNameSearch?: string;
 
   @IsOptional()
   @IsIn(clusterSortKeys)

@@ -103,7 +103,9 @@ export abstract class WbClustersRepositoryClusterLookupRead extends WbClustersRe
          AND exact_cluster.normalized_cluster_name = cq.normalized_query_text
         LEFT JOIN ${this.tableName("wb_cluster_stats")} stats
           ON stats.cluster_key = exact_cluster.cluster_key
-        ORDER BY q.query_text, COALESCE(stats.synced_at, assigned_cluster.synced_at, exact_cluster.synced_at, cq.synced_at) DESC
+        ORDER BY q.query_text,
+                 (CASE WHEN cq.normalized_cluster_name = q.query_text THEN 0 ELSE 1 END) ASC,
+                 COALESCE(stats.synced_at, assigned_cluster.synced_at, exact_cluster.synced_at, cq.synced_at) DESC
       `,
       [nmId, normalizedQueries],
     );
@@ -157,7 +159,13 @@ export abstract class WbClustersRepositoryClusterLookupRead extends WbClustersRe
          AND exact_cluster.normalized_cluster_name = cq.normalized_query_text
         LEFT JOIN ${this.tableName("wb_cluster_stats")} stats
           ON stats.cluster_key = exact_cluster.cluster_key
-        ORDER BY q.query_text, cq.captured_at DESC, cq.synced_at DESC
+        ORDER BY q.query_text,
+                 -- Prefer the row where the cluster IS the query itself (most canonical match).
+                 -- e.g. query "клетка для кролика" → cluster "клетка для кролика" wins over
+                 -- the same query mapped to an unrelated cluster in the same ad campaign.
+                 (CASE WHEN cq.normalized_cluster_name = q.query_text THEN 0 ELSE 1 END) ASC,
+                 cq.captured_at DESC,
+                 cq.synced_at DESC
       `,
       [nmId, normalizedQueries],
     );
@@ -205,30 +213,53 @@ export abstract class WbClustersRepositoryClusterLookupRead extends WbClustersRe
       ],
     );
 
-    const byQuery = new Map<string, ProductClusterLookupMatch>(
-      authoritativeQueryRows.map((row) => [
-        this.normalizeAdvertisingIdentity(row.queryText),
-        {
-          queryText: row.queryText,
-          clusterName: row.clusterName,
-          sourceKind: row.sourceKind,
-          mappingSource: row.mappingSource,
-          isActive: row.isActive,
-          advertId: row.advertId,
-          views: row.views,
-          clicks: row.clicks,
-          orders: row.orders,
-          addToCart: row.addToCart,
-          shks: row.shks,
-          updatedAt: row.updatedAt,
-        } satisfies ProductClusterLookupMatch,
-      ]),
-    );
+    const byQuery = new Map<string, ProductClusterLookupMatch>();
+    for (const row of authoritativeQueryRows) {
+      const normalizedIdentity = this.normalizeAdvertisingIdentity(row.queryText);
+      if (byQuery.has(normalizedIdentity)) {
+        continue;
+      }
+      byQuery.set(normalizedIdentity, {
+        queryText: row.queryText,
+        clusterName: row.clusterName,
+        sourceKind: row.sourceKind,
+        mappingSource: row.mappingSource,
+        isActive: row.isActive,
+        advertId: row.advertId,
+        views: row.views,
+        clicks: row.clicks,
+        orders: row.orders,
+        addToCart: row.addToCart,
+        shks: row.shks,
+        updatedAt: row.updatedAt,
+      } satisfies ProductClusterLookupMatch);
+    }
+    const byQueryStem = new Map<string, ProductClusterLookupMatch>();
+    for (const row of authoritativeQueryRows) {
+      const stemKey = this.buildAdvertisingStemKey(row.queryText);
+      if (!stemKey || byQueryStem.has(stemKey)) {
+        continue;
+      }
+      byQueryStem.set(stemKey, {
+        queryText: row.queryText,
+        clusterName: row.clusterName,
+        sourceKind: row.sourceKind,
+        mappingSource: row.mappingSource,
+        isActive: row.isActive,
+        advertId: row.advertId,
+        views: row.views,
+        clicks: row.clicks,
+        orders: row.orders,
+        addToCart: row.addToCart,
+        shks: row.shks,
+        updatedAt: row.updatedAt,
+      } satisfies ProductClusterLookupMatch);
+    }
 
     for (const row of exactClusterResult.rows) {
       const queryKey = this.normalizeAdvertisingIdentity(row.query_text);
       if (!byQuery.has(queryKey)) {
-        byQuery.set(queryKey, {
+        const exactMatch: ProductClusterLookupMatch = {
           queryText: row.query_text,
           clusterName: row.cluster_name,
           sourceKind: row.source_kind,
@@ -241,14 +272,23 @@ export abstract class WbClustersRepositoryClusterLookupRead extends WbClustersRe
           addToCart: row.add_to_cart === null ? null : Number(row.add_to_cart),
           shks: row.shks === null ? null : Number(row.shks),
           updatedAt: row.updated_at,
-        });
+        };
+        byQuery.set(queryKey, exactMatch);
+        const stemKey = this.buildAdvertisingStemKey(row.query_text);
+        if (stemKey && !byQueryStem.has(stemKey)) {
+          byQueryStem.set(stemKey, exactMatch);
+        }
       }
     }
 
     const matches: ProductClusterLookupMatch[] = [];
 
     for (const queryText of normalizedQueries) {
-      const match = byQuery.get(this.normalizeAdvertisingIdentity(queryText));
+      const normalizedIdentity = this.normalizeAdvertisingIdentity(queryText);
+      const stemKey = this.buildAdvertisingStemKey(queryText);
+      const match =
+        byQuery.get(normalizedIdentity) ??
+        (stemKey ? byQueryStem.get(stemKey) : undefined);
       if (match) {
         matches.push(match);
       }

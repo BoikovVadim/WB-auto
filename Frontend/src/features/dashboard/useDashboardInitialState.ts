@@ -53,8 +53,8 @@ export function useDashboardInitialState(primaryEntityType: SyncEntity) {
   ]);
   const persistedCurrentExport = useMemo<WbExportResponse | null>(
     () =>
-      persistedViewState.activeSection === "products" && !persistedViewState.selectedExportId
-        ? readPersistedCurrentExportSnapshot(null, initialSelectedMethodEntity)
+      persistedViewState.activeSection === "products"
+        ? null
         : readPersistedCurrentExportSnapshot(
             initialSelectedExportId,
             initialSelectedMethodEntity,
@@ -63,7 +63,6 @@ export function useDashboardInitialState(primaryEntityType: SyncEntity) {
       initialSelectedExportId,
       initialSelectedMethodEntity,
       persistedViewState.activeSection,
-      persistedViewState.selectedExportId,
     ],
   );
   const initialProductAdvertisingDateRange = useMemo<AdvertisingDateRange>(() => {

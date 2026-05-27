@@ -1,7 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 
 import {
-  buildClusterQuerySearchIndex,
   buildWorkspaceClusterKey,
 } from "./product-workspace-cluster-table.filters";
 import { mergeWorkspaceClusters, projectWorkspaceClustersForRange } from "./product-workspace.builder";

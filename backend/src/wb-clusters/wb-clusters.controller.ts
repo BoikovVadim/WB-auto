@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Inject, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Logger, Param, ParseIntPipe, Post, Put, Query, UseGuards } from "@nestjs/common";
 
 import { WbClustersWriteGuard } from "../common/guards/wb-clusters-write.guard";
 import { ApplyProductClusterBidDto } from "./dto/apply-product-cluster-bid.dto";
 import { ApplyProductClusterActionDto } from "./dto/apply-product-cluster-action.dto";
 import { BootstrapWbCabinetSessionDto } from "./dto/bootstrap-wb-cabinet-session.dto";
+import { UpdateSellerPortalSessionDto } from "./dto/update-seller-portal-session.dto";
 import { GetProductAdvertisingSheetBundleDto } from "./dto/get-product-advertising-sheet-bundle.dto";
 import { GetProductAdvertisingSheetDto } from "./dto/get-product-advertising-sheet.dto";
 import { GetProductWorkspaceClusterQueriesDto } from "./dto/get-product-workspace-cluster-queries.dto";
@@ -16,12 +17,16 @@ import { LookupProductClustersDto } from "./dto/lookup-product-clusters.dto";
 import { MaterializeProductAdvertisingSheetsDto } from "./dto/materialize-product-advertising-sheets.dto";
 import { ProbeWbCabinetCmpDto } from "./dto/probe-wb-cabinet-cmp.dto";
 import { RunClusterSyncDto } from "./dto/run-cluster-sync.dto";
+import { SetProductCostPriceDto } from "./dto/set-product-cost-price.dto";
 import { ProductCatalogService } from "./product-catalog.service";
 import { WbClustersCabinetService } from "./wb-clusters-cabinet.service";
+import { WbSellerPortalPlaywrightClient } from "./wb-seller-portal-playwright.client";
 import { WbClustersService } from "./wb-clusters.service";
 
 @Controller("wb-clusters")
 export class WbClustersController {
+  private readonly logger = new Logger(WbClustersController.name);
+
   constructor(
     @Inject(WbClustersService)
     private readonly wbClustersService: WbClustersService,
@@ -29,6 +34,8 @@ export class WbClustersController {
     private readonly productCatalogService: ProductCatalogService,
     @Inject(WbClustersCabinetService)
     private readonly wbClustersCabinetService: WbClustersCabinetService,
+    @Inject(WbSellerPortalPlaywrightClient)
+    private readonly wbSellerPortalPlaywrightClient: WbSellerPortalPlaywrightClient,
   ) {}
 
   @Get("status")
@@ -45,6 +52,13 @@ export class WbClustersController {
   @UseGuards(WbClustersWriteGuard)
   bootstrapCabinetSession(@Body() body: BootstrapWbCabinetSessionDto) {
     return this.wbClustersCabinetService.bootstrapCabinetSession(body.storageStateJson);
+  }
+
+  @Post("seller-portal/session/update")
+  @UseGuards(WbClustersWriteGuard)
+  async updateSellerPortalSession(@Body() body: UpdateSellerPortalSessionDto) {
+    await this.wbSellerPortalPlaywrightClient.updateSession(body.localStorage);
+    return { accepted: true, itemCount: body.localStorage.length };
   }
 
   @Post("cabinet/probe")
@@ -101,6 +115,18 @@ export class WbClustersController {
   @UseGuards(WbClustersWriteGuard)
   runSync(@Body() body: RunClusterSyncDto) {
     return this.wbClustersService.runSync(body.trigger ?? "manual", body.mode ?? "full");
+  }
+
+  @Post("sync/monthly-frequency")
+  @UseGuards(WbClustersWriteGuard)
+  runMonthlyFrequencySyncNow() {
+    return this.wbClustersService.runMonthlyFrequencySyncNow();
+  }
+
+  @Post("sync/frequency-cache-bust")
+  @UseGuards(WbClustersWriteGuard)
+  clearFrequencyCaches() {
+    return this.wbClustersService.clearAllFrequencyCaches();
   }
 
   @Post("stats/backfill")
@@ -161,6 +187,7 @@ export class WbClustersController {
       endDate: query.endDate,
       status: query.status,
       search: query.search,
+      clusterNameSearch: query.clusterNameSearch,
       numericFilters: query.numericFilters,
       sortKey: query.sortKey,
       sortDirection: query.sortDirection,
@@ -260,8 +287,43 @@ export class WbClustersController {
   }
 
   @Get("raw/query-frequencies")
-  getRawQueryFrequencies(@Query("limit") limit?: string) {
-    return this.wbClustersService.getRawQueryFrequencies(Math.min(Number(limit) || 1000, 5000));
+  getRawQueryFrequencies(
+    @Query("limit") limit?: string,
+    @Query("offset") offset?: string,
+    @Query("search") search?: string,
+    @Query("sortBy") sortBy?: string,
+    @Query("dir") dir?: string,
+  ) {
+    const parsedOffset = offset != null ? Number(offset) : undefined;
+    if (parsedOffset != null) {
+      const validSortBy =
+        sortBy === "query_text" || sortBy === "subject_name" ? sortBy : "monthly_frequency";
+      const validDir = dir === "asc" ? "asc" : "desc";
+      return this.wbClustersService.getQueryFrequenciesPaginated({
+        limit: Math.min(Number(limit) || 100, 500),
+        offset: parsedOffset,
+        search: search?.trim() || null,
+        sortBy: validSortBy,
+        sortDir: validDir,
+      });
+    }
+    return this.wbClustersService.getRawQueryFrequencies(Math.min(Number(limit) || 300_000, 300_000));
+  }
+
+  @Get("raw/query-frequency-history/weeks")
+  getFrequencyHistoryWeeks() {
+    return this.wbClustersService.getFrequencyHistoryWeeks();
+  }
+
+  @Get("raw/query-frequency-history")
+  getRawQueryFrequencyHistory(
+    @Query("week") week?: string,
+    @Query("limit") limit?: string,
+  ) {
+    return this.wbClustersService.getRawQueryFrequencyHistory({
+      week: week ?? null,
+      limit: Math.min(Number(limit) || 2000, 10000),
+    });
   }
 
   @Get("products/catalog")
@@ -334,6 +396,120 @@ export class WbClustersController {
       advertId,
       body.bids,
     );
+  }
+
+  @Get("products/:nmId/campaigns/:advertId/clusters/change-log")
+  getClusterChangeLog(
+    @Param("nmId", ParseIntPipe) nmId: number,
+    @Param("advertId", ParseIntPipe) advertId: number,
+  ) {
+    return this.wbClustersService.getClusterChangeLog(nmId, advertId);
+  }
+
+  @Get("products/cost-prices")
+  getAllCostPrices() {
+    return this.wbClustersService.getAllCostPrices();
+  }
+
+  @Get("products/cost-price-matrix")
+  getCostPriceMatrix() {
+    return this.wbClustersService.getCostPriceMatrix();
+  }
+
+  @Get("change-log")
+  getUnifiedChangeLog(@Query("limit") limit?: string) {
+    // Clamp to a sane cap and coerce NaN/0/negative back to the default.
+    return this.wbClustersService.getUnifiedChangeLog(Math.min(Number(limit) || 500, 2000));
+  }
+
+  @Get("products/orders-today")
+  getTodayOrderCounts() {
+    return this.wbClustersService.getTodayOrderCounts();
+  }
+
+  @Get("products/orders-matrix")
+  getOrdersMatrix() {
+    return this.wbClustersService.getOrdersMatrix();
+  }
+
+  /** Downloads Analytics CSV report (7 days), stores in wb_product_daily_orders. */
+  @Post("products/sync-orders")
+  @UseGuards(WbClustersWriteGuard)
+  triggerOrdersSync() {
+    this.wbClustersService.syncOrdersFromAnalytics(6).catch((error: unknown) => {
+      this.logger.error("Background syncOrdersFromAnalytics failed", error);
+    });
+    return { status: "started", mode: "csv-7-days" };
+  }
+
+  // ─── JAM daily read-model ────────────────────────────────────────────────────
+
+  /** Latest JAM position per product (most recent jam_date). */
+  @Get("products/jam-positions")
+  getLatestJamPositions() {
+    return this.wbClustersService.getLatestJamPositions();
+  }
+
+  /** All JAM daily rows for all products. Used for retrospective matrix. */
+  @Get("products/jam-matrix")
+  getJamDailyMatrix() {
+    return this.wbClustersService.getJamDailyMatrix();
+  }
+
+  /** Manually trigger JAM daily materialization for today (after manual JAM backfill). */
+  @Post("products/jam-materialize")
+  @UseGuards(WbClustersWriteGuard)
+  triggerJamMaterialize() {
+    this.wbClustersService.materializeJamDaily(0).catch((error: unknown) => {
+      this.logger.error("Background materializeJamDaily failed", error);
+    });
+    return { status: "started" };
+  }
+
+  /**
+   * Backfill JAM daily read-model for the entire current calendar month.
+   * Run once after initial setup; safe to re-run (idempotent ON CONFLICT DO UPDATE).
+   */
+  @Post("products/jam-backfill-month")
+  @UseGuards(WbClustersWriteGuard)
+  async triggerJamBackfillMonth() {
+    const rows = await this.wbClustersService.materializeJamDailyForMonth();
+    return { status: "done", rowsWritten: rows };
+  }
+
+  /**
+   * Returns summed JAM metrics for a single product over a date range.
+   * Used by the advertising cluster view date-range JAM panel.
+   * Query params: from=YYYY-MM-DD&to=YYYY-MM-DD
+   */
+  @Get("products/:nmId/jam-summary")
+  getJamSummaryForProduct(
+    @Param("nmId", ParseIntPipe) nmId: number,
+    @Query("from") from: string,
+    @Query("to") to: string,
+  ) {
+    return this.wbClustersService.getJamDailySummaryForProduct(nmId, from, to);
+  }
+
+  @Get("products/:nmId/cost-price-history")
+  getCostPriceHistory(@Param("nmId", ParseIntPipe) nmId: number) {
+    return this.wbClustersService.getCostPriceHistory(nmId);
+  }
+
+  @Put("products/:nmId/cost-price")
+  @UseGuards(WbClustersWriteGuard)
+  setProductCostPrice(
+    @Param("nmId", ParseIntPipe) nmId: number,
+    @Body() body: SetProductCostPriceDto,
+  ) {
+    return this.wbClustersService.setProductCostPrice(nmId, body.costValue);
+  }
+
+  @Delete("products/:nmId/cost-price")
+  @UseGuards(WbClustersWriteGuard)
+  @HttpCode(204)
+  async clearProductCostPrice(@Param("nmId", ParseIntPipe) nmId: number) {
+    await this.wbClustersService.clearProductCostPrice(nmId);
   }
 
   @Get("products/:nmId/refresh/:syncRunId")

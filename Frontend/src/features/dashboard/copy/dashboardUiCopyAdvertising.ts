@@ -80,5 +80,6 @@ export const dashboardUiCopyAdvertising = {
   clusterTableRefreshing: "Обновляем строки без сброса таблицы.",
   noClustersForFilter: "По выбранному фильтру кластеры не найдены.",
   noClustersForCampaign: "По выбранной кампании нет кластеров за указанный период.",
+  noCampaignsForPeriod: "За выбранный период у товара нет рекламных кампаний с кластерами.",
   noClustersForSearch: "Нет кластеров, совпадающих с текущим поиском.",
 } as const;

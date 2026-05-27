@@ -131,8 +131,13 @@ export abstract class WbClustersRepositoryClusterQueryPersistence extends WbClus
               capture_mode,
               source_endpoint,
               captured_at,
-              synced_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,NOW())
+              synced_at,
+              monthly_frequency
+            ) VALUES (
+              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,NOW(),
+              (SELECT monthly_frequency FROM ${this.tableName("wb_search_query_frequencies")}
+               WHERE normalized_query_text = $7 LIMIT 1)
+            )
             ON CONFLICT (cabinet_query_key) DO UPDATE
             SET
               cluster_name = EXCLUDED.cluster_name,
@@ -142,7 +147,8 @@ export abstract class WbClustersRepositoryClusterQueryPersistence extends WbClus
               capture_mode = EXCLUDED.capture_mode,
               source_endpoint = EXCLUDED.source_endpoint,
               captured_at = EXCLUDED.captured_at,
-              synced_at = NOW()
+              synced_at = NOW(),
+              monthly_frequency = COALESCE(EXCLUDED.monthly_frequency, ${this.tableName("wb_cabinet_cluster_queries")}.monthly_frequency)
           `,
           [
             cabinetQueryKey,
@@ -227,6 +233,7 @@ export abstract class WbClustersRepositoryClusterQueryPersistence extends WbClus
     rows: Array<{
       queryText: string;
       monthlyFrequency: number;
+      subjectName?: string | null;
     }>;
   }) {
     await this.ensureSchemaOrThrow();
@@ -240,24 +247,39 @@ export abstract class WbClustersRepositoryClusterQueryPersistence extends WbClus
       const deduplicatedRows = new Map<
         string,
         {
+          normalizedQueryText: string;
           queryText: string;
           monthlyFrequency: number;
+          subjectName: string | null;
+          normalizedQueryIdentity: string;
+          normalizedQueryStem: string;
         }
       >();
 
       for (const row of input.rows) {
         const normalizedQueryText = this.normalizeQuery(row.queryText);
-        const existing = deduplicatedRows.get(normalizedQueryText);
+        const normalizedQueryIdentity = this.normalizeAdvertisingIdentity(row.queryText);
+        const normalizedQueryStem = this.buildAdvertisingStemKey(row.queryText);
+        const existing = deduplicatedRows.get(normalizedQueryIdentity);
         if (!existing || row.monthlyFrequency > existing.monthlyFrequency) {
-          deduplicatedRows.set(normalizedQueryText, row);
+          deduplicatedRows.set(normalizedQueryIdentity, {
+            normalizedQueryText,
+            queryText: row.queryText,
+            monthlyFrequency: row.monthlyFrequency,
+            subjectName: row.subjectName ?? null,
+            normalizedQueryIdentity,
+            normalizedQueryStem,
+          });
         }
       }
 
-      for (const [normalizedQueryText, row] of deduplicatedRows) {
+      for (const row of deduplicatedRows.values()) {
         await client.query(
           `
             INSERT INTO ${this.tableName("wb_search_query_frequencies")} (
               normalized_query_text,
+              normalized_query_identity,
+              normalized_query_stem,
               query_text,
               monthly_frequency,
               report_type,
@@ -265,11 +287,14 @@ export abstract class WbClustersRepositoryClusterQueryPersistence extends WbClus
               download_id,
               report_start_date,
               report_end_date,
+              subject_name,
               synced_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::date,NOW())
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,$11,NOW())
           `,
           [
-            normalizedQueryText,
+            row.normalizedQueryText,
+            row.normalizedQueryIdentity,
+            row.normalizedQueryStem,
             row.queryText,
             row.monthlyFrequency,
             input.reportType,
@@ -277,6 +302,7 @@ export abstract class WbClustersRepositoryClusterQueryPersistence extends WbClus
             input.downloadId,
             input.reportStartDate,
             input.reportEndDate,
+            row.subjectName ?? null,
           ],
         );
       }

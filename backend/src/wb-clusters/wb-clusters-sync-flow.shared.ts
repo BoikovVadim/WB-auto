@@ -1,4 +1,3 @@
-import { appEnv } from "../common/env";
 import type { ClusterSyncPhase, PromotionCampaignDetailsItem } from "./wb-clusters.types";
 
 type WbClustersService = any;
@@ -10,6 +9,9 @@ type ExtractedCampaignProduct = {
 };
 
 export function getMonthlyFrequencyPeriod(self: WbClustersService) {
+  // Rolling 30-day window ending yesterday (UTC).
+  // WB search frequency changes daily so the report is re-downloaded every day
+  // to keep cluster frequency data current.
   const end = new Date();
   end.setUTCDate(end.getUTCDate() - 1);
 
@@ -68,22 +70,27 @@ function toLocalDateStr(date: Date): string {
 }
 
 /**
- * Regular stats sync period: yesterday + today (2 days).
+ * Regular stats sync period: last 30 days (29-day span, inclusive).
  *
- * Historical data grows indefinitely in wb_cluster_daily_stats — each day
- * is written once and never deleted. The regular 10-minute sync only needs
- * to refresh the most recent two days:
- *   - today:     intraday accumulation (WB aggregates throughout the day)
- *   - yesterday: final finalization pass (after WB closes the previous day)
+ * Matches the 30-day window WB cabinet displays for cluster statistics.
+ * WB stats API enforces a strict 30-day inclusive limit, so the span is
+ * capped at 29 days (today − 29 = 30 days inclusive).
  *
- * For initial historical backfill use getStatsBackfillPeriod().
+ * Re-fetching the full 30-day window on every sync ensures:
+ *   - intraday accumulation for today
+ *   - final finalization for yesterday
+ *   - retroactive order attribution (WB attributes orders to click date
+ *     with a delay of up to 7–14 days, but cabinet shows full 30d history)
+ *
+ * Historical data grows indefinitely in wb_cluster_daily_stats — rows are
+ * upserted (INSERT ON CONFLICT DO UPDATE), never deleted.
  */
 export function getStatsPeriod(_self: WbClustersService) {
   const today = new Date();
-  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  const thirtyDaysAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29);
 
   return {
-    from: toLocalDateStr(yesterday),
+    from: toLocalDateStr(thirtyDaysAgo),
     to: toLocalDateStr(today),
   };
 }

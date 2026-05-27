@@ -1,7 +1,9 @@
 import type { DashboardViewState } from "./dashboardViewStateTypes";
 import {
   createDefaultDashboardViewState,
+  isActiveSheet,
   isDashboardSection,
+  isPersistedProductsSortKey,
   isProductsMode,
   isRecord,
   isSyncEntity,
@@ -9,55 +11,68 @@ import {
 } from "./dashboardViewStateTypes";
 import { writeDashboardViewStateToUrl } from "./dashboardViewUrl";
 
-const dashboardViewStateStorageKey = "wb-dashboard-view-state";
+// localStorage key — persists across tab closes and browser restarts.
+// Version suffix: bump when breaking schema changes require a clean slate.
+const STORAGE_KEY = "wb-dashboard-view-state-v2";
 
 export function readDashboardViewStateFromSessionStorage(): DashboardViewState {
   if (typeof window === "undefined") {
     return createDefaultDashboardViewState();
   }
 
-  const rawValue = window.sessionStorage.getItem(dashboardViewStateStorageKey);
+  const rawValue = window.localStorage.getItem(STORAGE_KEY);
   if (!rawValue) {
     return createDefaultDashboardViewState();
   }
 
-  const parsedValue = JSON.parse(rawValue);
-  if (!isRecord(parsedValue)) {
+  try {
+    const parsedValue = JSON.parse(rawValue);
+    if (!isRecord(parsedValue)) {
+      return createDefaultDashboardViewState();
+    }
+
+    return {
+      activeSection: isDashboardSection(parsedValue.activeSection)
+        ? parsedValue.activeSection
+        : "exports",
+      productsMode: isProductsMode(parsedValue.productsMode) ? parsedValue.productsMode : "list",
+      selectedMethodEntity: isSyncEntity(parsedValue.selectedMethodEntity)
+        ? parsedValue.selectedMethodEntity
+        : null,
+      selectedExportId:
+        typeof parsedValue.selectedExportId === "string" && parsedValue.selectedExportId.trim()
+          ? parsedValue.selectedExportId
+          : null,
+      selectedProductNmId:
+        typeof parsedValue.selectedProductNmId === "number"
+          ? parsedValue.selectedProductNmId
+          : null,
+      selectedCatalogVendorCode:
+        typeof parsedValue.selectedCatalogVendorCode === "string" &&
+        parsedValue.selectedCatalogVendorCode.trim()
+          ? parsedValue.selectedCatalogVendorCode
+          : null,
+      productAdvertisingStartDate: readPersistedDateValue(parsedValue.productAdvertisingStartDate),
+      productAdvertisingEndDate: readPersistedDateValue(parsedValue.productAdvertisingEndDate),
+      scrollY:
+        typeof parsedValue.scrollY === "number" && parsedValue.scrollY >= 0
+          ? parsedValue.scrollY
+          : 0,
+      // ── New fields (default-safe if missing in older stored value) ──────────
+      activeSheet: isActiveSheet(parsedValue.activeSheet) ? parsedValue.activeSheet : "none",
+      productsSearch:
+        typeof parsedValue.productsSearch === "string" ? parsedValue.productsSearch : "",
+      productsSortKey: isPersistedProductsSortKey(parsedValue.productsSortKey)
+        ? parsedValue.productsSortKey
+        : "name",
+      productsSortDirection:
+        parsedValue.productsSortDirection === "asc" || parsedValue.productsSortDirection === "desc"
+          ? parsedValue.productsSortDirection
+          : "asc",
+    };
+  } catch {
     return createDefaultDashboardViewState();
   }
-
-  return {
-    activeSection: isDashboardSection(parsedValue.activeSection)
-      ? parsedValue.activeSection
-      : "exports",
-    productsMode: isProductsMode(parsedValue.productsMode) ? parsedValue.productsMode : "list",
-    selectedMethodEntity: isSyncEntity(parsedValue.selectedMethodEntity)
-      ? parsedValue.selectedMethodEntity
-      : null,
-    selectedExportId:
-      typeof parsedValue.selectedExportId === "string" && parsedValue.selectedExportId.trim()
-        ? parsedValue.selectedExportId
-        : null,
-    selectedProductNmId:
-      typeof parsedValue.selectedProductNmId === "number"
-        ? parsedValue.selectedProductNmId
-        : null,
-    selectedCatalogVendorCode:
-      typeof parsedValue.selectedCatalogVendorCode === "string" &&
-      parsedValue.selectedCatalogVendorCode.trim()
-        ? parsedValue.selectedCatalogVendorCode
-        : null,
-    productAdvertisingStartDate: readPersistedDateValue(
-      parsedValue.productAdvertisingStartDate,
-    ),
-    productAdvertisingEndDate: readPersistedDateValue(
-      parsedValue.productAdvertisingEndDate,
-    ),
-    scrollY:
-      typeof parsedValue.scrollY === "number" && parsedValue.scrollY >= 0
-        ? parsedValue.scrollY
-        : 0,
-  };
 }
 
 export function writeDashboardViewStateToSessionStorage(
@@ -73,10 +88,11 @@ export function writeDashboardViewStateToSessionStorage(
     ...patch,
   };
 
-  window.sessionStorage.setItem(
-    dashboardViewStateStorageKey,
-    JSON.stringify(nextValue),
-  );
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextValue));
+  } catch {
+    // Quota exceeded — not fatal, next write will retry.
+  }
   writeDashboardViewStateToUrl(nextValue);
 }
 

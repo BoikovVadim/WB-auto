@@ -7,7 +7,6 @@ import {
   type SyncEntity,
   type WbExportResponse,
 } from "../../api/syncClient";
-import { ui } from "./copy";
 import {
   readPersistedCurrentExportSnapshot,
   resolveSelectedProductNmId,
@@ -160,9 +159,11 @@ export function useDashboardExportNavigation(input: {
       setSelectedMethodEntity(entityType);
       setSelectedExportId(requestId);
 
-      const immediateExport =
-        readPersistedCurrentExportSnapshot(requestId, entityType) ??
-        getCachedSavedExportSync(requestId);
+      const allowImmediateProductsBootstrap = targetSection !== "products";
+      const immediateExport = allowImmediateProductsBootstrap
+        ? readPersistedCurrentExportSnapshot(requestId, entityType) ??
+          getCachedSavedExportSync(requestId)
+        : null;
       if (immediateExport?.entityType === entityType) {
         applyResolvedExportToState(
           entityType,

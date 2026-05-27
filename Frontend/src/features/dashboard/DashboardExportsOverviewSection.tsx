@@ -32,6 +32,7 @@ type DashboardExportsOverviewSectionProps = {
   onOpenDailyStats: () => void;
   onOpenMinusPhrases: () => void;
   onOpenQueryFrequencies: () => void;
+  onOpenOrders: () => void;
 };
 
 export function DashboardExportsOverviewSection(
@@ -148,15 +149,27 @@ export function DashboardExportsOverviewSection(
         />
         <DataCard
           title="Частоты поисковых запросов"
-          description="Ежемесячные частоты по поисковым фразам из отчётного API WB"
+          description="Еженедельные частоты по поисковым фразам из отчёта WB Analytics (seller portal)"
           chip="Analytics"
           rows={[
             { label: "Таблица", value: "wb_search_query_frequencies" },
-            { label: "Период", value: "помесячно" },
-            { label: "Хранение", value: "бессрочно" },
+            { label: "Обновление", value: "еженедельно (воскресенье 07:00 МСК)" },
+            { label: "Покрытие", value: "49 предметов · скользящий месяц" },
           ]}
           buttonLabel="Открыть данные"
           onOpen={props.onOpenQueryFrequencies}
+        />
+        <DataCard
+          title="История частот (ретроспектива)"
+          description="Еженедельные снимки частот — для анализа динамики и трендов от недели к неделе"
+          chip="Analytics"
+          rows={[
+            { label: "Таблица", value: "wb_query_frequency_history" },
+            { label: "Снимки", value: "еженедельно, автоматически" },
+            { label: "Хранение", value: "бессрочно" },
+          ]}
+          buttonLabel="Скоро"
+          onOpen={null}
         />
       </DataSection>
 
@@ -185,6 +198,19 @@ export function DashboardExportsOverviewSection(
           ]}
           buttonLabel="Открыть данные"
           onOpen={props.onOpenCampaigns}
+        />
+        <DataCard
+          title="Заказы по товарам"
+          description="Агрегированные заказы по nmId и дате за последние 7 дней из WB Statistics API"
+          chip="Statistics API"
+          rows={[
+            { label: "Таблица", value: "wb_product_daily_orders" },
+            { label: "Обновление", value: "каждые 30 мин" },
+            { label: "Хранение", value: "скользящие 7 дней" },
+            { label: "Лимит WB", value: "1 запрос / мин" },
+          ]}
+          buttonLabel="Открыть данные"
+          onOpen={props.onOpenOrders}
         />
       </DataSection>
 

@@ -18,6 +18,7 @@ import {
 } from "../../api/syncClient";
 import type { DashboardSection, ProductsMode } from "./persistence/dashboardViewState";
 import type { DashboardOpenExportOptions } from "./useDashboardWorkspaceActionTypes";
+import { startQueryFrequenciesPrefetch } from "./queryFrequenciesPrefetch";
 
 function sortExportHistoryNewestFirst(items: WbExportListItem[]) {
   return [...items].sort((left, right) => {
@@ -59,8 +60,6 @@ export function useDashboardBootstrap(input: {
 }) {
   const {
     activeSection,
-    backendErrorMessage,
-    getSafeMessage,
     openExport,
     primaryEntityType,
     productsMode,
@@ -111,6 +110,8 @@ export function useDashboardBootstrap(input: {
         preserveProductSelection: true,
       });
     }
+
+    startQueryFrequenciesPrefetch();
 
     const shellRefreshPromise = Promise.allSettled([
       fetchHealth(),
@@ -211,8 +212,6 @@ export function useDashboardBootstrap(input: {
     }
   }, [
     activeSection,
-    backendErrorMessage,
-    getSafeMessage,
     openExport,
     primaryEntityType,
     productsMode,

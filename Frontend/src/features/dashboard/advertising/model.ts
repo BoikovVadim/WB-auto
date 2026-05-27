@@ -24,6 +24,7 @@ export {
   isClusterActive,
   isClusterExcluded,
   isAdvertisingCampaignRunning,
+  isAdvertisingCampaignArchived,
   getDefaultAdvertisingSortDirection,
   formatAdvertisingCampaignStatus,
   hasJamMetrics,

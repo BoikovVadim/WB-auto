@@ -6,7 +6,9 @@ import type {
 } from "../../api/syncClient";
 import { buildAppPath } from "../../runtimePaths";
 import type {
+  ActiveSheet,
   DashboardSection,
+  PersistedProductsSortKey,
   ProductsMode,
 } from "./persistence/dashboardViewState";
 import {
@@ -28,6 +30,12 @@ export function useDashboardBrowserEffects(input: {
   persistedAdvertisingEndDate: string | null;
   currentExport: WbExportResponse | null;
   exportHistoryLength: number;
+  // ── Sheet / overlay state ─────────────────────────────────────────────────
+  activeSheet: ActiveSheet;
+  // ── Products table view state ─────────────────────────────────────────────
+  productsSearch: string;
+  productsSortKey: PersistedProductsSortKey;
+  productsSortDirection: "asc" | "desc";
 }) {
   const {
     enablePersistence,
@@ -42,6 +50,10 @@ export function useDashboardBrowserEffects(input: {
     persistedAdvertisingEndDate,
     currentExport,
     exportHistoryLength,
+    activeSheet,
+    productsSearch,
+    productsSortKey,
+    productsSortDirection,
   } = input;
   const pendingScrollRestoreRef = useRef<number | null>(initialScrollY);
   const [isMethodTablesReady, setIsMethodTablesReady] = useState(false);
@@ -116,6 +128,10 @@ export function useDashboardBrowserEffects(input: {
       selectedCatalogVendorCode,
       productAdvertisingStartDate: persistedAdvertisingStartDate,
       productAdvertisingEndDate: persistedAdvertisingEndDate,
+      activeSheet,
+      productsSearch,
+      productsSortKey,
+      productsSortDirection,
     });
   }, [
     activeSection,
@@ -127,15 +143,19 @@ export function useDashboardBrowserEffects(input: {
     selectedMethodEntity,
     selectedProductNmId,
     enablePersistence,
+    activeSheet,
+    productsSearch,
+    productsSortKey,
+    productsSortDirection,
   ]);
 
   useEffect(() => {
-    if (!enablePersistence) {
+    if (!enablePersistence || activeSection === "products") {
       return;
     }
 
     writePersistedCurrentExportSnapshot(selectedExportId, currentExport);
-  }, [currentExport, enablePersistence, selectedExportId]);
+  }, [activeSection, currentExport, enablePersistence, selectedExportId]);
 
   useEffect(() => {
     if (activeSection !== "method" || !currentExport) {

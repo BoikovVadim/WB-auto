@@ -6,6 +6,7 @@ import type { WbApiClient } from "../wb-sync/wb-api.client";
 import type { WbRuntimeConfigService } from "../wb-sync/wb-runtime-config.service";
 import type { WbCabinetPrivateApiClient } from "./wb-cabinet-private-api.client";
 import type { WbCmpSafariClient } from "./wb-cmp-safari.client";
+import type { WbSellerPortalPlaywrightClient } from "./wb-seller-portal-playwright.client";
 import type { ProductAdvertisingSheetJamOverlay } from "./product-advertising-sheet.builder";
 import type { ProductAdvertisingReadRepository } from "./product-advertising-read.repository";
 import type { ProductAdvertisingSnapshotJobService } from "./product-advertising-snapshot-job.service";
@@ -22,6 +23,7 @@ import {
   type SyncPhaseTelemetry,
 } from "./wb-clusters-sync.helpers";
 import type { WbClustersSyncOrchestratorService } from "./wb-clusters-sync-orchestrator.service";
+import type { RawQueryFrequencyRow } from "./wb-clusters.repository.raw-data-read";
 import type {
   ClusterSyncPhase,
   ProductAdvertisingSheetResponse,
@@ -37,7 +39,7 @@ export interface ProductSnapshotWarmupState {
   failureReason: string | null;
 }
 
-export const productAdvertisingSheetSnapshotSchemaVersion = 11;
+export const productAdvertisingSheetSnapshotSchemaVersion = 12;
 
 export abstract class WbClustersServiceState {
   protected readonly logger = new Logger("WbClustersService");
@@ -99,6 +101,15 @@ export abstract class WbClustersServiceState {
   protected readonly productAdvertisingSheetReadModelCacheTtlMs = 10 * 60 * 1000;
   protected readonly productAdvertisingSheetJamCacheTtlMs = 10 * 60 * 1000;
   protected readonly productAdvertisingSheetSnapshotCacheTtlMs = 65 * 60 * 1000;
+  // Full query-frequencies snapshot cache. Keyed by limit. TTL matches snapshot cache (65 min).
+  // Invalidated explicitly in clearAllFrequencyCaches() after every import.
+  protected rawQueryFrequenciesCache: {
+    limit: number;
+    expiresAtMs: number;
+    value: RawQueryFrequencyRow[];
+  } | null = null;
+  protected readonly rawQueryFrequenciesCacheTtlMs = 65 * 60 * 1000;
+
   protected readonly normQueryReadChunkSize = 100;
   // WB stats endpoint hard limit: max 100 items per request.
   protected readonly statsNormQueryChunkSize = 100;
@@ -164,6 +175,7 @@ export abstract class WbClustersServiceState {
   protected abstract readonly wbPromotionApiClient: WbPromotionApiClient;
   protected abstract readonly wbApiClient: WbApiClient;
   protected abstract readonly wbCmpSafariClient: WbCmpSafariClient;
+  protected abstract readonly wbSellerPortalPlaywrightClient: WbSellerPortalPlaywrightClient;
   protected abstract readonly wbClustersRepository: WbClustersRepository;
   protected abstract readonly promotionSyncRepository: PromotionSyncRepository;
   protected abstract readonly productAdvertisingReadRepository: ProductAdvertisingReadRepository;

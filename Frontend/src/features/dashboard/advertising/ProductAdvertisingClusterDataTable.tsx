@@ -255,10 +255,12 @@ export function ProductAdvertisingClusterDataTable(
         continue;
       }
 
-      for (const query of sortedQueries) {
+      for (const [queryIndex, query] of sortedQueries.entries()) {
         entries.push({
           kind: "query",
-          key: `${clusterKey}:${query.queryText}`,
+          // Добавляем индекс: в кластере могут быть два запроса с одинаковым
+          // queryText, и ключ без индекса вызвал бы коллизию React-ключей.
+          key: `${clusterKey}:${String(queryIndex)}:${query.queryText}`,
           clusterKey,
           row,
           query,

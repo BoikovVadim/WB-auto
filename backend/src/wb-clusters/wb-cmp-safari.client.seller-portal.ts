@@ -49,7 +49,7 @@ export async function exportSellerPortalSearchAnalyticsReport(
       endDateRu: formatIsoDateForRuInput(input.periodTo),
     }),
     {
-      timeoutMs: 240_000,
+      timeoutMs: 1_200_000,
       errorContext: "Failed to execute WB seller-portal Safari export",
     },
   );

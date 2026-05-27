@@ -1,0 +1,164 @@
+# Frontend table standards
+
+## Rule: every table MUST use the shared design tokens
+
+All data tables must share identical font size, row height, and sticky-cell
+backgrounds.  The reference look is the catalog-products / advertising
+products table.  Any new table that deviates will feel inconsistent to the user.
+
+---
+
+## Token source (`:root` in `styles.css`)
+
+| Variable | Value | Meaning |
+|----------|-------|---------|
+| `--wb-table-font-size` | `12px` | th and td font-size |
+| `--wb-table-cell-padding` | `5px 8px` | th and td padding — compact, matches advertising products list |
+| `--wb-table-line-height` | `1.2` | row height baseline (~26px per row) |
+| `--wb-table-header-bg` | `#fbf7eb` | sticky header background |
+| `--wb-table-body-bg` | `#ffffff` | default td background |
+| `--wb-table-totals-bg` | `#fffdf5` | totals / summary row background |
+| `--wb-table-sticky-z-col` | `2` | z-index for horizontal sticky columns |
+| `--wb-table-sticky-z-header` | `3` | z-index for vertical sticky header |
+
+Do NOT hard-code `12px`, `9px`, `11px`, `#fbf7eb`, or `#ffffff` inside
+inline `th`/`td` styles — always reference the CSS variable.
+
+---
+
+## Required table structure
+
+```tsx
+// ✅ Correct
+<div className="wb-table-wrap--catalog-restricted">   {/* or appropriate wrap */}
+  <table className="wb-data-table wb-data-table--products">
+    <thead>
+      <tr>
+        <th style={{ width: 60 }}>№</th>          {/* only width inline */}
+        <th className="wb-table-cell--sticky-left" style={{ left: 0, width: 120 }}>
+          Название
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td className="wb-table-cell--sticky-left" style={{ left: 0 }}>Товар</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+```
+
+```tsx
+// ❌ Wrong — never inline font-size or padding on th/td
+<th style={{ fontSize: 11, padding: "6px 8px" }}>Заголовок</th>
+<td style={{ fontSize: 12, padding: "9px 11px" }}>Значение</td>
+```
+
+---
+
+## Sticky columns/rows — mandatory rules
+
+> **Rule 1 — opaque backgrounds.** Every sticky cell MUST have a solid (non-transparent)
+> background. Without this, scrolled content bleeds through the sticky cell.
+> Use CSS variables, never hard-code hex colors.
+
+> **Rule 2 — no gap between stacked sticky rows.** When `<thead>` has TWO rows
+> (column-header + totals/Итого), the second row MUST add class `wb-thead-row--second`.
+> This class sets `top: var(--wb-table-header-row-height)` automatically, keeping both
+> sticky rows flush with no visible gap.
+
+> **Rule 3 — z-index ladder.** Never set a custom z-index on a sticky cell outside this ladder:
+> - `zIndex: 1` → sticky **td** cells in body rows (use `--wb-table-sticky-z-body-col`)
+> - `zIndex: 2` → sticky **th** cells that are only horizontally sticky
+> - `zIndex: 3` → vertically sticky header/totals rows (automatic via CSS)
+> - `zIndex: 4` → corner cells sticky on both axes
+>
+> Body sticky `td` cells MUST use `zIndex: 1`, NOT `zIndex: 2`, so they always
+> sit BELOW header and totals rows and never "bleed through" them.
+
+### How to apply sticky columns
+
+1. Add class `wb-table-cell--sticky-left` to the `th` or `td`
+2. Add `style={{ left: <offset>px }}` for the pixel offset (calculated from column widths)
+3. For body `td` cells: use `zIndex: 1` (not 2, 3, or 4)
+4. Do NOT set `position: sticky` or `background` inline — the class handles both
+
+### How to apply two stacked sticky header rows
+
+```tsx
+<thead>
+  {/* Row 1: column headers — top: 0 (automatic via .wb-data-table th) */}
+  <tr>
+    <th style={{ left: 0 }}>№</th>
+    <th>Название</th>
+  </tr>
+  {/* Row 2: totals/Итого — MUST have wb-thead-row--second for flush stacking */}
+  <tr className="wb-products-totals-row wb-thead-row--second">
+    <th style={{ left: 0 }} />
+    <th>Итого</th>
+  </tr>
+</thead>
+```
+
+`wb-thead-row--second` sets automatically:
+- `top: var(--wb-table-header-row-height)` → zero gap below row 1
+- `background: var(--wb-table-totals-bg)` → always opaque
+- `z-index: var(--wb-table-sticky-z-header)` → above body cells
+
+`wb-table-cell--sticky-left` sets automatically:
+- `position: sticky`
+- `background: var(--wb-table-body-bg)` for body cells
+- `background: var(--wb-table-header-bg)` for header cells
+- Correct `z-index` per the ladder above
+
+---
+
+## Allowed inline styles on th/td
+
+| Property | Allowed inline? | Notes |
+|----------|-----------------|-------|
+| `width` | ✅ | Column widths vary per table |
+| `left` | ✅ | Sticky offset only |
+| `cursor`, `userSelect` | ✅ | Sortable headers |
+| `minWidth`, `maxWidth` | ✅ | Overflow/truncation |
+| `textAlign` | ✅ if deviates | Prefer `.wb-table-cell--numeric` for numbers |
+| `fontVariantNumeric` | ✅ | Tabular nums for numbers |
+| `fontSize` | ❌ | Use CSS variable |
+| `padding` | ❌ | Use CSS variable |
+| `background` | ❌ for sticky | Use `.wb-table-cell--sticky-left` class |
+| `borderBottom` | ❌ | Handled globally |
+| `verticalAlign` | ❌ | Handled globally |
+
+---
+
+## Class cheat sheet
+
+| Class | Use case |
+|-------|----------|
+| `wb-data-table` | Base — every table must have this |
+| `wb-data-table--products` | Products / matrix tables (catalog, orders, JAM, cost) |
+| `wb-data-table--compact` | Raw WB export tables (9px, minimal padding) |
+| `wb-data-table--product-sheet wb-data-table--advertising` | Advertising cluster table (7px, dense) |
+| `wb-table-cell--numeric` | Center-align + tabular nums for numeric columns |
+| `wb-table-cell--sticky-left` | **Mandatory for every sticky column cell** |
+| `wb-products-totals-row` | Summary/totals row (special background) |
+
+---
+
+## What NOT to do
+
+- Do NOT use `RawTableSection.styles.ts` `thStyle`/`tdStyle` to override font/padding
+- Do NOT use `position: sticky` inline without `wb-table-cell--sticky-left`
+- Do NOT add new `--compact` or `--advertising` modifiers without a strong reason
+- Do NOT create a new CSS file for table styles — everything goes in `styles.css`
+
+---
+
+## Enforcement
+
+This rule is evaluated whenever a PR touches files matching:
+- `Frontend/src/features/dashboard/**/*.tsx`
+- `Frontend/src/styles.css`
+- `Frontend/src/features/dashboard/**/*.styles.ts`

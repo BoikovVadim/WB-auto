@@ -9,6 +9,9 @@ import {
   Min,
 } from "class-validator";
 
+import { IsValidDateRange } from "../../common/validators/date-range.validator";
+
+@IsValidDateRange()
 export class GetProductSnapshotReadinessDto {
   @IsArray()
   @ArrayMinSize(1)

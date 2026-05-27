@@ -7,6 +7,60 @@ import {
 
 type WbClustersService = any;
 
+type PortalExportResult = {
+  workbookBuffer: Buffer;
+  downloadedFileName: string;
+  downloadedFilePath: string;
+  downloadedAt: string;
+  warnings?: string[];
+};
+
+async function trySafariPortalExport(
+  self: WbClustersService,
+  input: {
+    period: { from: string; to: string; timezone: string };
+    reportName: string;
+    warningMessages: string[];
+  },
+): Promise<PortalExportResult | null> {
+  if (!self.wbCmpSafariClient.isAvailable()) {
+    return null;
+  }
+  return self.tryCmpStep(
+    `seller portal free search analytics XLSX (Safari) for ${input.period.from}..${input.period.to}`,
+    () =>
+      self.wbCmpSafariClient.exportFreeSearchAnalyticsReport({
+        periodFrom: input.period.from,
+        periodTo: input.period.to,
+        reportName: input.reportName,
+      }),
+    input.warningMessages,
+  );
+}
+
+async function tryPlaywrightPortalExport(
+  self: WbClustersService,
+  input: {
+    period: { from: string; to: string; timezone: string };
+    reportName: string;
+    warningMessages: string[];
+  },
+): Promise<PortalExportResult | null> {
+  if (!self.wbSellerPortalPlaywrightClient.isAvailable()) {
+    return null;
+  }
+  return self.tryCmpStep(
+    `seller portal free search analytics XLSX (Playwright) for ${input.period.from}..${input.period.to}`,
+    () =>
+      self.wbSellerPortalPlaywrightClient.exportFreeSearchAnalyticsReport({
+        periodFrom: input.period.from,
+        periodTo: input.period.to,
+        reportName: input.reportName,
+      }),
+    input.warningMessages,
+  );
+}
+
 export async function syncFreePortalMonthlyFrequencyReport(
   self: WbClustersService,
   input: {
@@ -21,16 +75,12 @@ export async function syncFreePortalMonthlyFrequencyReport(
     to: input.period.to,
     randomSuffix: randomUUID().slice(0, 8),
   });
-  const downloadedReport = await self.tryCmpStep(
-    `seller portal free search analytics XLSX for ${input.period.from}..${input.period.to}`,
-    () =>
-      self.wbCmpSafariClient.exportFreeSearchAnalyticsReport({
-        periodFrom: input.period.from,
-        periodTo: input.period.to,
-        reportName,
-      }),
-    input.warningMessages,
-  );
+
+  // Try Safari first (macOS), then Playwright (Linux or macOS fallback).
+  const downloadedReport =
+    (await trySafariPortalExport(self, { ...input, reportName })) ??
+    (await tryPlaywrightPortalExport(self, { ...input, reportName }));
+
   if (!downloadedReport) {
     return false;
   }
@@ -60,6 +110,11 @@ export async function syncFreePortalMonthlyFrequencyReport(
     reportEndDate: input.period.to,
     rows,
   });
+
+  // Fresh frequency data just landed: bust the 20-min TTL caches so reads do
+  // not keep serving the previous snapshot until expiry (matches the manual
+  // sync/frequency-cache-bust endpoint behaviour).
+  self.clearAllFrequencyCaches();
 
   await self.wbClustersRepository.saveRawArchive({
     syncRunId: input.syncRunId,

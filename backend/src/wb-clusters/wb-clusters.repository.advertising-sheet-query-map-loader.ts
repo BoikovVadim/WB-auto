@@ -55,7 +55,7 @@ export abstract class WbClustersRepositoryAdvertisingSheetQueryMapLoader extends
           LEFT JOIN ${this.tableName("wb_cluster_stats")} s
           ON s.cluster_key = c.cluster_key
           LEFT JOIN ${this.tableName("wb_search_query_frequencies")} f
-          ON f.normalized_query_text = cq.normalized_query_text
+          ON ${this.buildFrequencyJoinCondition("f", "cq.normalized_query_text")}
           WHERE cq.nm_id = $1
           AND (
             cq.normalized_cluster_name = cq.normalized_query_text
@@ -131,7 +131,7 @@ export abstract class WbClustersRepositoryAdvertisingSheetQueryMapLoader extends
           LEFT JOIN ${this.tableName("wb_cluster_stats")} stats
           ON stats.cluster_key = exact_cluster.cluster_key
           LEFT JOIN ${this.tableName("wb_search_query_frequencies")} f
-          ON f.normalized_query_text = cq.normalized_query_text
+          ON ${this.buildFrequencyJoinCondition("f", "cq.normalized_query_text")}
           WHERE cq.nm_id = $1
           ORDER BY
           cq.advert_id,

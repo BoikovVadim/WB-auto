@@ -3,6 +3,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsDateString,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -34,6 +35,6 @@ export class MaterializeProductAdvertisingSheetsDto {
   endDate?: string;
 
   @IsOptional()
-  @IsString()
+  @IsIn(["visible", "candidate", "background"])
   priority?: "visible" | "candidate" | "background";
 }

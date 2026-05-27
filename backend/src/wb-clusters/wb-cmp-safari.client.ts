@@ -13,7 +13,7 @@ import { buildWordsClustersBrowserScript } from "./wb-cmp-safari.client.words-cl
 export class WbCmpSafariClient {
   private readonly logger = new Logger(WbCmpSafariClient.name);
   private readonly safariScriptTimeoutMs = 120_000;
-  private readonly sellerPortalDownloadWaitMs = 120_000;
+  private readonly sellerPortalDownloadWaitMs = 300_000;
   private readonly sellerPortalDownloadPollMs = 1_000;
   private readonly safariQueue = new SerialTaskQueue();
   private readonly reusableWindowRunner: ReusableSafariWindowRunner;

@@ -71,6 +71,7 @@ export interface ProductCatalogItem {
   name: string;
   brandName: string;
   subjectName: string;
+  categoryName: string | null;
   sourceExportRequestId: string | null;
   firstSeenAt: string | null;
   lastSeenAt: string | null;

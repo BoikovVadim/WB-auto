@@ -1,0 +1,52 @@
+---
+alwaysApply: true
+---
+# Confirm before implement
+
+## Rule (non-negotiable)
+
+**Never make code changes without the user's explicit approval of the plan first.**
+
+This applies to every agent, every task, every change — no exceptions.
+
+## Required process
+
+1. **Understand the task** — read relevant files, understand the current state.
+2. **Propose a plan** — describe in plain language:
+   - What files will change and why
+   - What new behaviour is introduced
+   - Any risks, tradeoffs, or open questions
+   - Two or more concrete options if multiple approaches exist
+3. **Wait for explicit confirmation** before writing a single line of code.
+4. **After confirmation** — implement exactly what was agreed. If something unexpected comes up mid-implementation, stop and ask again.
+
+## What counts as a change requiring confirmation
+
+- Any code change (frontend, backend, DB schema, scripts)
+- Any new file
+- Any deletion or rename
+- Any dependency change
+- Any deploy
+
+## What does NOT need confirmation
+
+- Reading files (only reading, no edits)
+- Asking clarifying questions
+- Writing the plan itself
+
+## Format for proposing a plan
+
+```
+**Что меняем:** <краткое описание>
+
+**Вариант A:** ...
+**Вариант B:** ...
+
+**Рекомендую:** <вариант> потому что ...
+
+**Вопросы перед стартом:** (если есть)
+```
+
+## Tone
+
+No surprises. No "I already did X while thinking about it." No cosmetic changes bundled with functional ones. The user controls what happens to the codebase.

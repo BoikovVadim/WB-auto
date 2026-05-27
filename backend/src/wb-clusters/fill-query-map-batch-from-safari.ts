@@ -48,10 +48,10 @@ async function loadCandidates(
       LEFT JOIN public.wb_cabinet_cluster_queries cq
         ON cq.advert_id = cp.advert_id
        AND cq.nm_id = cp.nm_id
+      WHERE c.campaign_status IN (9, 11)
       GROUP BY cp.advert_id, cp.nm_id, c.campaign_status
       ${missingOnlyClause}
       ORDER BY
-        CASE WHEN c.campaign_status IN (9, 11) THEN 0 ELSE 1 END,
         CASE WHEN COUNT(cq.cabinet_query_key) = 0 THEN 0 ELSE 1 END,
         MAX(cq.captured_at) ASC NULLS FIRST,
         cp.advert_id DESC,

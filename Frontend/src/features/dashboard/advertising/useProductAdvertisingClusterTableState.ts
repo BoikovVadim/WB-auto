@@ -1,8 +1,5 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import {
-  fetchProductAdvertisingWorkspaceBundle,
-} from "../../../api/syncClientAdvertisingRead";
 import type {
   ProductAdvertisingWorkspaceResponse,
 } from "../../../api/syncClient";
@@ -18,10 +15,9 @@ import {
 } from "./model";
 import {
   hasAdvertisingNumericFilters,
-  matchesAdvertisingNumericFilters,
+  toProductAdvertisingWorkspaceNumericFilters,
 } from "./advertisingModelFilters";
 import { advertisingClusterNumericFilterKeys } from "./clusterTableView";
-import { compareWorkspaceClusterRows } from "./productWorkspaceLocalView";
 import { isTransientActionSyncStatus } from "./snapshot";
 import { useAdvertisingCampaignSelection } from "./useAdvertisingCampaignSelection";
 import { useAdvertisingClusterColumnOrderState } from "./useAdvertisingClusterColumnOrderState";
@@ -29,7 +25,6 @@ import { useAdvertisingClusterNameWidthState } from "./useAdvertisingClusterName
 import { useAdvertisingClusterGroupSelection } from "./useAdvertisingClusterGroupSelection";
 import { useAdvertisingClusterTableControls } from "./useAdvertisingClusterTableControls";
 import {
-  computeClusterTotalsFromRows,
   getEmptyAdvertisingClusterTotals,
 } from "./advertisingClusterTableTotals";
 import type { ProductAdvertisingDetailRevisions } from "./productAdvertisingDetailInvalidation";
@@ -45,13 +40,23 @@ export function useProductAdvertisingClusterTableState(input: {
   dateRange: AdvertisingDateRange;
 }) {
   const { nmId, detailRevisions, workspace, dateRange } = input;
+  const [clusterFilterCountsByAdvert, setClusterFilterCountsByAdvert] = useState<
+    Map<number, { all: number; active: number; excluded: number }>
+  >(new Map());
+
+  useEffect(() => {
+    setClusterFilterCountsByAdvert(new Map());
+  }, [nmId]);
   const clusterTableRequestInput = useMemo(
     () => {
       const preferredRequestInput =
-        dateRange.start && dateRange.end
+        dateRange.start || dateRange.end
           ? {
-              startDate: formatCalendarDateValue(dateRange.start),
-              endDate: formatCalendarDateValue(dateRange.end),
+              // Нормализуем неполный диапазон (выбрана только одна дата):
+              // используем её же как start/end, чтобы запрос РК всегда
+              // переключался вместе с календарём и не залипал на workspace.range.
+              startDate: formatCalendarDateValue(dateRange.start ?? dateRange.end ?? new Date()),
+              endDate: formatCalendarDateValue(dateRange.end ?? dateRange.start ?? new Date()),
             }
           : null;
 
@@ -70,6 +75,7 @@ export function useProductAdvertisingClusterTableState(input: {
     campaignSummaries,
     clusterDailyStatsBounds,
     selectedCampaign,
+    selectedCampaignId,
     setSelectedCampaignId,
   } = useAdvertisingCampaignSelection(nmId, workspace);
   const {
@@ -90,6 +96,7 @@ export function useProductAdvertisingClusterTableState(input: {
     handleNumericFilterChange,
     applyNumericFilter,
   } = useAdvertisingClusterTableControls({
+    productNmId: nmId,
     selectedCampaignAdvertId: selectedCampaign?.advertId ?? null,
     tableRefreshKey: detailRevisions.table,
   });
@@ -100,6 +107,15 @@ export function useProductAdvertisingClusterTableState(input: {
     handleAdvertisingColumnDrop,
   } = useAdvertisingClusterColumnOrderState();
   const { clusterNameWidth, handleClusterNameWidthChange } = useAdvertisingClusterNameWidthState();
+  const requestNumericFilters = useMemo(
+    () => toProductAdvertisingWorkspaceNumericFilters(numericFilters),
+    [numericFilters],
+  );
+  // Allow the cluster table fetch to start in parallel with the workspace request
+  // for returning users: selectedCampaignId is already in sessionStorage so we
+  // don't have to wait for workspace.campaignTabs to arrive first.
+  // Falls back to selectedCampaign (resolved from workspace) for first-time visits.
+  const effectiveAdvertId = selectedCampaign?.advertId ?? selectedCampaignId;
   const bootstrapClusterTable = useMemo(() => {
     if (!workspace?.initialClusterTable || !selectedCampaign || clusterTableRequestInput === null) {
       return null;
@@ -118,10 +134,11 @@ export function useProductAdvertisingClusterTableState(input: {
     }
 
     const initialTable = workspace.initialClusterTable;
-    // Bootstrap валиден для любого statusFilter: мы всегда запрашиваем
-    // status:"all" на сервер, а фильтрация по active/excluded — клиентская.
     const isDefaultRequest =
       deferredClusterSearch.trim().length === 0 &&
+      deferredClusterNameSearch.trim().length === 0 &&
+      !hasAdvertisingNumericFilters(numericFilters, advertisingClusterNumericFilterKeys) &&
+      statusFilter === initialTable.appliedFilters.status &&
       sortState.key === "spend" &&
       sortState.direction === "desc" &&
       page === 1 &&
@@ -134,76 +151,42 @@ export function useProductAdvertisingClusterTableState(input: {
   }, [
     clusterTableRequestInput,
     deferredClusterSearch,
+    deferredClusterNameSearch,
+    numericFilters,
     page,
     pageSize,
     selectedCampaign,
+    statusFilter,
     sortState.direction,
     sortState.key,
-    workspace?.initialClusterTable,
-    workspace?.range,
+    workspace,
   ]);
-  // Один bundle-запрос загружает workspace + таблицы ВСЕХ РК за один round-trip.
-  // Backend выполняет все DB-читаемые параллельно и отдаёт один ответ.
-  // Это заменяет прежние N отдельных HTTP-запросов (по одному на РК) — теперь
-  // переключение между РК и смена дат мгновенны, так как данные уже в кеше.
-  const clusterTableRequestInputKey = JSON.stringify(clusterTableRequestInput);
-  useEffect(() => {
-    if (!nmId || !clusterTableRequestInput) return;
-    void fetchProductAdvertisingWorkspaceBundle(nmId, clusterTableRequestInput).catch(() => null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nmId, clusterTableRequestInputKey]);
-
   const {
     productAdvertisingClusterTable,
     productAdvertisingClusterTableError,
     isProductAdvertisingClusterTableLoading,
     isProductAdvertisingClusterTableRefreshing,
   } = useProductAdvertisingClusterTable({
-    active: nmId !== null && selectedCampaign !== null && clusterTableRequestInput !== null,
+    active: nmId !== null && effectiveAdvertId !== null && clusterTableRequestInput !== null,
     nmId,
-    advertId: selectedCampaign?.advertId ?? null,
+    advertId: effectiveAdvertId,
     requestInput: clusterTableRequestInput,
     search: deferredClusterSearch,
-    // Числовые фильтры, status и сортировка применяются клиентски (см. visibleClusterRows).
-    // Бэкенд всегда возвращает все строки в дефолтном порядке — один кэш-ключ на запрос.
-    status: "all",
-    sortKey: "spend",
-    sortDirection: "desc",
+    clusterNameSearch: deferredClusterNameSearch,
+    status: statusFilter,
+    numericFilters: requestNumericFilters,
+    sortKey: sortState.key,
+    sortDirection: sortState.direction,
     page,
     pageSize,
     refreshKey: detailRevisions.table,
     bootstrapTable: bootstrapClusterTable,
   });
 
-  const allClusterRows = useMemo(
+  const visibleClusterRows = useMemo(
     () => productAdvertisingClusterTable?.rows ?? [],
     [productAdvertisingClusterTable],
   );
-  // Клиентские фильтрация и сортировка: без запроса на бэкенд при смене фильтров/сортировки.
-  const visibleClusterRows = useMemo(() => {
-    let rows = allClusterRows;
-    if (statusFilter === "active") rows = rows.filter(isClusterActive);
-    else if (statusFilter === "excluded") rows = rows.filter(isClusterExcluded);
-    if (hasAdvertisingNumericFilters(numericFilters, advertisingClusterNumericFilterKeys)) {
-      rows = rows.filter((row) =>
-        matchesAdvertisingNumericFilters(row, numericFilters, advertisingClusterNumericFilterKeys),
-      );
-    }
-    // Фильтр только по названию кластера (поле "Кластер") — применяется клиентски,
-    // независимо от бэкендного поиска clusterSearch (поле "Запрос").
-    if (deferredClusterNameSearch.trim()) {
-      const needle = deferredClusterNameSearch.trim().toLocaleLowerCase("ru");
-      rows = rows.filter((row) =>
-        row.clusterName.toLocaleLowerCase("ru").includes(needle),
-      );
-    }
-    if (sortState.key !== "spend" || sortState.direction !== "desc") {
-      rows = [...rows].sort((left, right) =>
-        compareWorkspaceClusterRows(left, right, sortState.key, sortState.direction),
-      );
-    }
-    return rows;
-  }, [allClusterRows, statusFilter, numericFilters, deferredClusterNameSearch, sortState.key, sortState.direction]);
   const advertisingColumnWidths = useMemo(() => {
     const widths = buildAdvertisingClusterWidths(
       productAdvertisingClusterTable?.rows ?? visibleClusterRows,
@@ -214,15 +197,42 @@ export function useProductAdvertisingClusterTableState(input: {
     }
     return widths;
   }, [orderedAdvertisingColumns, productAdvertisingClusterTable?.rows, visibleClusterRows, clusterNameWidth]);
-  // Счётчики кластеров берём ТОЛЬКО из загруженной таблицы за актуальный период.
-  // rowsCount из workspace нельзя использовать как fallback: workspace строится за
-  // свой период дат, а таблица кластеров — за выбранный пользователем период.
-  // При несовпадении показывался бы неверный счётчик (748→306).
-  // При смене кампании или пока таблица не загружена — показываем 0.
+  useEffect(() => {
+    if (!productAdvertisingClusterTable) {
+      return;
+    }
+    setClusterFilterCountsByAdvert((currentValue) => {
+      const nextValue = new Map(currentValue);
+      nextValue.set(
+        productAdvertisingClusterTable.advertId,
+        productAdvertisingClusterTable.filterCounts,
+      );
+      return nextValue;
+    });
+  }, [productAdvertisingClusterTable]);
+
+  // Счётчики кластеров:
+  // 1) текущая таблица выбранной РК (самые точные для выбранного периода),
+  // 2) кэш последних загруженных filterCounts по advertId (чтобы не мигали в 0 при переключении РК),
+  // 3) summary из workspace по выбранной РК как мгновенный fallback до прихода таблицы.
   const isTableForCurrentCampaign =
     productAdvertisingClusterTable?.advertId === selectedCampaign?.advertId;
+  const cachedFilterCountsForSelectedCampaign =
+    selectedCampaign !== null
+      ? clusterFilterCountsByAdvert.get(selectedCampaign.advertId) ?? null
+      : null;
+  const summaryFilterCountsForSelectedCampaign =
+    selectedCampaign !== null
+      ? {
+          all: selectedCampaign.rowsCount,
+          active: selectedCampaign.totals.activeCount,
+          excluded: selectedCampaign.totals.excludedCount,
+        }
+      : null;
   const clusterFilterCounts =
     (isTableForCurrentCampaign ? productAdvertisingClusterTable?.filterCounts : null) ??
+    cachedFilterCountsForSelectedCampaign ??
+    summaryFilterCountsForSelectedCampaign ??
     { all: 0, active: 0, excluded: 0 };
   const isClusterTableLoading = isProductAdvertisingClusterTableLoading;
   // Ключ сброса выделения: меняется только при смене товара или кампании.
@@ -286,20 +296,10 @@ export function useProductAdvertisingClusterTableState(input: {
       ),
     [visibleClusterRows],
   );
-  // Итоги пересчитываются по видимым строкам при любом клиентском фильтре.
   const visibleClusterTotals = useMemo(() => {
     const currency = selectedCampaign?.currency ?? null;
-    if (!productAdvertisingClusterTable) {
-      return getEmptyAdvertisingClusterTotals(currency);
-    }
-    const hasClientFilter =
-      statusFilter !== "all" ||
-      hasAdvertisingNumericFilters(numericFilters, advertisingClusterNumericFilterKeys);
-    if (hasClientFilter) {
-      return computeClusterTotalsFromRows(visibleClusterRows, currency);
-    }
-    return productAdvertisingClusterTable.totals;
-  }, [productAdvertisingClusterTable, statusFilter, numericFilters, visibleClusterRows, selectedCampaign?.currency]);
+    return productAdvertisingClusterTable?.totals ?? getEmptyAdvertisingClusterTotals(currency);
+  }, [productAdvertisingClusterTable, selectedCampaign?.currency]);
   const selectedActiveClustersCount = selectedClusterRows.filter((row) =>
     isClusterActive(row),
   ).length;
@@ -312,18 +312,21 @@ export function useProductAdvertisingClusterTableState(input: {
   const canSubmitClusterAction =
     nmId !== null && selectedCampaign?.advertId !== null && selectedClusterRows.length > 0;
 
-  const pagination = useMemo(() => ({
-    page: productAdvertisingClusterTable?.pagination.page ?? 1,
-    pageSize: productAdvertisingClusterTable?.pagination.pageSize ?? pageSize,
-    // Фильтрация клиентская — pagination отражает отфильтрованное число строк.
-    totalRows: visibleClusterRows.length,
-    totalPages: Math.max(1, Math.ceil(visibleClusterRows.length / pageSize)),
-  }), [
-    productAdvertisingClusterTable?.pagination.page,
-    productAdvertisingClusterTable?.pagination.pageSize,
-    pageSize,
-    visibleClusterRows.length,
-  ]);
+  const pagination = useMemo(
+    () => ({
+      page: productAdvertisingClusterTable?.pagination.page ?? 1,
+      pageSize: productAdvertisingClusterTable?.pagination.pageSize ?? pageSize,
+      totalRows: productAdvertisingClusterTable?.pagination.totalRows ?? 0,
+      totalPages: productAdvertisingClusterTable?.pagination.totalPages ?? 1,
+    }),
+    [
+      pageSize,
+      productAdvertisingClusterTable?.pagination.page,
+      productAdvertisingClusterTable?.pagination.pageSize,
+      productAdvertisingClusterTable?.pagination.totalPages,
+      productAdvertisingClusterTable?.pagination.totalRows,
+    ],
+  );
 
   const handlePageChange = useCallback((nextPage: number) => {
     setPage(nextPage);
@@ -354,6 +357,7 @@ export function useProductAdvertisingClusterTableState(input: {
     clusterNameSearch,
     setClusterNameSearch,
     numericFilters,
+    requestNumericFilters,
     handleNumericFilterChange,
     applyNumericFilter,
     visibleClusterTotals,

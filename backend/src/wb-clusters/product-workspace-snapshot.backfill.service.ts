@@ -16,13 +16,9 @@ export class ProductWorkspaceSnapshotBackfillService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    windowSafeSetTimeout(() => {
-      void this.backfillMissingWorkspaceSnapshots().catch((error: unknown) => {
-        const message =
-          error instanceof Error ? error.message : "Unknown workspace snapshot backfill error";
-        this.logger.error(`Unable to backfill workspace snapshots on startup: ${message}`);
-      });
-    }, startupWorkspaceBackfillDelayMs);
+    // Startup workspace backfill отключён: система использует SQL-direct path.
+    // Пересборка workspace снапшотов при старте не нужна и вызывала OOM-краши.
+    this.logger.log("Startup workspace snapshot backfill is disabled; SQL-direct path is active.");
   }
 
   async backfillMissingWorkspaceSnapshots() {

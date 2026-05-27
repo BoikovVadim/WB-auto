@@ -17,12 +17,6 @@ import {
   normalizeDisplayedBid,
   parseBidDraftValue,
 } from "./clusterTableView";
-import {
-  applyClusterBidResponsePatch,
-  applyOptimisticClusterBidPatch,
-  captureProductAdvertisingDetailCacheSnapshot,
-  restoreProductAdvertisingDetailCacheSnapshot,
-} from "./productAdvertisingOptimisticCaches";
 
 export function useAdvertisingClusterBidEditing(input: {
   nmId: number | null;
@@ -114,64 +108,26 @@ export function useAdvertisingClusterBidEditing(input: {
       setSavingBidClusterKey(clusterKey);
       setSavingBidValue(parsedBid);
       setBidErrorMessage(null);
-      const snapshot = captureProductAdvertisingDetailCacheSnapshot({
-        nmId,
-        advertId: row.advertId,
-        requestInput,
-      });
-      applyOptimisticClusterBidPatch({
-        nmId,
-        advertId: row.advertId,
-        requestInput,
-        row,
-        bid: parsedBid,
-      });
       if (!options?.preserveActiveEditor) {
         setEditingBidClusterKey(null);
         setEditingBidDraft("");
       }
-      // NOTE: We intentionally do NOT call onReloadSheet before the API request
-      // completes. Calling it here would bump the revision counter, which triggers
-      // doFetch() in the cluster table hook. That fetch races against the save
-      // request and can return stale server data (old bid) that overwrites the
-      // optimistic update. Instead we show savingBidValue in the cell directly.
       try {
-        const response = await applyProductAdvertisingClusterBid(
+        await applyProductAdvertisingClusterBid(
           nmId,
           row.advertId,
           row.clusterName,
           parsedBid,
         );
-        applyClusterBidResponsePatch({
-          nmId,
-          requestInput,
-          response,
-        });
-        // Keep the optimistically-patched cache intact — do NOT invalidate it here.
-        // applyClusterBidResponsePatch already wrote the new bid + pending status into
-        // all relevant cache entries. Passing invalidateCaches:false lets the table
-        // reuse that cache immediately (no refreshing-overlay, no pointer-events:none).
-        void onReloadSheet({
+        await onReloadSheet({
           advertId: row.advertId,
           target: "detail",
-          invalidateCaches: false,
         });
-        // После write-pass бэкенд инвалидирует кэш cluster-table.
-        // target:"detail" перезапрашивает таблицу (и workspace), чтобы показать
-        // новый bid_sync_status и галочку ✓ сразу после подтверждения на WB.
-        window.setTimeout(() => void onReloadSheet({ target: "detail" }), 1_500);
-        window.setTimeout(() => void onReloadSheet({ target: "detail" }), 4_000);
       } catch (requestError) {
-        restoreProductAdvertisingDetailCacheSnapshot({
-          nmId,
-          requestInput,
-          snapshot,
-        });
         if (!options?.preserveActiveEditor) {
           setEditingBidClusterKey(clusterKey);
           setEditingBidDraft(draftValue);
         }
-        void onReloadSheet({ advertId: row.advertId, target: "detail", invalidateCaches: false });
         setBidErrorMessage(getSafeMessage(requestError, ui.advertisingBidSaveError));
       } finally {
         setSavingBidClusterKey(null);

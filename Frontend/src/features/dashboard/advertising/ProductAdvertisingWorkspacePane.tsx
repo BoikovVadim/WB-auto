@@ -4,46 +4,13 @@ import type { ProductAdvertisingWorkspaceResponse } from "../../../api/syncClien
 import { ui } from "../copy";
 import type { AdvertisingDateRange } from "./date";
 import type { ProductAdvertisingDetailRevisions } from "./productAdvertisingDetailInvalidation";
+import {
+  loadWorkspaceScroll,
+  saveWorkspaceScroll,
+} from "./productAdvertisingWorkspaceScroll";
 import { ProductAdvertisingClusterTableSection } from "./ProductAdvertisingClusterTableSection";
 import { ProductAdvertisingWorkspaceState } from "./ProductAdvertisingWorkspaceState";
 import { useProductAdvertisingClusterSectionState } from "./useProductAdvertisingClusterSectionState";
-
-function workspaceScrollKey(nmId: number | null) {
-  return `wb-scroll:workspace-${nmId ?? "unknown"}`;
-}
-
-function saveWorkspaceScroll(nmId: number | null, top: number) {
-  try {
-    sessionStorage.setItem(workspaceScrollKey(nmId), String(Math.round(top)));
-  } catch {
-    // ignore
-  }
-}
-
-function loadWorkspaceScroll(nmId: number | null): number {
-  try {
-    const raw = sessionStorage.getItem(workspaceScrollKey(nmId));
-    if (!raw) return 0;
-    const n = Number(raw);
-    return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
-  } catch {
-    return 0;
-  }
-}
-
-/**
- * Clears the saved scroll position for a product.
- * Call this when navigating TO a product from the product list so the view
- * always starts at the top (showing all campaigns). On page refresh the
- * position is NOT cleared, so the user returns to where they were.
- */
-export function clearWorkspaceScrollForProduct(nmId: number | null) {
-  try {
-    sessionStorage.removeItem(workspaceScrollKey(nmId));
-  } catch {
-    // ignore
-  }
-}
 
 export function ProductAdvertisingWorkspacePane(props: {
   nmId: number | null;
@@ -79,17 +46,17 @@ export function ProductAdvertisingWorkspacePane(props: {
         </div>
       );
     }
-    if (props.isWorkspaceLoading) {
-      return (
-        <div className="wb-products-page">
-          <ProductAdvertisingWorkspaceState
-            title={ui.campaignOverviewTitle}
-            message="Загружаем данные кампаний…"
-          />
-        </div>
-      );
-    }
-    return null;
+    // Показываем индикатор загрузки всегда пока workspace=null, независимо от
+    // флага isWorkspaceLoading. Это предотвращает пустую страницу при тихих
+    // ошибках (503/502/network) когда error=null, loading=false, workspace=null.
+    return (
+      <div className="wb-products-page">
+        <ProductAdvertisingWorkspaceState
+          title={ui.campaignOverviewTitle}
+          message="Загружаем данные кампаний…"
+        />
+      </div>
+    );
   }
 
   return <ProductAdvertisingWorkspaceContent {...props} />;
@@ -134,8 +101,6 @@ function ProductAdvertisingWorkspaceContent(props: {
     if (saved > 0) {
       el.scrollTop = saved;
     }
-  // Run only once on mount per nmId change.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nmId]);
 
   // Persist scroll position on scroll.
@@ -150,7 +115,10 @@ function ProductAdvertisingWorkspaceContent(props: {
   return (
     <div className="wb-products-page">
       <section ref={sectionRef} className="wb-product-workspace">
-        <ProductAdvertisingClusterTableSection {...sectionProps} />
+        <ProductAdvertisingClusterTableSection
+          {...sectionProps}
+          isWorkspaceLoading={props.isWorkspaceLoading}
+        />
       </section>
     </div>
   );

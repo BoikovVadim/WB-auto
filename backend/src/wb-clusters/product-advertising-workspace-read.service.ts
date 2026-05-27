@@ -41,6 +41,7 @@ export class ProductAdvertisingWorkspaceReadService {
     advertId: number;
     status?: Parameters<typeof buildProductAdvertisingWorkspaceTableResponse>[0]["status"];
     search?: string;
+    clusterNameSearch?: string;
     numericFilters?: string;
     sortKey?: Parameters<typeof buildProductAdvertisingWorkspaceTableResponse>[0]["sortKey"];
     sortDirection?: Parameters<typeof buildProductAdvertisingWorkspaceTableResponse>[0]["sortDirection"];
@@ -57,6 +58,7 @@ export class ProductAdvertisingWorkspaceReadService {
       advertId: input.advertId,
       status: input.status ?? "all",
       search: input.search ?? "",
+      clusterNameSearch: input.clusterNameSearch ?? "",
       numericFilters: this.normalizeWorkspaceClusterNumericFilters(input.numericFilters),
       sortKey: input.sortKey ?? "spend",
       sortDirection: input.sortDirection ?? "desc",

@@ -1,6 +1,8 @@
 export type MonthlyFrequencyRow = {
   queryText: string;
   monthlyFrequency: number;
+  /** Subject name as it appears in the WB analytics XLSX "Предмет" column, if present. */
+  subjectName?: string | null;
 };
 
 export interface SellerAnalyticsReportCandidate {

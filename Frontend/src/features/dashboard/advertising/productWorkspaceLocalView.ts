@@ -6,6 +6,7 @@ import type {
 } from "../../../api/syncClient";
 import {
   getAdvertisingCostPerThousand,
+  getAdvertisingCpoOrSpend,
   getAdvertisingMoneyPerAction,
   getAdvertisingOrderedItems,
   getAdvertisingRatio,
@@ -42,7 +43,14 @@ export function buildLocalWorkspaceClusterTableResponse(input: {
 export function buildWorkspaceClusterTableView(input: {
   snapshot: Pick<
     ProductAdvertisingWorkspaceClusterTableResponse,
-    "nmId" | "advertId" | "checkedAt" | "readiness" | "rows" | "querySearchIndex" | "filterCounts"
+    | "nmId"
+    | "advertId"
+    | "checkedAt"
+    | "revision"
+    | "readiness"
+    | "rows"
+    | "querySearchIndex"
+    | "filterCounts"
   >;
   search: string;
   status: ProductAdvertisingWorkspaceClusterTableResponse["appliedFilters"]["status"];
@@ -53,7 +61,7 @@ export function buildWorkspaceClusterTableView(input: {
   pageSize: number;
 }): ProductAdvertisingWorkspaceClusterTableResponse {
   const searchValue = input.search.trim();
-  const querySearchIndex = new Map(Object.entries(input.snapshot.querySearchIndex));
+  const querySearchIndex = new Map(Object.entries(input.snapshot.querySearchIndex ?? {}));
   const filteredRows = input.snapshot.rows
     .filter((row) => matchesClusterStatusFilter(row, input.status))
     .filter((row) => matchesClusterSearch(row, searchValue, querySearchIndex))
@@ -75,6 +83,7 @@ export function buildWorkspaceClusterTableView(input: {
     totalsScope: "filtered_population",
     appliedFilters: {
       search: searchValue,
+      clusterNameSearch: "",
       status: input.status,
       numericFilters: input.numericFilters,
     },
@@ -106,7 +115,14 @@ export function buildLocalWorkspaceClusterQueriesResponse(input: {
 export function buildWorkspaceClusterQueriesView(input: {
   snapshot: Pick<
     ProductAdvertisingWorkspaceClusterQueriesResponse,
-    "nmId" | "advertId" | "clusterKey" | "clusterName" | "checkedAt" | "readiness" | "queries"
+    | "nmId"
+    | "advertId"
+    | "clusterKey"
+    | "clusterName"
+    | "checkedAt"
+    | "revision"
+    | "readiness"
+    | "queries"
   >;
   sortKey: ProductAdvertisingWorkspaceClusterQueriesResponse["sort"]["key"];
   sortDirection: ProductAdvertisingWorkspaceClusterQueriesResponse["sort"]["direction"];
@@ -220,7 +236,7 @@ function readClusterMetricValue(
     case "cpm":
       return row.cpm;
     case "cpo":
-      return getAdvertisingMoneyPerAction(row.spend, getAdvertisingOrderedItems(row));
+      return getAdvertisingCpoOrSpend(row.spend, getAdvertisingOrderedItems(row));
     case "viewToOrder":
       return getAdvertisingRatio(getAdvertisingOrderedItems(row), row.views);
     case "spend":
@@ -286,7 +302,7 @@ function buildClusterTableTotals(
     avgPosition: averageNullableNumbers(rows.map((row) => row.avgPosition)),
     cpc: getAdvertisingMoneyPerAction(spend, clicks),
     cpm: getAdvertisingCostPerThousand(spend, views),
-    cpo: getAdvertisingMoneyPerAction(spend, orders),
+    cpo: getAdvertisingCpoOrSpend(spend, orders),
     viewToOrder: getAdvertisingRatio(orders, views),
     spend,
     currency:

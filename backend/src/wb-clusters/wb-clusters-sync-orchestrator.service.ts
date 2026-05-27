@@ -131,19 +131,6 @@ export class WbClustersSyncOrchestratorService {
         });
       }
 
-      if (mode === "full" && appEnv.wbPromotionEnableJamInFullSync && warmupNmIds.size > 0) {
-        try {
-          await runtime.runJamSyncForNmIds(Array.from(warmupNmIds), warningMessages);
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : "Unknown Jam sync error";
-          this.logger.warn(
-            `Jam sync failed during ${trigger} ${mode} cluster sync; continuing with materialization. ${message}`,
-          );
-          warningMessages.push(`Jam sync failed but product advertising sync continued: ${message}`);
-        }
-      }
-
       if (warmupNmIds.size > 0) {
         await runtime.materializeProductAdvertisingSheets(
           Array.from(warmupNmIds),
