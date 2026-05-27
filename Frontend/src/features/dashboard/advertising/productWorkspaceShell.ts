@@ -18,7 +18,6 @@ import {
   isClusterExcluded,
 } from "./model";
 import { getAdvertisingSourcePriority } from "./advertisingModelStatus";
-import { normalizeAdvertisingText } from "./snapshot";
 
 type WorkspaceShellClusterRow = ProductAdvertisingSheetResponse["clusters"][number];
 
@@ -470,10 +469,7 @@ function isWorkspaceShellDisplayCluster(row: WorkspaceShellClusterRow) {
 }
 
 function normalizeWorkspaceShellText(value: string) {
-  // Single source of truth for cluster-identity normalization (matches the
-  // backend normalizeQuery). Previously this only lowercased, so it disagreed
-  // with the snapshot-layer normalizer and split/merged clusters inconsistently.
-  return normalizeAdvertisingText(value);
+  return value.trim().toLocaleLowerCase("ru");
 }
 
 function pickPreferredNullableNumber(

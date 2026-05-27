@@ -175,12 +175,7 @@ export abstract class WbClustersRepositoryBase {
     sourceKind: ClusterSourceKind,
     advertId?: number | null,
   ) {
-    // Must match the normalized_cluster_name column (written via normalizeQuery)
-    // and every JOIN/dedup, which keep punctuation. Using the punctuation-stripping
-    // normalizeAdvertisingIdentity here collapsed names like "клетка-переноска" and
-    // "клетка переноска" onto the same key, so one silently overwrote the other in
-    // wb_clusters while the rest of the system treated them as distinct.
-    const normalized = this.normalizeQuery(clusterName);
+    const normalized = this.normalizeAdvertisingIdentity(clusterName);
     // Stats clusters are product-scoped (shared across campaigns).
     // Active/excluded clusters are campaign-scoped to prevent cross-campaign key collisions
     // when multiple campaigns for the same product share cluster names.
