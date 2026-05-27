@@ -107,6 +107,11 @@ export abstract class WbClustersRepositoryClusterQueryPersistence extends WbClus
       for (const row of input.rows) {
         const normalizedClusterName = this.normalizeQuery(row.clusterName);
         const normalizedQueryText = this.normalizeQuery(row.queryText);
+        // Punctuation-stripped identity used to match wb_search_query_frequencies,
+        // whose normalized_query_identity column is written with the same algorithm.
+        // normalizeQuery keeps punctuation, so it never matched the frequency report
+        // (e.g. "чехол s24+" vs "чехол s24"); identity matching fixes that.
+        const normalizedQueryIdentity = this.normalizeAdvertisingIdentity(row.queryText);
         const rowKey = `${normalizedClusterName}:${normalizedQueryText}`;
         if (seenRows.has(rowKey)) {
           continue;
@@ -128,15 +133,16 @@ export abstract class WbClustersRepositoryClusterQueryPersistence extends WbClus
               normalized_cluster_name,
               query_text,
               normalized_query_text,
+              normalized_query_identity,
               capture_mode,
               source_endpoint,
               captured_at,
               synced_at,
               monthly_frequency
             ) VALUES (
-              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,NOW(),
+              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::timestamptz,NOW(),
               (SELECT monthly_frequency FROM ${this.tableName("wb_search_query_frequencies")}
-               WHERE normalized_query_text = $7 LIMIT 1)
+               WHERE normalized_query_identity = $8 LIMIT 1)
             )
             ON CONFLICT (cabinet_query_key) DO UPDATE
             SET
@@ -144,6 +150,7 @@ export abstract class WbClustersRepositoryClusterQueryPersistence extends WbClus
               normalized_cluster_name = EXCLUDED.normalized_cluster_name,
               query_text = EXCLUDED.query_text,
               normalized_query_text = EXCLUDED.normalized_query_text,
+              normalized_query_identity = EXCLUDED.normalized_query_identity,
               capture_mode = EXCLUDED.capture_mode,
               source_endpoint = EXCLUDED.source_endpoint,
               captured_at = EXCLUDED.captured_at,
@@ -158,6 +165,7 @@ export abstract class WbClustersRepositoryClusterQueryPersistence extends WbClus
             normalizedClusterName,
             row.queryText,
             normalizedQueryText,
+            normalizedQueryIdentity,
             input.captureMode,
             input.sourceEndpoint,
             input.capturedAt,

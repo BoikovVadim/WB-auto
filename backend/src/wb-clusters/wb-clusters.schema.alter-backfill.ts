@@ -501,5 +501,16 @@ export function getMonthlyFrequencyAlterStatements({
       ALTER TABLE ${tableName("wb_search_query_frequencies")}
       ALTER COLUMN normalized_query_stem SET NOT NULL
     `,
+    // Cabinet queries previously matched frequency on normalized_query_text (which
+    // keeps punctuation) and so almost never matched the report. Add a
+    // punctuation-stripped identity column that mirrors
+    // wb_search_query_frequencies.normalized_query_identity. New rows populate it on
+    // import; existing rows are backfilled off the hot path by the monthly frequency
+    // import job (see backfillCabinetQueryIdentity) — NOT here, because this migration
+    // runs lazily on first repository use and an 8M-row rewrite must not block a request.
+    `
+      ALTER TABLE ${tableName("wb_cabinet_cluster_queries")}
+      ADD COLUMN IF NOT EXISTS normalized_query_identity TEXT NULL
+    `,
   ];
 }

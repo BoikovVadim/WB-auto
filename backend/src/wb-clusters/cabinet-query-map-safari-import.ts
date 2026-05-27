@@ -106,6 +106,7 @@ export async function replaceCabinetQueryMapRows(
   const normalizedClusterNames: string[] = [];
   const queryTexts: string[] = [];
   const normalizedQueryTexts: string[] = [];
+  const normalizedQueryIdentities: string[] = [];
 
   for (const [normalizedQueryText, best] of bestByQueryText) {
     // Key no longer includes cluster name — one stable key per (advertId, nmId, query).
@@ -114,6 +115,7 @@ export async function replaceCabinetQueryMapRows(
     normalizedClusterNames.push(best.normalizedClusterName);
     queryTexts.push(best.queryText);
     normalizedQueryTexts.push(normalizedQueryText);
+    normalizedQueryIdentities.push(normalizeCabinetQueryMapIdentity(best.queryText));
   }
 
   await client.query("BEGIN");
@@ -129,14 +131,14 @@ export async function replaceCabinetQueryMapRows(
           INSERT INTO public.wb_cabinet_cluster_queries (
             cabinet_query_key, advert_id, nm_id,
             cluster_name, normalized_cluster_name,
-            query_text, normalized_query_text,
+            query_text, normalized_query_text, normalized_query_identity,
             capture_mode, source_endpoint, captured_at, synced_at,
             monthly_frequency
           )
           SELECT
             u.cabinet_query_key, $2, $3,
             u.cluster_name, u.normalized_cluster_name,
-            u.query_text, u.normalized_query_text,
+            u.query_text, u.normalized_query_text, u.normalized_query_identity,
             $8, $9, $10::timestamptz, NOW(),
             f.monthly_frequency
           FROM (
@@ -145,20 +147,22 @@ export async function replaceCabinetQueryMapRows(
               UNNEST($4::text[]) AS cluster_name,
               UNNEST($5::text[]) AS normalized_cluster_name,
               UNNEST($6::text[]) AS query_text,
-              UNNEST($7::text[]) AS normalized_query_text
+              UNNEST($7::text[]) AS normalized_query_text,
+              UNNEST($11::text[]) AS normalized_query_identity
           ) u
           LEFT JOIN public.wb_search_query_frequencies f
-            ON f.normalized_query_text = u.normalized_query_text
+            ON f.normalized_query_identity = u.normalized_query_identity
           ON CONFLICT (nm_id, advert_id, normalized_query_text) DO UPDATE SET
-            cabinet_query_key       = EXCLUDED.cabinet_query_key,
-            cluster_name            = EXCLUDED.cluster_name,
-            normalized_cluster_name = EXCLUDED.normalized_cluster_name,
-            query_text              = EXCLUDED.query_text,
-            capture_mode            = EXCLUDED.capture_mode,
-            source_endpoint         = EXCLUDED.source_endpoint,
-            captured_at             = EXCLUDED.captured_at,
-            synced_at               = NOW(),
-            monthly_frequency       = COALESCE(EXCLUDED.monthly_frequency, public.wb_cabinet_cluster_queries.monthly_frequency)
+            cabinet_query_key         = EXCLUDED.cabinet_query_key,
+            cluster_name              = EXCLUDED.cluster_name,
+            normalized_cluster_name   = EXCLUDED.normalized_cluster_name,
+            query_text                = EXCLUDED.query_text,
+            normalized_query_identity = EXCLUDED.normalized_query_identity,
+            capture_mode              = EXCLUDED.capture_mode,
+            source_endpoint           = EXCLUDED.source_endpoint,
+            captured_at               = EXCLUDED.captured_at,
+            synced_at                 = NOW(),
+            monthly_frequency         = COALESCE(EXCLUDED.monthly_frequency, public.wb_cabinet_cluster_queries.monthly_frequency)
         `,
         [
           keys,
@@ -171,6 +175,7 @@ export async function replaceCabinetQueryMapRows(
           input.captureMode,
           input.sourceEndpoint,
           input.capturedAt,
+          normalizedQueryIdentities,
         ],
       );
     }
@@ -185,4 +190,16 @@ export async function replaceCabinetQueryMapRows(
 
 function normalizeCabinetQueryMapText(value: string) {
   return value.trim().toLocaleLowerCase("ru").replace(/\s+/g, " ");
+}
+
+// Punctuation-stripped identity used to match wb_search_query_frequencies. Must stay
+// byte-for-byte identical to normalizeAdvertisingIdentity() (write-lanes / monthly
+// frequency import), which writes that table's normalized_query_identity column —
+// note there is intentionally no final trim, so edge spaces match the report 1:1.
+function normalizeCabinetQueryMapIdentity(value: string) {
+  return value
+    .trim()
+    .toLocaleLowerCase("ru")
+    .replace(/[_/\\|.,:;!?()[\]{}"'+=*%#№@`~^&-]+/g, " ")
+    .replace(/\s+/g, " ");
 }
