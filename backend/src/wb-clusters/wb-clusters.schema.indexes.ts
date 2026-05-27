@@ -112,6 +112,11 @@ export function getIndexStatements({
       CREATE INDEX IF NOT EXISTS wb_search_query_freq_norm_identity_idx
       ON ${tableName("wb_search_query_frequencies")} (normalized_query_identity)
     `,
+    // Backs the cabinet<->frequency identity match (per-import lookup + weekly backfill).
+    `
+      CREATE INDEX CONCURRENTLY IF NOT EXISTS wb_cabinet_cluster_queries_norm_identity_idx
+      ON ${tableName("wb_cabinet_cluster_queries")} (normalized_query_identity)
+    `,
     `
       CREATE INDEX IF NOT EXISTS wb_search_query_freq_norm_stem_idx
       ON ${tableName("wb_search_query_frequencies")} (normalized_query_stem)

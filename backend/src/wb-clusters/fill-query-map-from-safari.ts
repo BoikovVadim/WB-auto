@@ -23,6 +23,17 @@ function normalize(value: string) {
   return value.trim().toLocaleLowerCase("ru").replace(/\s+/g, " ");
 }
 
+// Punctuation-stripped identity used to match wb_search_query_frequencies; must stay
+// identical to normalizeAdvertisingIdentity() (no final trim — edge spaces match the
+// report column 1:1).
+function normalizeIdentity(value: string) {
+  return value
+    .trim()
+    .toLocaleLowerCase("ru")
+    .replace(/[_/\\|.,:;!?()[\]{}"'+=*%#№@`~^&-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
 async function exportWordsClusters(advertId: number, nmId: number) {
   const safariClient = new WbCmpSafariClient();
   return safariClient.exportWordsClusters(advertId, nmId);
@@ -116,6 +127,7 @@ async function replaceCabinetClusterQueries(
     for (const row of rows) {
       const normalizedClusterName = normalize(row.clusterName);
       const normalizedQueryText = normalize(row.queryText);
+      const normalizedQueryIdentity = normalizeIdentity(row.queryText);
       const cabinetQueryKey = `${advertId}:${nmId}:cabinet:${normalizedClusterName}:${normalizedQueryText}`;
       await client.query(
         `
@@ -127,21 +139,23 @@ async function replaceCabinetClusterQueries(
             normalized_cluster_name,
             query_text,
             normalized_query_text,
+            normalized_query_identity,
             capture_mode,
             source_endpoint,
             captured_at,
             synced_at,
             monthly_frequency
           )
-          SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,NOW(), f.monthly_frequency
+          SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::timestamptz,NOW(), f.monthly_frequency
           FROM (SELECT 1) dummy
-          LEFT JOIN public.wb_search_query_frequencies f ON f.normalized_query_text = $7
+          LEFT JOIN public.wb_search_query_frequencies f ON f.normalized_query_identity = $8
           ON CONFLICT (cabinet_query_key) DO UPDATE
           SET
             cluster_name = EXCLUDED.cluster_name,
             normalized_cluster_name = EXCLUDED.normalized_cluster_name,
             query_text = EXCLUDED.query_text,
             normalized_query_text = EXCLUDED.normalized_query_text,
+            normalized_query_identity = EXCLUDED.normalized_query_identity,
             capture_mode = EXCLUDED.capture_mode,
             source_endpoint = EXCLUDED.source_endpoint,
             captured_at = EXCLUDED.captured_at,
@@ -156,6 +170,7 @@ async function replaceCabinetClusterQueries(
           normalizedClusterName,
           row.queryText,
           normalizedQueryText,
+          normalizedQueryIdentity,
           "safari-single-tab-words-clusters",
           `/api/v5/words-clusters?advertID=${advertId}`,
           capturedAt,
