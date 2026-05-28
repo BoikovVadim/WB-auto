@@ -91,6 +91,7 @@ type WbDashboardShellProps = {
   isCostPricesLoading: boolean;
   costPrices: Map<number, import("./DashboardCatalogProductsSection").CostPriceCurrent>;
   orderCounts: Map<number, import("../../api/syncClientOrders").TodayOrderCount>;
+  stockCounts: Map<number, number>;
   isOrdersSheetOpen: boolean;
   isJamSheetOpen: boolean;
   isStocksSheetOpen: boolean;
@@ -176,6 +177,7 @@ export function WbDashboardShell({
   isCostPricesLoading,
   costPrices,
   orderCounts,
+  stockCounts,
   isOrdersSheetOpen,
   isJamSheetOpen,
   isStocksSheetOpen,
@@ -333,6 +335,7 @@ export function WbDashboardShell({
                 productsSortDirection={productsSortDirection}
                 costPrices={costPrices}
                 orderCounts={orderCounts}
+                stockCounts={stockCounts}
                 onProductsSearchChange={onProductsSearchChange}
                 onProductsSortToggle={onProductsSortToggle}
                 onOpenCostPriceSheet={onOpenCostPriceSheet}

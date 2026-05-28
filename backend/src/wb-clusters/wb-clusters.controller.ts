@@ -442,6 +442,11 @@ export class WbClustersController {
     return { status: "started", mode: "csv-7-days" };
   }
 
+  @Get("products/latest-stocks")
+  getLatestStocks() {
+    return this.wbClustersService.getLatestStocks();
+  }
+
   @Get("products/stocks-matrix")
   getStocksMatrix() {
     return this.wbClustersService.getStocksMatrix();

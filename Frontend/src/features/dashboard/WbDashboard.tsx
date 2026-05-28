@@ -41,6 +41,7 @@ import {
 import { WbDashboardShell } from "./WbDashboardShell";
 import { useCostPrices } from "./useCostPrices";
 import { useOrders } from "./useOrders";
+import { useCurrentStocks } from "./useCurrentStocks";
 import { useDashboardBootstrap } from "./useDashboardBootstrap";
 import { useDashboardBrowserEffects } from "./useDashboardBrowserEffects";
 import { useDashboardExportView } from "./useDashboardExportView";
@@ -131,6 +132,7 @@ export function WbDashboard() {
   const isStocksSheetOpen    = activeSection === "catalog-products" && activeSheet === "stocks";
   const { costPrices, isCostPricesLoading, prefetchCostPrices, handleCostSaved, handleCostCleared } = useCostPrices();
   const { orderCounts } = useOrders();
+  const { stockCounts } = useCurrentStocks();
   const invalidateProductAdvertisingDetail = useCallback(
     (target: ProductAdvertisingDetailInvalidationTarget = "all") => {
       setProductAdvertisingDetailRevisions((currentValue) =>
@@ -460,6 +462,7 @@ export function WbDashboard() {
       isJamSheetOpen={isJamSheetOpen}
       isStocksSheetOpen={isStocksSheetOpen}
       orderCounts={orderCounts}
+      stockCounts={stockCounts}
       isCostPricesLoading={isCostPricesLoading}
       costPrices={costPrices}
       onOpenCostPriceSheet={() => { setActiveSheet("cost-price"); }}

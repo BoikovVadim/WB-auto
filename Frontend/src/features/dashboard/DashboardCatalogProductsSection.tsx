@@ -23,6 +23,7 @@ type DashboardCatalogProductsSectionProps = {
   productsSortDirection: "asc" | "desc";
   costPrices: Map<number, CostPriceCurrent>;
   orderCounts: Map<number, TodayOrderCount>;
+  stockCounts: Map<number, number>;
   onProductsSearchChange: (value: string) => void;
   onProductsSortToggle: (key: ProductListSortKey) => void;
   onOpenCostPriceSheet: () => void;
@@ -516,6 +517,7 @@ export const DashboardCatalogProductsSection = memo(
                       props.filteredProducts.map((product, index) => {
                         const cost = product.nmId !== null ? props.costPrices.get(product.nmId) : undefined;
                         const orders = product.nmId !== null ? props.orderCounts.get(product.nmId) : undefined;
+                        const stock = product.nmId !== null ? props.stockCounts.get(product.nmId) : undefined;
                         const nmId = product.nmId;
                         const isSelected = nmId !== null && selectedNmIds.has(nmId);
                         const isEditing = nmId !== null && editingNmId === nmId;
@@ -564,8 +566,8 @@ export const DashboardCatalogProductsSection = memo(
                             <td className="wb-table-cell--numeric" style={{ color: "var(--wb-text-muted, #888)", fontSize: 11 }}>
                               ↗
                             </td>
-                            <td className="wb-table-cell--numeric" style={{ color: "var(--wb-text-muted, #888)", fontSize: 11 }}>
-                              ↗
+                            <td className="wb-table-cell--numeric">
+                              {stock !== undefined ? String(stock) : "—"}
                             </td>
                           </tr>
                         );

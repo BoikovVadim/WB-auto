@@ -593,6 +593,13 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     this.logger.log(`Stocks snapshot done: ${rows.length} products saved for ${stockDate}`);
   }
 
+  /** Returns latest stock quantity per nmId (for the inline table column). */
+  async getLatestStocks(): Promise<{ nmId: number; quantity: number }[]> {
+    if (!this.wbClustersRepository.isConfigured()) return [];
+    await this.wbClustersRepository.ensureSchema();
+    return this.wbClustersRepository.getLatestStocks();
+  }
+
   /** Returns the full stocks matrix (all dates × all products) for the frontend. */
   async getStocksMatrix(): Promise<{ nmId: number; stockDate: string; quantity: number }[]> {
     if (!this.wbClustersRepository.isConfigured()) return [];

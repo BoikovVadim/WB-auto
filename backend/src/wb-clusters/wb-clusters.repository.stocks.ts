@@ -29,6 +29,19 @@ export abstract class WbClustersRepositoryStocks extends WbClustersRepositoryJam
     );
   }
 
+  /** Returns the latest (most recent) stock quantity per nmId. */
+  async getLatestStocks(): Promise<{ nmId: number; quantity: number }[]> {
+    const result = await this.getPool().query<{ nm_id: string; quantity: string }>(
+      `SELECT DISTINCT ON (nm_id) nm_id::text, quantity::text
+       FROM ${this.tableName("wb_product_daily_stocks")}
+       ORDER BY nm_id ASC, stock_date DESC`,
+    );
+    return result.rows.map((r) => ({
+      nmId: Number(r.nm_id),
+      quantity: Number(r.quantity),
+    }));
+  }
+
   /** Returns all stock snapshots for all products and dates (newest first). */
   async getStocksMatrix(): Promise<{ nmId: number; stockDate: string; quantity: number }[]> {
     const result = await this.getPool().query<{ nm_id: string; stock_date: string; quantity: string }>(
