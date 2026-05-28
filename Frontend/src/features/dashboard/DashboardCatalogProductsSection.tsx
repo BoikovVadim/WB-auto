@@ -294,7 +294,9 @@ export const DashboardCatalogProductsSection = memo(
     const SUBJECT_COL_WIDTH = 120;
     const COST_COL_WIDTH = 140;
     const ORDERS_COL_WIDTH = 110;
-    const totalW = 48 + 110 + nameColWidth + CATEGORY_COL_WIDTH + SUBJECT_COL_WIDTH + COST_COL_WIDTH + ORDERS_COL_WIDTH;
+    const JAM_COL_WIDTH = 80;
+    const STOCKS_COL_WIDTH = 100;
+    const totalW = 48 + 110 + nameColWidth + CATEGORY_COL_WIDTH + SUBJECT_COL_WIDTH + COST_COL_WIDTH + ORDERS_COL_WIDTH + JAM_COL_WIDTH + STOCKS_COL_WIDTH;
 
     const minResizableWidthByColumn = useMemo(
       () =>
@@ -417,6 +419,8 @@ export const DashboardCatalogProductsSection = memo(
                     <col style={{ width: `${String(SUBJECT_COL_WIDTH)}px` }} />
                     <col style={{ width: `${String(COST_COL_WIDTH)}px` }} />
                     <col style={{ width: `${String(ORDERS_COL_WIDTH)}px` }} />
+                    <col style={{ width: `${String(JAM_COL_WIDTH)}px` }} />
+                    <col style={{ width: `${String(STOCKS_COL_WIDTH)}px` }} />
                   </colgroup>
                   <thead>
                     <tr>
