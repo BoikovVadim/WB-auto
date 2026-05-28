@@ -130,7 +130,7 @@ await new Promise<void>((resolve) => setImmediate(resolve));
 const allClusterIdentitySet = new Set<string>(
   rawClustersFromTable.map((r) => this.normalizeAdvertisingIdentity(r.normalizedClusterName)),
 );
-const deduplicatedQueryRows = Array.from(preferredQueryRows.values()).filter((row) => {
+const clusterFilteredQueryRows = Array.from(preferredQueryRows.values()).filter((row) => {
   const clusterIdentity = this.normalizeAdvertisingIdentity(row.normalizedClusterName);
   const queryIdentity = this.normalizeAdvertisingIdentity(row.normalizedQueryText);
   const isSelfRepresentative = clusterIdentity === queryIdentity;
@@ -138,6 +138,31 @@ const deduplicatedQueryRows = Array.from(preferredQueryRows.values()).filter((ro
     !isSelfRepresentative && allClusterIdentitySet.has(queryIdentity);
   return !isOtherClusterName;
 });
+// Дедуп по identity внутри (advertId, кластер): WB может присылать несколько
+// текстовых вариантов одного запроса ("клетка для собак", "Клетка, для собак",
+// "клетка-для-собак") в wb_cluster_queries / wb_cabinet_cluster_queries. У них
+// одна identity и одна строка в wb_search_query_frequencies — identity-JOIN
+// присваивает им одинаковую частоту, и без дедупа сумма дочерних умножается на
+// число дублей, а строка кластера агрегирует identity один раз. Оставляем одного
+// представителя: предпочитаем «канонический» вариант, у которого normalized text
+// уже совпадает с identity (т.е. лишней пунктуации нет); при равенстве — первый.
+const identityRepresentativeByKey = new Map<string, typeof clusterFilteredQueryRows[number]>();
+for (const row of clusterFilteredQueryRows) {
+  const clusterIdentity = this.normalizeAdvertisingIdentity(row.normalizedClusterName);
+  const queryIdentity = this.normalizeAdvertisingIdentity(row.normalizedQueryText);
+  const key = `${row.advertId}:${clusterIdentity}:${queryIdentity}`;
+  const existing = identityRepresentativeByKey.get(key);
+  if (!existing) {
+    identityRepresentativeByKey.set(key, row);
+    continue;
+  }
+  const existingIsCanonical = existing.normalizedQueryText === queryIdentity;
+  const candidateIsCanonical = row.normalizedQueryText === queryIdentity;
+  if (!existingIsCanonical && candidateIsCanonical) {
+    identityRepresentativeByKey.set(key, row);
+  }
+}
+const deduplicatedQueryRows = Array.from(identityRepresentativeByKey.values());
 // mergeAuthoritativeAdvertisingQueryRows and buildCanonicalAdvertisingClusterQueries
 // are now async and yield the event loop every batch so user requests are not
 // blocked during large (e.g. 190 k-row) datasets.

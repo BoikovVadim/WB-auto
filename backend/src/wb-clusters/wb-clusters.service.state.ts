@@ -39,13 +39,14 @@ export interface ProductSnapshotWarmupState {
   failureReason: string | null;
 }
 
-// v14: per-query frequency JOIN is now identity-based (wb-clusters.repository.base.ts
-// buildFrequencyJoinCondition). Brings child-query monthlyFrequency in sync with the
-// cluster-row aggregator that already used identity match — without this, queries whose
-// WB report variant differed only by punctuation showed "-" on the child row while their
-// frequencies were still included in the cluster total, making the cluster row larger
-// than the sum of its visible children. Bump invalidates cached snapshots.
-export const productAdvertisingSheetSnapshotSchemaVersion = 14;
+// v15: per-cluster dedup of child queries by identity (advertising-sheet-builder.ts).
+// Identity-based frequency JOIN in v14 made punctuation-variant duplicates of one query
+// (e.g. "клетка для собак" and "Клетка, для собак") each show the same frequency on
+// their own child rows, multiplying the visible sum while the cluster aggregate counted
+// the identity once. v15 keeps one canonical representative per identity inside a
+// cluster, so the visible children sum matches the cluster total. Bump invalidates
+// cached snapshots.
+export const productAdvertisingSheetSnapshotSchemaVersion = 15;
 
 export abstract class WbClustersServiceState {
   protected readonly logger = new Logger("WbClustersService");
