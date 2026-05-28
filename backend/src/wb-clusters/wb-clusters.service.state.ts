@@ -39,14 +39,15 @@ export interface ProductSnapshotWarmupState {
   failureReason: string | null;
 }
 
-// v15: per-cluster dedup of child queries by identity (advertising-sheet-builder.ts).
-// Identity-based frequency JOIN in v14 made punctuation-variant duplicates of one query
-// (e.g. "клетка для собак" and "Клетка, для собак") each show the same frequency on
-// their own child rows, multiplying the visible sum while the cluster aggregate counted
-// the identity once. v15 keeps one canonical representative per identity inside a
-// cluster, so the visible children sum matches the cluster total. Bump invalidates
-// cached snapshots.
-export const productAdvertisingSheetSnapshotSchemaVersion = 15;
+// v16: workspace fast-sql path (wb-clusters.repository.workspace-fast-sql.ts) now dedups
+// child queries by identity, not by normalized_query_text. Previously cabinet_distinct +
+// query_counts in getProductWorkspaceCampaignRowsSQL and DISTINCT ON in
+// getWorkspaceClusterQueriesSQL all dedup'd by raw text, so punctuation variants of one
+// query ("клетка для собак.", "клетка.для.собак.", "клетка, для собак") each kept their
+// own row with the same denormalized monthly_frequency — inflating the cluster total by a
+// factor of N. The earlier TS-side dedup in advertising-sheet-builder.ts was not on this
+// hot path. Bump invalidates cached snapshots.
+export const productAdvertisingSheetSnapshotSchemaVersion = 16;
 
 export abstract class WbClustersServiceState {
   protected readonly logger = new Logger("WbClustersService");

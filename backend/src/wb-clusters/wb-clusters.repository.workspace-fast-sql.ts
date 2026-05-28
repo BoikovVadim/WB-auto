@@ -104,28 +104,39 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
       ),
       -- Единый MATERIALIZED скан cabinet queries: читаем таблицу один раз,
       -- затем получаем COUNT и SUM из in-memory результата без JOIN в 1.5М строк.
+      -- Дедуп по identity (а не по normalized_query_text): WB присылает
+      -- одинаковые запросы в нескольких пунктуационных вариантах ("клетка для собак",
+      -- "клетка, для собак", "клетка.для.собак."), у них одна identity и одна
+      -- frequency в wb_search_query_frequencies; денормализованная monthly_frequency
+      -- в cabinet строках у всех вариантов одинаковая, поэтому SUM по text-distinct
+      -- надувал frequency_by_cluster в N раз.
       cabinet_distinct AS MATERIALIZED (
-        SELECT DISTINCT
+        SELECT DISTINCT ON (normalized_cluster_name, COALESCE(normalized_query_identity, ${this.normalizedQueryIdentitySql("normalized_query_text")}))
           $2::bigint            AS advert_id,
           $1::bigint            AS nm_id,
           normalized_cluster_name,
-          normalized_query_text,
+          COALESCE(normalized_query_identity, ${this.normalizedQueryIdentitySql("normalized_query_text")}) AS query_identity,
           monthly_frequency
         FROM ${this.tableName("wb_cabinet_cluster_queries")}
         WHERE nm_id = $1 AND advert_id = $2
+        ORDER BY
+          normalized_cluster_name,
+          COALESCE(normalized_query_identity, ${this.normalizedQueryIdentitySql("normalized_query_text")}),
+          monthly_frequency DESC NULLS LAST
       ),
       query_counts AS (
-        -- COUNT из cabinet + promotion (fallback для старых кампаний).
+        -- COUNT уникальных identity (а не текстов) из cabinet + promotion.
         SELECT
           advert_id,
           nm_id,
           normalized_cluster_name,
-          COUNT(DISTINCT normalized_query_text)::text AS cnt
+          COUNT(DISTINCT query_identity)::text AS cnt
         FROM (
-          SELECT advert_id, nm_id, normalized_cluster_name, normalized_query_text
+          SELECT advert_id, nm_id, normalized_cluster_name, query_identity
           FROM cabinet_distinct
           UNION ALL
-          SELECT advert_id, nm_id, normalized_cluster_name, normalized_query_text
+          SELECT advert_id, nm_id, normalized_cluster_name,
+                 ${this.normalizedQueryIdentitySql("normalized_query_text")} AS query_identity
           FROM ${this.tableName("wb_cluster_queries")}
           WHERE nm_id = $1 AND advert_id = $2
         ) combined
@@ -803,11 +814,17 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
       jam_avg_position: string | null;
       jam_open_to_cart: string | null;
     };
+    // Drill-down: одна строка на identity запроса. Из пунктуационных вариантов
+    // ("клетка для собак", "Клетка, для собак", "клетка.для.собак.") оставляем
+    // одного представителя — предпочитая «канонический» вариант, у которого
+    // normalized_query_text равен identity (без лишней пунктуации). Без этого
+    // дубли надували сумму monthly_frequency на UI и захламляли таблицу.
+    const cabinetIdentityExpr = `COALESCE(cq.normalized_query_identity, ${this.normalizedQueryIdentitySql("cq.normalized_query_text")})`;
     const cabinetResult = await pool.query<ClusterQueryRow>(
       `
       WITH ${jamSnapshotKeysCte},
       ${jamByQueryCte}
-      SELECT DISTINCT ON (cq.normalized_query_text)
+      SELECT DISTINCT ON (${cabinetIdentityExpr})
         cq.query_text,
         cq.normalized_query_text,
         COALESCE(cl.source_kind, 'query-map')::text  AS source_kind,
@@ -834,7 +851,11 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
       WHERE cq.nm_id = $1
         AND cq.advert_id = $2
         AND cq.normalized_cluster_name = $3
-      ORDER BY cq.normalized_query_text, f.monthly_frequency DESC NULLS LAST, cq.captured_at DESC
+      ORDER BY
+        ${cabinetIdentityExpr},
+        CASE WHEN cq.normalized_query_text = ${cabinetIdentityExpr} THEN 0 ELSE 1 END,
+        f.monthly_frequency DESC NULLS LAST,
+        cq.captured_at DESC
       `,
       params,
     );
@@ -846,7 +867,7 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
           `
           WITH ${jamSnapshotKeysCte},
           ${jamByQueryCte}
-          SELECT DISTINCT ON (cq.normalized_query_text)
+          SELECT DISTINCT ON (${this.normalizedQueryIdentitySql("cq.normalized_query_text")})
             cq.query_text,
             cq.normalized_query_text,
             COALESCE(cl.source_kind, 'query-map')::text  AS source_kind,
@@ -873,7 +894,11 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
           WHERE cq.nm_id = $1
             AND cq.advert_id = $2
             AND cq.normalized_cluster_name = $3
-          ORDER BY cq.normalized_query_text, f.monthly_frequency DESC NULLS LAST, cq.synced_at DESC
+          ORDER BY
+            ${this.normalizedQueryIdentitySql("cq.normalized_query_text")},
+            CASE WHEN cq.normalized_query_text = ${this.normalizedQueryIdentitySql("cq.normalized_query_text")} THEN 0 ELSE 1 END,
+            f.monthly_frequency DESC NULLS LAST,
+            cq.synced_at DESC
           `,
           params,
         );
