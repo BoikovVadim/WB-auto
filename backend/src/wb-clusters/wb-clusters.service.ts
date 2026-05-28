@@ -4,6 +4,7 @@ import { appEnv } from "../common/env";
 import { WbApiClient } from "../wb-sync/wb-api.client";
 import { WbSellerAnalyticsApiClient } from "./wb-seller-analytics-api.client";
 import { WbAnalyticsCsvClient } from "./wb-analytics-csv.client";
+import { WbStatisticsApiClient } from "./wb-statistics-api.client";
 import { WbRuntimeConfigService } from "../wb-sync/wb-runtime-config.service";
 import { WbCabinetPrivateApiClient } from "./wb-cabinet-private-api.client";
 import { WbCmpSafariClient } from "./wb-cmp-safari.client";
@@ -56,6 +57,9 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     () => this.wbRuntimeConfigService.getResolvedToken() || appEnv.wbApiToken,
   );
   private readonly analyticsCsvClient = new WbAnalyticsCsvClient(
+    () => this.wbRuntimeConfigService.getResolvedToken() || appEnv.wbApiToken,
+  );
+  private readonly statisticsApiClient = new WbStatisticsApiClient(
     () => this.wbRuntimeConfigService.getResolvedToken() || appEnv.wbApiToken,
   );
 
@@ -546,6 +550,55 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     this.logger.log(`Orders CSV sync done: ${upsertRows.length} product-day rows`);
   }
 
+
+  /**
+   * Downloads current stock balances from WB Statistics API and saves a daily snapshot.
+   * Aggregates quantity across all warehouses per nmId. Run once at 01:00 MSK.
+   */
+  async syncStocksSnapshot(): Promise<void> {
+    if (!appEnv.wbStocksSnapshotEnabled) return;
+    if (!this.wbClustersRepository.isConfigured()) return;
+    await this.wbClustersRepository.ensureSchema();
+    const token = this.wbRuntimeConfigService.getResolvedToken() || appEnv.wbApiToken;
+    if (!token) { this.logger.warn("Stocks snapshot: WB_API_TOKEN not set, skip."); return; }
+
+    // dateFrom 2 years ago — ensures WB returns all active stock rows
+    const dateFrom = new Date(Date.now() - 2 * 365 * 24 * 60 * 60 * 1000);
+    const stockDate = this.getMoscowDateStr(0);
+    this.logger.log(`Stocks snapshot: fetching for date ${stockDate}`);
+
+    let rawRows: Awaited<ReturnType<WbStatisticsApiClient["fetchStocks"]>>;
+    try {
+      rawRows = await this.statisticsApiClient.fetchStocks(dateFrom);
+    } catch (err) {
+      this.logger.warn(`Stocks snapshot fetch error: ${(err as Error).message}`);
+      return;
+    }
+
+    if (rawRows.length === 0) { this.logger.log("Stocks snapshot: empty response."); return; }
+
+    // Aggregate: sum quantity across all warehouses per nmId
+    const byNmId = new Map<number, number>();
+    for (const r of rawRows) {
+      byNmId.set(r.nmId, (byNmId.get(r.nmId) ?? 0) + r.quantity);
+    }
+
+    const rows = Array.from(byNmId.entries()).map(([nmId, quantity]) => ({
+      nmId,
+      stockDate,
+      quantity,
+    }));
+
+    await this.wbClustersRepository.upsertDailyStocks(rows);
+    this.logger.log(`Stocks snapshot done: ${rows.length} products saved for ${stockDate}`);
+  }
+
+  /** Returns the full stocks matrix (all dates × all products) for the frontend. */
+  async getStocksMatrix(): Promise<{ nmId: number; stockDate: string; quantity: number }[]> {
+    if (!this.wbClustersRepository.isConfigured()) return [];
+    await this.wbClustersRepository.ensureSchema();
+    return this.wbClustersRepository.getStocksMatrix();
+  }
 
   /** Nightly snapshot: copies each product's latest cost price into today's row (idempotent). */
   async snapshotCostPricesToday(): Promise<void> {

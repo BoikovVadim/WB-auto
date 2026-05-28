@@ -442,6 +442,21 @@ export class WbClustersController {
     return { status: "started", mode: "csv-7-days" };
   }
 
+  @Get("products/stocks-matrix")
+  getStocksMatrix() {
+    return this.wbClustersService.getStocksMatrix();
+  }
+
+  /** Triggers a stock snapshot download from WB Statistics API. */
+  @Post("products/sync-stocks")
+  @UseGuards(WbClustersWriteGuard)
+  triggerStocksSync() {
+    this.wbClustersService.syncStocksSnapshot().catch((error: unknown) => {
+      this.logger.error("Background syncStocksSnapshot failed", error);
+    });
+    return { status: "started" };
+  }
+
   // ─── JAM daily read-model ────────────────────────────────────────────────────
 
   /** Latest JAM position per product (most recent jam_date). */

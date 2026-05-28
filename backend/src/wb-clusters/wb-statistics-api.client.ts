@@ -10,6 +10,27 @@
 
 import { appEnv } from "../common/env";
 
+export type WbStockRow = {
+  lastChangeDate: string;
+  warehouseName: string;
+  barcode: string;
+  nmId: number;
+  subject: string;
+  supplierArticle: string;
+  brand: string;
+  techSize: string;
+  price: number;
+  discount: number;
+  isSupply: boolean;
+  isRealization: boolean;
+  quantityFull: number;
+  quantity: number;         // available for sale (not in orders, not reserved)
+  inWayToClient: number;
+  inWayFromClient: number;
+  category: string;
+  daysOnSite: number;
+};
+
 export type WbOrderRow = {
   date: string;          // "2024-01-15T10:00:00+03:00" — order placement date, Moscow tz
   lastChangeDate: string;
@@ -155,6 +176,43 @@ export class WbStatisticsApiClient {
       }
 
       const data = await response.json() as WbOrderRow[];
+      return Array.isArray(data) ? data : [];
+    } catch (err) {
+      clearTimeout(timeoutId);
+      throw err;
+    }
+  }
+
+  /**
+   * Downloads ALL current stock balances from WB Statistics API.
+   * Pass dateFrom far in the past (e.g. 2 years ago) to receive all active stock rows.
+   * Aggregation (sum by nmId across warehouses) is done by the caller.
+   */
+  async fetchStocks(dateFrom: Date): Promise<WbStockRow[]> {
+    await this.throttle();
+    const token = this.getToken();
+    if (!token) throw new Error("WB Statistics API token not configured (WB_API_TOKEN)");
+
+    const url = new URL(`${appEnv.wbStatisticsApiBaseUrl}/api/v1/supplier/stocks`);
+    url.searchParams.set("dateFrom", dateFrom.toISOString());
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => { controller.abort(); }, appEnv.wbStatisticsApiTimeoutMs);
+
+    try {
+      const response = await fetch(url.toString(), {
+        method: "GET",
+        headers: { Authorization: token, "Content-Type": "application/json" },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(`WB Statistics stocks API ${response.status}: ${body}`);
+      }
+
+      const data = await response.json() as WbStockRow[];
       return Array.isArray(data) ? data : [];
     } catch (err) {
       clearTimeout(timeoutId);

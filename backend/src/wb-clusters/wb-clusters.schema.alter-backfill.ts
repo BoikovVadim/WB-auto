@@ -423,6 +423,27 @@ export function getSystemChangeLogCreateStatements({
   ];
 }
 
+/** wb_product_daily_stocks: daily stock snapshot per product (total quantity across all warehouses). */
+export function getProductDailyStocksCreateStatements({
+  tableName,
+}: WbClustersSchemaContext): string[] {
+  return [
+    `
+      CREATE TABLE IF NOT EXISTS ${tableName("wb_product_daily_stocks")} (
+        nm_id      BIGINT      NOT NULL,
+        stock_date DATE        NOT NULL,
+        quantity   INT         NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (nm_id, stock_date)
+      )
+    `,
+    `
+      CREATE INDEX IF NOT EXISTS wb_product_daily_stocks_date_idx
+        ON ${tableName("wb_product_daily_stocks")} (stock_date DESC)
+    `,
+  ];
+}
+
 /**
  * wb_product_jam_daily: daily JAM metrics aggregated per product.
  * Materialized from wb_product_search_text_range_snapshots + _rows after each nightly JAM sync.

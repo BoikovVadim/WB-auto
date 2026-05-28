@@ -263,10 +263,10 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
         freq.monthly_frequency::text                                       AS monthly_frequency,
         pm.updated_at                                                AS updated_at,
         jbc.jam_query_count,
-        -- Частотность: берём из кабинетных данных (monthly_frequency), которые охватывают
-        -- все запросы кластера, а не только топ-30 по заказам из JAM-снапшотов.
-        -- Заказы/клики/позиция остаются date-sensitive из JAM-снапшотов.
-        freq.monthly_frequency::text                                     AS jam_frequency,
+        -- Джем-частотность: сумма frequency из JAM-снапшотов (по тем запросам,
+        -- что реально попали в JAM — это, как правило, кластеры с заказами).
+        -- Обычная частотность остаётся в monthly_frequency выше.
+        jbc.jam_frequency                                                AS jam_frequency,
         jbc.jam_clicks,
         jbc.jam_add_to_cart,
         jbc.jam_orders,

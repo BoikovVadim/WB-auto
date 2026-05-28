@@ -173,6 +173,10 @@ export const appEnv = {
   wbOrdersSyncCron: getOptionalEnv("WB_ORDERS_SYNC_CRON", "0 0 * * * *").trim() || "0 0 * * * *",
   // Finalization cron: at 02:00 Moscow (23:00 UTC) re-sync yesterday's data after WB fully closes the day.
   wbOrdersFinalizeCron: getOptionalEnv("WB_ORDERS_FINALIZE_CRON", "0 0 23 * * *").trim() || "0 0 23 * * *",
+  // Stocks snapshot: taken once per day at 01:00 MSK (22:00 UTC).
+  // Downloads /api/v1/supplier/stocks and stores total quantity per nmId.
+  wbStocksSnapshotEnabled: parseBooleanEnv("WB_STOCKS_SNAPSHOT_ENABLED", "true"),
+  wbStocksSnapshotCron: getOptionalEnv("WB_STOCKS_SNAPSHOT_CRON", "0 0 22 * * *").trim() || "0 0 22 * * *",
   wbClustersWriteApiKey: (process.env.WB_CLUSTERS_WRITE_API_KEY ?? "").trim(),
   wbPromotionApiBaseUrl: getOptionalUrlEnv(
     "WB_PROMOTION_API_BASE_URL",

@@ -180,11 +180,9 @@ export function buildProductAdvertisingSheetJamOverlay(input: {
       jamAvgPositionCount: 0,
     };
 
-    const isJamFrequencyBackedByMonthlyFrequency =
-      query.monthlyFrequency !== null || query.mappingSource === "stem-fallback";
-    if (isJamFrequencyBackedByMonthlyFrequency) {
+    if (metrics?.jamFrequency != null) {
       aggregate.jamQueryCount += 1;
-      aggregate.jamFrequency += metrics?.jamFrequency ?? 0;
+      aggregate.jamFrequency += metrics.jamFrequency;
     }
     aggregate.jamClicks += metrics?.jamClicks ?? 0;
     aggregate.jamAddToCart += metrics?.jamAddToCart ?? 0;

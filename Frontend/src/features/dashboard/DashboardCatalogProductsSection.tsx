@@ -28,6 +28,7 @@ type DashboardCatalogProductsSectionProps = {
   onOpenCostPriceSheet: () => void;
   onOpenOrdersSheet: () => void;
   onOpenJamSheet: () => void;
+  onOpenStocksSheet: () => void;
   onCostSaved: (nmId: number, value: number) => Promise<void>;
   onCostCleared: (nmIds: number[]) => Promise<void>;
 };
@@ -481,6 +482,16 @@ export const DashboardCatalogProductsSection = memo(
                           JAM ↗
                         </button>
                       </th>
+                      <th className="wb-table-cell--numeric" style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
+                        <button
+                          className="wb-products-sort-button wb-cost-header-link"
+                          type="button"
+                          title="Открыть ретроспективу остатков"
+                          onClick={props.onOpenStocksSheet}
+                        >
+                          Остатки ↗
+                        </button>
+                      </th>
                     </tr>
                     {props.filteredProducts.length > 0 && (
                       <tr className="wb-products-totals-row wb-thead-row--second">
@@ -496,6 +507,7 @@ export const DashboardCatalogProductsSection = memo(
                           {totalOrders > 0 ? String(totalOrders) : "—"}
                         </th>
                         <th style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }} />{/* JAM */}
+                        <th style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }} />{/* Остатки */}
                       </tr>
                     )}
                   </thead>
@@ -548,6 +560,9 @@ export const DashboardCatalogProductsSection = memo(
                               {orders && orders.ordersCount > 0
                                 ? String(orders.ordersCount)
                                 : "—"}
+                            </td>
+                            <td className="wb-table-cell--numeric" style={{ color: "var(--wb-text-muted, #888)", fontSize: 11 }}>
+                              ↗
                             </td>
                             <td className="wb-table-cell--numeric" style={{ color: "var(--wb-text-muted, #888)", fontSize: 11 }}>
                               ↗

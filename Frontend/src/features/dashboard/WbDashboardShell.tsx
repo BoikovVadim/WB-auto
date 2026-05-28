@@ -25,6 +25,7 @@ import { DashboardMinusPhrasesSection } from "./DashboardMinusPhrasesSection";
 import { DashboardCatalogProductDetailSection } from "./DashboardCatalogProductDetailSection";
 import { DashboardCatalogProductsSection } from "./DashboardCatalogProductsSection";
 import { DashboardOrdersDetailSection } from "./DashboardOrdersDetailSection";
+import { DashboardStocksDetailSection } from "./DashboardStocksDetailSection";
 import { DashboardChangeHistorySection } from "./DashboardChangeHistorySection";
 import { DashboardHubSection } from "./DashboardHubSection";
 import { DashboardProductsSection } from "./DashboardProductsSection";
@@ -92,12 +93,15 @@ type WbDashboardShellProps = {
   orderCounts: Map<number, import("../../api/syncClientOrders").TodayOrderCount>;
   isOrdersSheetOpen: boolean;
   isJamSheetOpen: boolean;
+  isStocksSheetOpen: boolean;
   onOpenCostPriceSheet: () => void;
   onCloseCostPriceSheet: () => void;
   onOpenOrdersSheet: () => void;
   onCloseOrdersSheet: () => void;
   onOpenJamSheet: () => void;
   onCloseJamSheet: () => void;
+  onOpenStocksSheet: () => void;
+  onCloseStocksSheet: () => void;
   onCostSaved: (nmId: number, value: number) => Promise<void>;
   onCostCleared: (nmIds: number[]) => Promise<void>;
   onRefresh: () => void;
@@ -174,12 +178,15 @@ export function WbDashboardShell({
   orderCounts,
   isOrdersSheetOpen,
   isJamSheetOpen,
+  isStocksSheetOpen,
   onOpenCostPriceSheet,
   onCloseCostPriceSheet,
   onOpenOrdersSheet,
   onCloseOrdersSheet,
   onOpenJamSheet,
   onCloseJamSheet,
+  onOpenStocksSheet,
+  onCloseStocksSheet,
   onCostSaved,
   onCostCleared,
   onRefresh: _onRefresh,
@@ -310,6 +317,11 @@ export function WbDashboardShell({
                 products={filteredProducts}
                 onBack={onCloseJamSheet}
               />
+            ) : isStocksSheetOpen ? (
+              <DashboardStocksDetailSection
+                products={filteredProducts}
+                onBack={onCloseStocksSheet}
+              />
             ) : (
               <DashboardCatalogProductsSection
                 productCatalogCount={productCatalogCount}
@@ -326,6 +338,7 @@ export function WbDashboardShell({
                 onOpenCostPriceSheet={onOpenCostPriceSheet}
                 onOpenOrdersSheet={onOpenOrdersSheet}
                 onOpenJamSheet={onOpenJamSheet}
+                onOpenStocksSheet={onOpenStocksSheet}
                 onCostSaved={onCostSaved}
                 onCostCleared={onCostCleared}
               />

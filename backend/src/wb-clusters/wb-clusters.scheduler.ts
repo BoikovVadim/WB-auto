@@ -146,4 +146,18 @@ export class WbClustersScheduler implements OnModuleInit {
       .syncOrdersFromAnalytics(1)
       .catch((err: Error) => this.logger.warn(`Orders finalize error: ${err.message}`));
   }
+
+  // ─── Stocks snapshot ─────────────────────────────────────────────────────────
+  //
+  // Run once a day at 01:00 МСК (22:00 UTC).
+  // Downloads /api/v1/supplier/stocks from WB Statistics API,
+  // aggregates quantity by nmId across all warehouses,
+  // and writes one row per product into wb_product_daily_stocks.
+
+  @Cron(appEnv.wbStocksSnapshotCron)
+  async handleStocksSnapshot() {
+    await this.wbClustersService
+      .syncStocksSnapshot()
+      .catch((err: Error) => this.logger.warn(`Stocks snapshot error: ${err.message}`));
+  }
 }
