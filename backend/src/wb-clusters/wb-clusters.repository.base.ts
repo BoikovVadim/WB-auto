@@ -304,11 +304,17 @@ export abstract class WbClustersRepositoryBase {
     frequencyAlias: string,
     normalizedQueryExpression: string,
   ) {
-    // Exact match only: frequency is assigned only when the query text is
-    // 100 % identical to the text in the WB 300k report (after basic
-    // lowercase+trim+whitespace collapse that both sides share).
-    // No fuzzy / punctuation-stripped matching: "клетка-переноска" ≠ "клетка переноска".
-    return `${frequencyAlias}.normalized_query_text = ${normalizedQueryExpression}`;
+    // Identity-based JOIN (punctuation-stripped). Must stay symmetric with the
+    // cluster-row aggregator in advertising-sheet-core-query-loader.ts, which
+    // sums frequencies by normalized_query_identity. Using exact text match
+    // here while the aggregator uses identity caused per-query rows to show "-"
+    // for queries whose WB report variant differed only by punctuation
+    // (e.g. "клетка-для-собак" vs "клетка для собак"), while the cluster total
+    // still included those frequencies — making the cluster row larger than
+    // the sum of its visible children. wb_search_query_frequencies is
+    // import-deduped by identity (one row per identity), so this join never
+    // multiplies rows.
+    return `${frequencyAlias}.normalized_query_identity = ${this.normalizedQueryIdentitySql(normalizedQueryExpression)}`;
   }
 
   protected buildAdvertisingStemKey(value: string) {

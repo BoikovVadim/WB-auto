@@ -117,21 +117,25 @@ for (const row of cabinetClusterQueriesResult.rows) {
   );
 }
 
-// Строим множество нормализованных имён кластеров по всем кампаниям товара.
-// Запросы, чей normalizedQueryText совпадает с именем другого кластера, удаляем
-// из отображения (и из агрегации частоты), чтобы не дублировать данные.
-// Исключение: представительный запрос кластера (normalized_cluster_name = normalized_query_text).
+// Строим множество идентичностей (punctuation-stripped) имён кластеров по всем
+// кампаниям товара. Запросы, чья identity совпадает с именем какого-либо кластера,
+// удаляем из отображения (и из агрегации частоты), чтобы не дублировать данные.
+// Сравнение по identity (а не по точному normalized тексту) ловит пунктуационные
+// варианты — например, кластер "платье женское" и запрос-член "платье, женское"
+// теперь считаются дублем. Должно оставаться согласовано с SQL-фильтром в
+// buildCanonicalClusterQueriesCte (advertising-sheet-core-query-loader.ts).
+// Исключение: представительный запрос кластера (identity имени = identity запроса).
 // Yield between processing stages so the event loop stays responsive.
 await new Promise<void>((resolve) => setImmediate(resolve));
-const allClusterNameSet = new Set<string>(
-  rawClustersFromTable.map((r) => r.normalizedClusterName),
+const allClusterIdentitySet = new Set<string>(
+  rawClustersFromTable.map((r) => this.normalizeAdvertisingIdentity(r.normalizedClusterName)),
 );
 const deduplicatedQueryRows = Array.from(preferredQueryRows.values()).filter((row) => {
-  // Use the already-normalized DB fields to ensure the comparison uses exactly
-  // the same normalization scheme as the cluster name set built from the DB.
-  const isSelfRepresentative = row.normalizedClusterName === row.normalizedQueryText;
+  const clusterIdentity = this.normalizeAdvertisingIdentity(row.normalizedClusterName);
+  const queryIdentity = this.normalizeAdvertisingIdentity(row.normalizedQueryText);
+  const isSelfRepresentative = clusterIdentity === queryIdentity;
   const isOtherClusterName =
-    !isSelfRepresentative && allClusterNameSet.has(row.normalizedQueryText);
+    !isSelfRepresentative && allClusterIdentitySet.has(queryIdentity);
   return !isOtherClusterName;
 });
 // mergeAuthoritativeAdvertisingQueryRows and buildCanonicalAdvertisingClusterQueries

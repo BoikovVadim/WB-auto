@@ -9,6 +9,12 @@ import { WbClustersRepositoryAdvertisingMutationRead } from "./wb-clusters.repos
 
 export abstract class WbClustersRepositoryAdvertisingSheetCoreQueryLoader extends WbClustersRepositoryAdvertisingMutationRead {
   protected buildCanonicalClusterQueriesCte() {
+    // Identity-based filter (punctuation-stripped): a member query is dropped if its
+    // identity matches the identity of ANY cluster name for this nm_id — unless the
+    // query represents its own cluster (self-representative). This catches WB's
+    // punctuation variants (e.g. cluster "платье женское" + query "платье, женское")
+    // that exact-text matching previously missed. Must stay in sync with the TS
+    // deduplicatedQueryRows filter in advertising-sheet-builder.ts.
     return `
         WITH canonical_cluster_queries AS (
         SELECT cq.*
@@ -17,13 +23,13 @@ export abstract class WbClustersRepositoryAdvertisingSheetCoreQueryLoader extend
           SELECT normalized_cluster_name
           FROM ${this.tableName("wb_clusters")}
           WHERE nm_id = cq.nm_id
-          AND normalized_cluster_name = cq.normalized_query_text
+          AND ${this.normalizedQueryIdentitySql("normalized_cluster_name")} = ${this.normalizedQueryIdentitySql("cq.normalized_query_text")}
           LIMIT 1
-        ) exact_cluster ON TRUE
+        ) identity_cluster ON TRUE
         WHERE cq.nm_id = $1
         AND (
-        exact_cluster.normalized_cluster_name IS NULL
-        OR cq.normalized_cluster_name = cq.normalized_query_text
+        identity_cluster.normalized_cluster_name IS NULL
+        OR ${this.normalizedQueryIdentitySql("cq.normalized_cluster_name")} = ${this.normalizedQueryIdentitySql("cq.normalized_query_text")}
         )
         )
         `;
@@ -189,6 +195,15 @@ export abstract class WbClustersRepositoryAdvertisingSheetCoreQueryLoader extend
           ON cp.advert_id = c.advert_id
           AND cp.nm_id = c.nm_id
           LEFT JOIN (
+          -- Aggregate cluster frequency by joining on normalized_query_identity
+          -- (punctuation-stripped). Three benefits over the prior text-exact join:
+          --   1) punctuation variants of a member query collapse to one lookup row,
+          --      so they cannot be double-counted within a cluster;
+          --   2) wb_search_query_frequencies is import-deduped by identity, so the
+          --      single surviving row is reliably found regardless of which punctuation
+          --      variant won the dedup;
+          --   3) cluster names with punctuation reliably resolve to their own freq.
+          -- Uses existing index wb_search_query_frequencies(normalized_query_identity).
           SELECT
           x.advert_id,
           x.nm_id,
@@ -200,19 +215,19 @@ export abstract class WbClustersRepositoryAdvertisingSheetCoreQueryLoader extend
           advert_id,
           nm_id,
           normalized_cluster_name,
-          normalized_query_text AS lookup_text
+          ${this.normalizedQueryIdentitySql("normalized_query_text")} AS lookup_identity
           FROM canonical_cluster_queries
           UNION
           SELECT DISTINCT
           c.advert_id,
           c.nm_id,
           c.normalized_cluster_name,
-          c.normalized_cluster_name AS lookup_text
+          ${this.normalizedQueryIdentitySql("c.normalized_cluster_name")} AS lookup_identity
           FROM ${this.tableName("wb_clusters")} c
           WHERE c.nm_id = $1
           ) x
           JOIN ${this.tableName("wb_search_query_frequencies")} f
-          ON f.normalized_query_text = x.lookup_text
+          ON f.normalized_query_identity = x.lookup_identity
           GROUP BY x.advert_id, x.nm_id, x.normalized_cluster_name
           ) f
           ON f.advert_id = c.advert_id
