@@ -15,7 +15,6 @@ import type {
 import { ui } from "./copy";
 import { DashboardCampaignsSection } from "./DashboardCampaignsSection";
 import { DashboardCatalogSection } from "./DashboardCatalogSection";
-import { DashboardJamDailySection } from "./DashboardJamDailySection";
 import { DashboardClusterStatsSection } from "./DashboardClusterStatsSection";
 import { DashboardDailyStatsSection } from "./DashboardDailyStatsSection";
 import { DashboardExportsOverviewSection } from "./DashboardExportsOverviewSection";
@@ -93,14 +92,11 @@ type WbDashboardShellProps = {
   orderCounts: Map<number, import("../../api/syncClientOrders").TodayOrderCount>;
   stockCounts: Map<number, number>;
   isOrdersSheetOpen: boolean;
-  isJamSheetOpen: boolean;
   isStocksSheetOpen: boolean;
   onOpenCostPriceSheet: () => void;
   onCloseCostPriceSheet: () => void;
   onOpenOrdersSheet: () => void;
   onCloseOrdersSheet: () => void;
-  onOpenJamSheet: () => void;
-  onCloseJamSheet: () => void;
   onOpenStocksSheet: () => void;
   onCloseStocksSheet: () => void;
   onCostSaved: (nmId: number, value: number) => Promise<void>;
@@ -179,14 +175,11 @@ export function WbDashboardShell({
   orderCounts,
   stockCounts,
   isOrdersSheetOpen,
-  isJamSheetOpen,
   isStocksSheetOpen,
   onOpenCostPriceSheet,
   onCloseCostPriceSheet,
   onOpenOrdersSheet,
   onCloseOrdersSheet,
-  onOpenJamSheet,
-  onCloseJamSheet,
   onOpenStocksSheet,
   onCloseStocksSheet,
   onCostSaved,
@@ -314,14 +307,10 @@ export function WbDashboardShell({
                 orderCounts={orderCounts}
                 onBack={onCloseOrdersSheet}
               />
-            ) : isJamSheetOpen ? (
-              <DashboardJamDailySection
-                products={filteredProducts}
-                onBack={onCloseJamSheet}
-              />
             ) : isStocksSheetOpen ? (
               <DashboardStocksDetailSection
                 products={filteredProducts}
+                stockCounts={stockCounts}
                 onBack={onCloseStocksSheet}
               />
             ) : (
@@ -340,7 +329,6 @@ export function WbDashboardShell({
                 onProductsSortToggle={onProductsSortToggle}
                 onOpenCostPriceSheet={onOpenCostPriceSheet}
                 onOpenOrdersSheet={onOpenOrdersSheet}
-                onOpenJamSheet={onOpenJamSheet}
                 onOpenStocksSheet={onOpenStocksSheet}
                 onCostSaved={onCostSaved}
                 onCostCleared={onCostCleared}

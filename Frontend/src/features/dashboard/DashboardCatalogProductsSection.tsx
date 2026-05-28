@@ -28,7 +28,6 @@ type DashboardCatalogProductsSectionProps = {
   onProductsSortToggle: (key: ProductListSortKey) => void;
   onOpenCostPriceSheet: () => void;
   onOpenOrdersSheet: () => void;
-  onOpenJamSheet: () => void;
   onOpenStocksSheet: () => void;
   onCostSaved: (nmId: number, value: number) => Promise<void>;
   onCostCleared: (nmIds: number[]) => Promise<void>;
@@ -294,9 +293,8 @@ export const DashboardCatalogProductsSection = memo(
     const SUBJECT_COL_WIDTH = 120;
     const COST_COL_WIDTH = 140;
     const ORDERS_COL_WIDTH = 110;
-    const JAM_COL_WIDTH = 80;
     const STOCKS_COL_WIDTH = 100;
-    const totalW = 48 + 110 + nameColWidth + CATEGORY_COL_WIDTH + SUBJECT_COL_WIDTH + COST_COL_WIDTH + ORDERS_COL_WIDTH + JAM_COL_WIDTH + STOCKS_COL_WIDTH;
+    const totalW = 48 + 110 + nameColWidth + CATEGORY_COL_WIDTH + SUBJECT_COL_WIDTH + COST_COL_WIDTH + ORDERS_COL_WIDTH + STOCKS_COL_WIDTH;
 
     const minResizableWidthByColumn = useMemo(
       () =>
@@ -419,7 +417,6 @@ export const DashboardCatalogProductsSection = memo(
                     <col style={{ width: `${String(SUBJECT_COL_WIDTH)}px` }} />
                     <col style={{ width: `${String(COST_COL_WIDTH)}px` }} />
                     <col style={{ width: `${String(ORDERS_COL_WIDTH)}px` }} />
-                    <col style={{ width: `${String(JAM_COL_WIDTH)}px` }} />
                     <col style={{ width: `${String(STOCKS_COL_WIDTH)}px` }} />
                   </colgroup>
                   <thead>
@@ -481,16 +478,6 @@ export const DashboardCatalogProductsSection = memo(
                         <button
                           className="wb-products-sort-button wb-cost-header-link"
                           type="button"
-                          title="Открыть ретроспективу JAM (позиции в поиске)"
-                          onClick={props.onOpenJamSheet}
-                        >
-                          JAM ↗
-                        </button>
-                      </th>
-                      <th className="wb-table-cell--numeric" style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
-                        <button
-                          className="wb-products-sort-button wb-cost-header-link"
-                          type="button"
                           title="Открыть ретроспективу остатков"
                           onClick={props.onOpenStocksSheet}
                         >
@@ -511,7 +498,6 @@ export const DashboardCatalogProductsSection = memo(
                         <th className="wb-table-cell--numeric" style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }}>
                           {totalOrders > 0 ? String(totalOrders) : "—"}
                         </th>
-                        <th style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }} />{/* JAM */}
                         <th style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }} />{/* Остатки */}
                       </tr>
                     )}
@@ -566,9 +552,6 @@ export const DashboardCatalogProductsSection = memo(
                               {orders && orders.ordersCount > 0
                                 ? String(orders.ordersCount)
                                 : "—"}
-                            </td>
-                            <td className="wb-table-cell--numeric" style={{ color: "var(--wb-text-muted, #888)", fontSize: 11 }}>
-                              ↗
                             </td>
                             <td className="wb-table-cell--numeric">
                               {stock !== undefined ? String(stock) : "—"}

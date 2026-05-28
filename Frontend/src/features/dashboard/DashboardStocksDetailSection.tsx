@@ -5,6 +5,8 @@ import type { ProductListItem } from "./useDashboardProductsWorkspace";
 
 type Props = {
   products: ProductListItem[];
+  /** Latest stock quantities — same data shown in the Products tab */
+  stockCounts: Map<number, number>;
   onBack: () => void;
 };
 
@@ -13,14 +15,14 @@ function formatDate(isoDate: string): string {
   return `${day ?? ""}.${month ?? ""}.${year ?? ""}`;
 }
 
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 type StocksMatrix = { dates: string[]; products: { nmId: number; values: (number | null)[] }[] };
 
 const STOCKS_MATRIX_CACHE_KEY  = "wb_stocks_matrix_v1";
 const STOCKS_MATRIX_CACHE_DATE = "wb_stocks_matrix_v1_date";
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function readMatrixCache(): StocksMatrix | null {
   try {
@@ -56,9 +58,11 @@ function buildMatrix(rows: StocksMatrixRow[]): StocksMatrix {
   return { dates, products };
 }
 
-export function DashboardStocksDetailSection({ products, onBack }: Props) {
+export function DashboardStocksDetailSection({ products, stockCounts, onBack }: Props) {
   const tableRef = useRef<HTMLTableElement | null>(null);
   const resizingColRef = useRef<number | null>(null);
+
+  const today = todayIso();
 
   const [matrix, setMatrix] = useState<StocksMatrix>(() => readMatrixCache() ?? { dates: [], products: [] });
   const [loading, setLoading] = useState(false);
@@ -80,11 +84,22 @@ export function DashboardStocksDetailSection({ products, onBack }: Props) {
     [matrix.products],
   );
 
+  // Latest date is pinned first (like "today" in orders); historical dates follow
+  const latestDate = matrix.dates[0] ?? null;
+  const uniqueDates = useMemo(() => {
+    const result: string[] = [];
+    if (latestDate) result.push(latestDate);
+    for (const d of matrix.dates) {
+      if (d !== latestDate) result.push(d);
+    }
+    return result;
+  }, [matrix.dates, latestDate]);
+
   const minWidths = useMemo(() => {
     const m = new Map<number, number>([[0, 36], [1, 80], [2, 90]]);
-    for (let i = 3; i < 3 + matrix.dates.length; i++) m.set(i, 80);
+    for (let i = 3; i < 3 + uniqueDates.length; i++) m.set(i, 80);
     return m;
-  }, [matrix.dates.length]);
+  }, [uniqueDates.length]);
 
   const handleResizeMouseDown = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
@@ -140,22 +155,25 @@ export function DashboardStocksDetailSection({ products, onBack }: Props) {
   const COL_NAME = 220;
   const COL_DATE = 130;
 
-  const totalFixedW = COL_NO + COL_ID + COL_NAME + COL_DATE * matrix.dates.length;
+  const totalFixedW = COL_NO + COL_ID + COL_NAME + COL_DATE * uniqueDates.length;
 
   const dateTotals = useMemo(() => {
-    return matrix.dates.map((d, dateIdx) => {
+    return uniqueDates.map((d) => {
+      const isLatest = d === latestDate;
       let total = 0;
       for (const product of products) {
         if (product.nmId === null) continue;
-        const matrixRow = matrixByNmId.get(product.nmId);
-        total += matrixRow ? (matrixRow.values[dateIdx] ?? 0) : 0;
+        if (isLatest) {
+          total += stockCounts.get(product.nmId) ?? 0;
+        } else {
+          const matrixRow = matrixByNmId.get(product.nmId);
+          const dateIdx = matrix.dates.indexOf(d);
+          total += matrixRow && dateIdx >= 0 ? (matrixRow.values[dateIdx] ?? 0) : 0;
+        }
       }
       return total;
     });
-  }, [matrix.dates, products, matrixByNmId]);
-
-  // Highlight the most recent date (latest snapshot)
-  const latestDate = matrix.dates[0] ?? null;
+  }, [uniqueDates, latestDate, products, stockCounts, matrixByNmId, matrix.dates]);
 
   return (
     <section className="wb-card wb-card--wide">
@@ -174,7 +192,7 @@ export function DashboardStocksDetailSection({ products, onBack }: Props) {
           <div className="wb-table-wrap--catalog-restricted">
             {products.length === 0 ? (
               <p className="wb-empty-copy" style={{ padding: "32px" }}>Нет товаров.</p>
-            ) : matrix.dates.length === 0 && !loading ? (
+            ) : uniqueDates.length === 0 && !loading ? (
               <p className="wb-empty-copy" style={{ padding: "32px" }}>
                 Нет данных. Первый снапшот будет снят сегодня в 01:00 МСК.
               </p>
@@ -188,7 +206,7 @@ export function DashboardStocksDetailSection({ products, onBack }: Props) {
                   <col style={{ width: `${String(COL_NO)}px` }} />
                   <col style={{ width: `${String(COL_ID)}px` }} />
                   <col style={{ width: `${String(COL_NAME)}px` }} />
-                  {matrix.dates.map((d) => (
+                  {uniqueDates.map((d) => (
                     <col key={d} style={{ width: `${String(COL_DATE)}px` }} />
                   ))}
                 </colgroup>
@@ -205,8 +223,10 @@ export function DashboardStocksDetailSection({ products, onBack }: Props) {
                       Название товара
                       <div className="wb-col-resize-handle" data-col-idx="2" onMouseDown={handleResizeMouseDown} />
                     </th>
-                    {matrix.dates.map((d, i) => {
+
+                    {uniqueDates.map((d, i) => {
                       const isLatest = d === latestDate;
+                      const stickyLeft = isLatest ? COL_NO + COL_ID + COL_NAME : undefined;
                       return (
                         <th
                           key={d}
@@ -215,7 +235,7 @@ export function DashboardStocksDetailSection({ products, onBack }: Props) {
                             width: COL_DATE,
                             zIndex: isLatest ? 4 : 2,
                             ...(isLatest
-                              ? { position: "sticky", left: COL_NO + COL_ID + COL_NAME, background: "#fbf7eb", borderRight: "2px solid var(--wb-gold-mid)" }
+                              ? { position: "sticky", left: stickyLeft, background: "#fbf7eb", borderRight: "2px solid var(--wb-gold-mid)" }
                               : {}),
                           }}
                         >
@@ -243,7 +263,7 @@ export function DashboardStocksDetailSection({ products, onBack }: Props) {
                     >
                       Итого
                     </th>
-                    {matrix.dates.map((d, i) => {
+                    {uniqueDates.map((d, i) => {
                       const isLatest = d === latestDate;
                       const total = dateTotals[i] ?? 0;
                       return (
@@ -299,10 +319,17 @@ export function DashboardStocksDetailSection({ products, onBack }: Props) {
                             {displayName}
                           </span>
                         </td>
-                        {matrix.dates.map((d, i) => {
+
+                        {uniqueDates.map((d, i) => {
                           const isLatest = d === latestDate;
-                          const dateIdx = i;
-                          const value = matrixRow ? matrixRow.values[dateIdx] : null;
+                          let value: number | null = null;
+                          if (isLatest) {
+                            const sc = product.nmId !== null ? stockCounts.get(product.nmId) : undefined;
+                            value = sc !== undefined ? sc : null;
+                          } else {
+                            const dateIdx = matrix.dates.indexOf(d);
+                            value = matrixRow && dateIdx >= 0 ? matrixRow.values[dateIdx] : null;
+                          }
                           return (
                             <td
                               key={d}

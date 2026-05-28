@@ -128,7 +128,6 @@ export function WbDashboard() {
   );
   const isCostPriceSheetOpen = activeSection === "catalog-products" && activeSheet === "cost-price";
   const isOrdersSheetOpen    = activeSection === "catalog-products" && activeSheet === "orders";
-  const isJamSheetOpen       = activeSection === "catalog-products" && activeSheet === "jam";
   const isStocksSheetOpen    = activeSection === "catalog-products" && activeSheet === "stocks";
   const { costPrices, isCostPricesLoading, prefetchCostPrices, handleCostSaved, handleCostCleared } = useCostPrices();
   const { orderCounts } = useOrders();
@@ -459,7 +458,6 @@ export function WbDashboard() {
       onOpenChangeHistorySection={() => { setActiveSection("change-history"); }}
       isCostPriceSheetOpen={isCostPriceSheetOpen}
       isOrdersSheetOpen={isOrdersSheetOpen}
-      isJamSheetOpen={isJamSheetOpen}
       isStocksSheetOpen={isStocksSheetOpen}
       orderCounts={orderCounts}
       stockCounts={stockCounts}
@@ -469,8 +467,6 @@ export function WbDashboard() {
       onCloseCostPriceSheet={() => { setActiveSheet("none"); }}
       onOpenOrdersSheet={() => { setActiveSection("catalog-products"); setActiveSheet("orders"); }}
       onCloseOrdersSheet={() => { setActiveSheet("none"); }}
-      onOpenJamSheet={() => { setActiveSection("catalog-products"); setActiveSheet("jam"); }}
-      onCloseJamSheet={() => { setActiveSheet("none"); }}
       onOpenStocksSheet={() => { setActiveSection("catalog-products"); setActiveSheet("stocks"); }}
       onCloseStocksSheet={() => { setActiveSheet("none"); }}
       onCostSaved={handleCostSaved}
