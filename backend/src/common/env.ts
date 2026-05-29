@@ -169,8 +169,12 @@ export const appEnv = {
     "https://seller-analytics-api.wildberries.ru",
   ),
   wbOrdersSyncEnabled: parseBooleanEnv("WB_ORDERS_SYNC_ENABLED", "true"),
-  // Orders CSV sync via Analytics API. WB CSV data updates hourly → sync every hour.
-  wbOrdersSyncCron: getOptionalEnv("WB_ORDERS_SYNC_CRON", "0 0 * * * *").trim() || "0 0 * * * *",
+  // Освежение заказов за СЕГОДНЯ через Statistics API (orders?flag=1, gross за день).
+  // Каждые 10 минут: эндпоинт на отдельной квоте (лимит ~1 req/min, мы шлём 1 запрос
+  // раз в 10 мин — с большим запасом), а витрина «сегодня» обновляется почти в
+  // реальном времени вместо часового лага. Финализация за вчера и сверка истории —
+  // на отдельных CSV-кронах (wbOrdersFinalizeCron / ночная сверка), это не про сегодня.
+  wbOrdersSyncCron: getOptionalEnv("WB_ORDERS_SYNC_CRON", "0 */10 * * * *").trim() || "0 */10 * * * *",
   // Финализация заказов за вчера через CSV. Дефолт — 02:00 МСК: к этому
   // моменту WB сбросил дневной лимит Analytics API (20 отчётов/сутки),
   // поэтому 429 нам не грозит. Сервер живёт по Europe/Moscow, и cron

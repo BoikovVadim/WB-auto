@@ -166,11 +166,13 @@ export class WbClustersScheduler implements OnModuleInit {
   }
 
   /**
-   * Каждый час: освежаем сегодня через Statistics API.
-   * Пишем orders_count, cancelled_count, orders_sum (finishedPrice).
-   * Stats API не упирается в дневной лимит Analytics — это другая квота.
+   * Освежаем СЕГОДНЯ через Statistics API (по умолчанию каждые 10 минут —
+   * см. wbOrdersSyncCron). Пишем orders_count, cancelled_count, orders_sum
+   * (priceWithDisc). Stats API не упирается в дневной лимит Analytics — это
+   * другая квота (~1 req/min), один запрос раз в 10 мин в неё укладывается.
+   * Частоту можно переопределить через WB_ORDERS_SYNC_CRON.
    */
-  @Cron("0 0 * * * *")
+  @Cron(appEnv.wbOrdersSyncCron)
   async handleOrdersTodayFromStatsApi() {
     if (!appEnv.wbOrdersSyncEnabled) return;
     await this.wbClustersService
