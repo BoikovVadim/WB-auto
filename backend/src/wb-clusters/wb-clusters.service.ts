@@ -1056,7 +1056,8 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
   // Скидку НЕ трогаем: двигаем только базовую цену под целевой итог «со скидкой».
   // No-op guard: если новая база совпала с текущей — в WB ничего не отправляем.
 
-  private readonly maxPriceReconcileAttempts = 10;
+  // Reconcile-крон тикает каждые 10 с; 36 попыток ≈ 6 минут на подтверждение от WB.
+  private readonly maxPriceReconcileAttempts = 36;
 
   private finalFromBase(base: number, discount: number): number {
     return Math.round(base * (1 - discount / 100) * 100) / 100;
@@ -1163,9 +1164,14 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
       if (firstSize) byNmId.set(g.nmID, { price: firstSize.price, discount: g.discount });
     }
 
-    const retryInMs = 60_000;
+    const retryInMs = 10_000;
     for (const row of active) {
       const actual = byNmId.get(row.nmId);
+      // Фактический итог «со скидкой», который сейчас в кабинете WB (для коррекции UI).
+      const observedFinal =
+        actual !== undefined
+          ? Math.round(actual.price * (1 - actual.discount / 100) * 100) / 100
+          : undefined;
       const confirmed =
         actual !== undefined &&
         Math.round(actual.price) === Math.round(row.desiredBasePrice) &&
@@ -1174,6 +1180,7 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
         await this.wbClustersRepository.updatePriceChange(row.nmId, {
           syncStatus: "confirmed",
           confirmedAt: new Date().toISOString(),
+          observedFinal,
           retryAt: null,
           lastError: null,
         });
@@ -1183,12 +1190,14 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
         await this.wbClustersRepository.updatePriceChange(row.nmId, {
           syncStatus: "failed",
           bumpAttempt: true,
+          observedFinal,
           lastError: "WB не подтвердил новую цену за отведённое число попыток.",
         });
       } else {
         await this.wbClustersRepository.updatePriceChange(row.nmId, {
           syncStatus: "pending",
           bumpAttempt: true,
+          observedFinal,
           retryAt: new Date(Date.now() + retryInMs).toISOString(),
         });
       }

@@ -670,12 +670,18 @@ export function getProductPriceChangesCreateStatements({
         desired_final      NUMERIC(12,2) NOT NULL,
         sync_status        TEXT        NOT NULL DEFAULT 'queued',
         upload_id          BIGINT,
+        observed_final     NUMERIC(12,2),
         confirmed_at       TIMESTAMPTZ,
         retry_at           TIMESTAMPTZ,
         last_error         TEXT,
         attempt_count      INT         NOT NULL DEFAULT 0,
         updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
+    `,
+    // observed_final добавлена позже — ALTER для уже созданных таблиц (идемпотентно).
+    `
+      ALTER TABLE ${tableName("wb_product_price_changes")}
+        ADD COLUMN IF NOT EXISTS observed_final NUMERIC(12,2)
     `,
     `
       CREATE INDEX IF NOT EXISTS wb_product_price_changes_status_idx

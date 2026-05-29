@@ -152,14 +152,33 @@ export function WbDashboard() {
   const { ordersSumMatrix } = useOrdersSumMatrix();
   const { revenueValues } = useRevenue();
   const { revenueMatrix } = useRevenueMatrix();
-  const { priceChangeStatuses, refreshPriceChangeStatuses } = usePriceChangeStatuses();
+  const { priceChangeStatuses, refreshPriceChangeStatuses, upsertPriceChangeStatus } =
+    usePriceChangeStatuses();
   const handlePriceSaved = useCallback(
     async (nmId: number, targetFinal: number) => {
       // ⚠️ Реальная запись цены на маркетплейс WB. Дёргается только из ячейки «Цена».
-      await applyProductPrice(nmId, targetFinal);
+      const res = await applyProductPrice(nmId, targetFinal);
+      if (res.status !== "noop") {
+        // Оптимистично фиксируем новую цену в таблице сразу (до подтверждения WB).
+        // reconcile-крон позже скорректирует observedFinal на реальную кабинетную.
+        upsertPriceChangeStatus({
+          nmId: res.nmId,
+          desiredBasePrice: res.desiredBasePrice,
+          desiredDiscount: res.desiredDiscount,
+          desiredFinal: res.desiredFinal,
+          syncStatus: res.status === "failed" ? "failed" : "sending",
+          uploadId: null,
+          observedFinal: res.status === "failed" ? res.currentFinal : null,
+          confirmedAt: null,
+          retryAt: null,
+          lastError: res.lastError,
+          attemptCount: 0,
+          updatedAt: new Date().toISOString(),
+        });
+      }
       refreshPriceChangeStatuses();
     },
-    [refreshPriceChangeStatuses],
+    [refreshPriceChangeStatuses, upsertPriceChangeStatus],
   );
   const invalidateProductAdvertisingDetail = useCallback(
     (target: ProductAdvertisingDetailInvalidationTarget = "all") => {

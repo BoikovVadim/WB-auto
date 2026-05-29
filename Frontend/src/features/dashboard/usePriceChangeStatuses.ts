@@ -5,14 +5,19 @@ import {
   type PriceChangeStatus,
 } from "../../api/syncClientPrices";
 
-// Статусы меняются после reconcile-крона (раз в минуту) и сразу после применения,
-// поэтому поллим почаще, чем дневные снапшоты, чтобы галочка появлялась быстро.
-const REFRESH_INTERVAL_MS = 15 * 1000;
+// Адаптивный поллинг: пока есть незавершённые изменения (queued/sending/pending/
+// throttled) — часто (2 с), чтобы галочка ✓ приходила почти сразу; иначе редко (20 с).
+const FAST_INTERVAL_MS = 2 * 1000;
+const IDLE_INTERVAL_MS = 20 * 1000;
+
+const ACTIVE_STATUSES = new Set(["queued", "sending", "pending", "throttled"]);
 
 export type UsePriceChangeStatusesResult = {
-  /** nmId → последний статус изменения цены (для индикатора-галочки). */
+  /** nmId → последний статус изменения цены (для индикатора-галочки и цены в ячейке). */
   priceChangeStatuses: Map<number, PriceChangeStatus>;
   refreshPriceChangeStatuses: () => void;
+  /** Оптимистично вставить/обновить статус (мгновенная фиксация цены в таблице). */
+  upsertPriceChangeStatus: (status: PriceChangeStatus) => void;
 };
 
 export function usePriceChangeStatuses(): UsePriceChangeStatusesResult {
@@ -20,6 +25,8 @@ export function usePriceChangeStatuses(): UsePriceChangeStatusesResult {
     new Map(),
   );
   const isMountedRef = useRef(true);
+  const statusesRef = useRef(priceChangeStatuses);
+  useEffect(() => { statusesRef.current = priceChangeStatuses; }, [priceChangeStatuses]);
 
   const load = useCallback(() => {
     fetchPriceChangeStatuses()
@@ -32,15 +39,31 @@ export function usePriceChangeStatuses(): UsePriceChangeStatusesResult {
       });
   }, []);
 
+  const upsertPriceChangeStatus = useCallback((status: PriceChangeStatus) => {
+    setPriceChangeStatuses((prev) => {
+      const next = new Map(prev);
+      next.set(status.nmId, status);
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     isMountedRef.current = true;
     load();
-    const interval = setInterval(load, REFRESH_INTERVAL_MS);
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      load();
+      const hasActive = Array.from(statusesRef.current.values()).some((s) =>
+        ACTIVE_STATUSES.has(s.syncStatus),
+      );
+      timer = setTimeout(tick, hasActive ? FAST_INTERVAL_MS : IDLE_INTERVAL_MS);
+    };
+    timer = setTimeout(tick, IDLE_INTERVAL_MS);
     return () => {
       isMountedRef.current = false;
-      clearInterval(interval);
+      clearTimeout(timer);
     };
   }, [load]);
 
-  return { priceChangeStatuses, refreshPriceChangeStatuses: load };
+  return { priceChangeStatuses, refreshPriceChangeStatuses: load, upsertPriceChangeStatus };
 }

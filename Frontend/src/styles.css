@@ -2955,6 +2955,19 @@ input {
   font-weight: 400;
 }
 
+/* Индикатор статуса записи цены (•/✓/!) — ВНЕ потока (absolute), чтобы появление
+   или смена статуса не сдвигали число и соседние ячейки. Карандаш тоже absolute,
+   поэтому при наведении/смене статуса раскладка колонки не «дёргается». */
+.wb-price-status {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-weight: 700;
+  font-size: var(--wb-table-font-size);
+  pointer-events: none;
+}
+
 /* Cost price td — zero vertical padding: height is owned by the child element.
    Must use .wb-data-table td.wb-table-cell--cost (specificity 0,1,2) to beat
    the global .wb-data-table td rule (specificity 0,1,1). */

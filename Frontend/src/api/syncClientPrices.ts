@@ -49,6 +49,8 @@ export type PriceChangeStatus = {
   desiredFinal: number;
   syncStatus: PriceChangeSyncStatus;
   uploadId: number | null;
+  /** Фактический итог «со скидкой» в кабинете WB (из readback); null пока не прочитан. */
+  observedFinal: number | null;
   confirmedAt: string | null;
   retryAt: string | null;
   lastError: string | null;

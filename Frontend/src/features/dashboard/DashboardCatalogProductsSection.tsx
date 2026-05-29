@@ -237,7 +237,22 @@ const PriceInputCell = memo(function PriceInputCell({
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const currentFinal = entry?.priceWithDiscount ?? null;
+  // Отображаемая цена: оптимистично показываем желаемую (desiredFinal) сразу после
+  // ввода; после ответа WB (confirmed/failed) — фактическую кабинетную (observedFinal);
+  // иначе — последний снапшот.
+  const snapshotFinal = entry?.priceWithDiscount ?? null;
+  const currentFinal: number | null = (() => {
+    if (status) {
+      if (
+        (status.syncStatus === "confirmed" || status.syncStatus === "failed") &&
+        status.observedFinal != null
+      ) {
+        return status.observedFinal;
+      }
+      return status.desiredFinal;
+    }
+    return snapshotFinal;
+  })();
   const discount = entry?.discount ?? 0;
   const currentFinalRef = useRef(currentFinal);
   useEffect(() => { currentFinalRef.current = currentFinal; }, [currentFinal]);
@@ -348,10 +363,7 @@ const PriceInputCell = memo(function PriceInputCell({
           : <span className="wb-cost-price-empty">—</span>}
       </span>
       {statusInfo && (
-        <span
-          title={statusInfo.title}
-          style={{ marginLeft: 4, color: statusInfo.color, fontWeight: 700 }}
-        >
+        <span className="wb-price-status" title={statusInfo.title} style={{ color: statusInfo.color }}>
           {statusInfo.symbol}
         </span>
       )}

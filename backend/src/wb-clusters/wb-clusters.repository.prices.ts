@@ -22,6 +22,8 @@ export type PriceChangeRow = {
   desiredFinal: number;
   syncStatus: PriceChangeSyncStatus;
   uploadId: number | null;
+  /** Фактический итог «со скидкой», который сейчас в кабинете WB (из readback). */
+  observedFinal: number | null;
   confirmedAt: string | null;
   retryAt: string | null;
   lastError: string | null;
@@ -96,6 +98,7 @@ export abstract class WbClustersRepositoryPrices extends WbClustersRepositorySto
     desired_final: string;
     sync_status: string;
     upload_id: string | null;
+    observed_final: string | null;
     confirmed_at: string | null;
     retry_at: string | null;
     last_error: string | null;
@@ -109,6 +112,7 @@ export abstract class WbClustersRepositoryPrices extends WbClustersRepositorySto
       desiredFinal: Number(r.desired_final),
       syncStatus: r.sync_status as PriceChangeSyncStatus,
       uploadId: r.upload_id === null ? null : Number(r.upload_id),
+      observedFinal: r.observed_final === null ? null : Number(r.observed_final),
       confirmedAt: r.confirmed_at,
       retryAt: r.retry_at,
       lastError: r.last_error,
@@ -150,6 +154,7 @@ export abstract class WbClustersRepositoryPrices extends WbClustersRepositorySto
     patch: {
       syncStatus?: PriceChangeSyncStatus;
       uploadId?: number | null;
+      observedFinal?: number | null;
       confirmedAt?: string | null;
       retryAt?: string | null;
       lastError?: string | null;
@@ -161,6 +166,7 @@ export abstract class WbClustersRepositoryPrices extends WbClustersRepositorySto
     let i = 1;
     if (patch.syncStatus !== undefined) { sets.push(`sync_status = $${i++}`); values.push(patch.syncStatus); }
     if (patch.uploadId !== undefined)   { sets.push(`upload_id = $${i++}`);   values.push(patch.uploadId); }
+    if (patch.observedFinal !== undefined){ sets.push(`observed_final = $${i++}`); values.push(patch.observedFinal); }
     if (patch.confirmedAt !== undefined){ sets.push(`confirmed_at = $${i++}`);values.push(patch.confirmedAt); }
     if (patch.retryAt !== undefined)    { sets.push(`retry_at = $${i++}`);    values.push(patch.retryAt); }
     if (patch.lastError !== undefined)  { sets.push(`last_error = $${i++}`);  values.push(patch.lastError); }
@@ -178,7 +184,7 @@ export abstract class WbClustersRepositoryPrices extends WbClustersRepositorySto
   async getPriceChangeRows(): Promise<PriceChangeRow[]> {
     const result = await this.getPool().query(
       `SELECT nm_id::text, desired_base_price::text, desired_discount::text,
-              desired_final::text, sync_status, upload_id::text,
+              desired_final::text, sync_status, upload_id::text, observed_final::text,
               confirmed_at, retry_at, last_error, attempt_count::text, updated_at
        FROM ${this.tableName("wb_product_price_changes")}`,
     );
@@ -189,7 +195,7 @@ export abstract class WbClustersRepositoryPrices extends WbClustersRepositorySto
   async getActivePriceChanges(): Promise<PriceChangeRow[]> {
     const result = await this.getPool().query(
       `SELECT nm_id::text, desired_base_price::text, desired_discount::text,
-              desired_final::text, sync_status, upload_id::text,
+              desired_final::text, sync_status, upload_id::text, observed_final::text,
               confirmed_at, retry_at, last_error, attempt_count::text, updated_at
        FROM ${this.tableName("wb_product_price_changes")}
        WHERE sync_status IN ('sending', 'pending', 'throttled')`,
