@@ -22,7 +22,7 @@ export type ProductsMode = "list" | "detail";
 
 // Overlay sheet active within catalog-products section.
 // "none" means the main products table is shown.
-export type ActiveSheet = "none" | "cost-price" | "orders" | "stocks" | "prices" | "buyout" | "orders-sum" | "revenue";
+export type ActiveSheet = "none" | "cost-price" | "orders" | "stocks" | "prices" | "buyout" | "orders-sum" | "revenue" | "cost-sum";
 
 // Valid sort keys for the products table — must stay in sync with ProductListSortKey.
 export type PersistedProductsSortKey =

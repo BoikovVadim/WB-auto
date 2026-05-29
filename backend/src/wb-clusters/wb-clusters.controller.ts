@@ -458,6 +458,18 @@ export class WbClustersController {
     return this.wbClustersService.getRevenueMatrixCompact();
   }
 
+  /** Сегодняшняя «С/с продаж» (Заказы × % выкупа × себестоимость). */
+  @Get("products/cost-sum-today")
+  getTodayCostSum() {
+    return this.wbClustersService.getTodayCostSum();
+  }
+
+  /** Матрица "товары × даты" «С/с продаж» (снапшот, стартует с момента запуска). */
+  @Get("products/cost-sum-matrix-compact")
+  getCostSumMatrixCompact() {
+    return this.wbClustersService.getCostSumMatrixCompact();
+  }
+
   /**
    * Ручной триггер почасовой синки сегодняшних заказов через Sales Funnel (Воронку).
    * Обычно стреляет крон раз в час, эндпойнт для ad-hoc обновления.

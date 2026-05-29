@@ -17,7 +17,8 @@ export type ProductsColumnKey =
   | "buyout"
   | "stock"
   | "ordersSum"
-  | "revenue";
+  | "revenue"
+  | "costSum";
 
 export type ProductColumnDefinition = {
   key: ProductsColumnKey;
@@ -39,6 +40,7 @@ export const productsTableColumnDefs: ProductColumnDefinition[] = [
   { key: "stock",     defaultWidth: 100 },
   { key: "ordersSum", defaultWidth: 130 },
   { key: "revenue",   defaultWidth: 130 },
+  { key: "costSum",   defaultWidth: 130 },
 ];
 
 const PRODUCTS_COLUMN_KEYS = productsTableColumnDefs.map((c) => c.key);

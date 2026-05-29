@@ -1,4 +1,4 @@
-import { WbClustersRepositoryBuyoutSnapshot } from "./wb-clusters.repository.buyout-snapshot";
+import { WbClustersRepositoryCostSumSnapshot } from "./wb-clusters.repository.cost-sum-snapshot";
 
 export type JamDailyRow = {
   nmId: number;
@@ -20,7 +20,7 @@ export type JamDailyRow = {
  * Materialized nightly from wb_product_search_text_range_rows after JAM sync.
  * Frontend reads with simple SELECT for any date range — no aggregation at query time.
  */
-export abstract class WbClustersRepositoryJamDaily extends WbClustersRepositoryBuyoutSnapshot {
+export abstract class WbClustersRepositoryJamDaily extends WbClustersRepositoryCostSumSnapshot {
   /**
    * Aggregates JAM phrase-level rows for a given date into wb_product_jam_daily.
    * Safe to call multiple times for the same date (ON CONFLICT DO UPDATE).

@@ -153,6 +153,20 @@ export class WbClustersScheduler implements OnModuleInit {
       .catch((err: Error) => this.logger.warn(`Buyout-percent snapshot error: ${err.message}`));
   }
 
+  /**
+   * Раз в сутки в 00:45 МСК (21:45 UTC): фиксируем «С/с продаж» за вчера
+   * (заказы × % выкупа × себестоимость). Запускается через 5 минут после снапшота
+   * % выкупа (00:40) — он нужен как источник того же выкупа, что и у «Выручки».
+   * Серия копится вперёд от момента запуска; backfill истории не делаем.
+   */
+  @Cron("0 45 0 * * *")
+  async handleCostSumSnapshot() {
+    if (!appEnv.wbOrdersSyncEnabled) return;
+    await this.wbClustersService
+      .snapshotCostSumForYesterday()
+      .catch((err: Error) => this.logger.warn(`Cost-sum snapshot error: ${err.message}`));
+  }
+
   /** В 02:00 МСК (по умолчанию): финализируем вчера через CSV. Сегодня в
    *  clear/upsert не трогается. Сервер в Europe/Moscow → cron-строка трактуется
    *  как МСК; раньше дефолт стоял "0 0 23 * * *" с пометкой "23 UTC = 02 МСК",

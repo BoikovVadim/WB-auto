@@ -49,6 +49,8 @@ import { useOrdersSum } from "./useOrdersSum";
 import { useOrdersSumMatrix } from "./useOrdersSumMatrix";
 import { useRevenue } from "./useRevenue";
 import { useRevenueMatrix } from "./useRevenueMatrix";
+import { useCostSum } from "./useCostSum";
+import { useCostSumMatrix } from "./useCostSumMatrix";
 import { usePriceChangeStatuses } from "./usePriceChangeStatuses";
 import { applyProductPrice } from "../../api/syncClientPrices";
 import { useDashboardBootstrap } from "./useDashboardBootstrap";
@@ -142,6 +144,7 @@ export function WbDashboard() {
   const isPricesSheetOpen    = activeSection === "catalog-products" && activeSheet === "prices";
   const isOrdersSumSheetOpen = activeSection === "catalog-products" && activeSheet === "orders-sum";
   const isRevenueSheetOpen   = activeSection === "catalog-products" && activeSheet === "revenue";
+  const isCostSumSheetOpen   = activeSection === "catalog-products" && activeSheet === "cost-sum";
   const { costPrices, isCostPricesLoading, prefetchCostPrices, handleCostSaved, handleCostCleared } = useCostPrices();
   const { orderCounts } = useOrders();
   const { ordersMatrix } = useOrdersMatrix();
@@ -152,6 +155,8 @@ export function WbDashboard() {
   const { ordersSumMatrix } = useOrdersSumMatrix();
   const { revenueValues } = useRevenue();
   const { revenueMatrix } = useRevenueMatrix();
+  const { costSumValues } = useCostSum();
+  const { costSumMatrix } = useCostSumMatrix();
   const { priceChangeStatuses, refreshPriceChangeStatuses, upsertPriceChangeStatus } =
     usePriceChangeStatuses();
   const handlePriceSaved = useCallback(
@@ -513,6 +518,7 @@ export function WbDashboard() {
       isPricesSheetOpen={isPricesSheetOpen}
       isOrdersSumSheetOpen={isOrdersSumSheetOpen}
       isRevenueSheetOpen={isRevenueSheetOpen}
+      isCostSumSheetOpen={isCostSumSheetOpen}
       orderCounts={orderCounts}
       ordersMatrix={ordersMatrix}
       buyoutCounts={buyoutCounts}
@@ -523,6 +529,8 @@ export function WbDashboard() {
       ordersSumMatrix={ordersSumMatrix}
       revenueValues={revenueValues}
       revenueMatrix={revenueMatrix}
+      costSumValues={costSumValues}
+      costSumMatrix={costSumMatrix}
       priceChangeStatuses={priceChangeStatuses}
       isCostPricesLoading={isCostPricesLoading}
       costPrices={costPrices}
@@ -540,6 +548,8 @@ export function WbDashboard() {
       onCloseOrdersSumSheet={() => { setActiveSheet("none"); }}
       onOpenRevenueSheet={() => { setActiveSection("catalog-products"); setActiveSheet("revenue"); }}
       onCloseRevenueSheet={() => { setActiveSheet("none"); }}
+      onOpenCostSumSheet={() => { setActiveSection("catalog-products"); setActiveSheet("cost-sum"); }}
+      onCloseCostSumSheet={() => { setActiveSheet("none"); }}
       onCostSaved={handleCostSaved}
       onCostCleared={handleCostCleared}
       onPriceSaved={handlePriceSaved}

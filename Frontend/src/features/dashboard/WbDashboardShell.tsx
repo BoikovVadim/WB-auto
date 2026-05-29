@@ -26,6 +26,7 @@ import { DashboardCatalogProductsSection } from "./DashboardCatalogProductsSecti
 import { DashboardOrdersDetailSection } from "./DashboardOrdersDetailSection";
 import { DashboardOrdersSumDetailSection } from "./DashboardOrdersSumDetailSection";
 import { DashboardRevenueDetailSection } from "./DashboardRevenueDetailSection";
+import { DashboardCostSumDetailSection } from "./DashboardCostSumDetailSection";
 import { DashboardPricesDetailSection } from "./DashboardPricesDetailSection";
 import { DashboardStocksDetailSection } from "./DashboardStocksDetailSection";
 import { DashboardBuyoutDetailSection } from "./DashboardBuyoutDetailSection";
@@ -103,6 +104,8 @@ type WbDashboardShellProps = {
   ordersSumMatrix: import("./useOrdersSumMatrix").OrdersSumMatrix;
   revenueValues: Map<number, number>;
   revenueMatrix: import("./useRevenueMatrix").RevenueMatrix;
+  costSumValues: Map<number, number>;
+  costSumMatrix: import("./useCostSumMatrix").CostSumMatrix;
   priceChangeStatuses: Map<number, import("../../api/syncClientPrices").PriceChangeStatus>;
   isOrdersSheetOpen: boolean;
   isBuyoutSheetOpen: boolean;
@@ -110,6 +113,7 @@ type WbDashboardShellProps = {
   isPricesSheetOpen: boolean;
   isOrdersSumSheetOpen: boolean;
   isRevenueSheetOpen: boolean;
+  isCostSumSheetOpen: boolean;
   onOpenCostPriceSheet: () => void;
   onCloseCostPriceSheet: () => void;
   onOpenOrdersSheet: () => void;
@@ -124,6 +128,8 @@ type WbDashboardShellProps = {
   onCloseOrdersSumSheet: () => void;
   onOpenRevenueSheet: () => void;
   onCloseRevenueSheet: () => void;
+  onOpenCostSumSheet: () => void;
+  onCloseCostSumSheet: () => void;
   onCostSaved: (nmId: number, value: number) => Promise<void>;
   onCostCleared: (nmIds: number[]) => Promise<void>;
   onPriceSaved: (nmId: number, targetFinal: number) => Promise<void>;
@@ -208,6 +214,8 @@ export function WbDashboardShell({
   ordersSumMatrix,
   revenueValues,
   revenueMatrix,
+  costSumValues,
+  costSumMatrix,
   priceChangeStatuses,
   isOrdersSheetOpen,
   isBuyoutSheetOpen,
@@ -215,6 +223,7 @@ export function WbDashboardShell({
   isPricesSheetOpen,
   isOrdersSumSheetOpen,
   isRevenueSheetOpen,
+  isCostSumSheetOpen,
   onOpenCostPriceSheet,
   onCloseCostPriceSheet,
   onOpenOrdersSheet,
@@ -229,6 +238,8 @@ export function WbDashboardShell({
   onCloseOrdersSumSheet,
   onOpenRevenueSheet,
   onCloseRevenueSheet,
+  onOpenCostSumSheet,
+  onCloseCostSumSheet,
   onCostSaved,
   onCostCleared,
   onPriceSaved,
@@ -388,6 +399,13 @@ export function WbDashboardShell({
                 revenueMatrix={revenueMatrix}
                 onBack={onCloseRevenueSheet}
               />
+            ) : isCostSumSheetOpen ? (
+              <DashboardCostSumDetailSection
+                products={filteredProducts}
+                costSumValues={costSumValues}
+                costSumMatrix={costSumMatrix}
+                onBack={onCloseCostSumSheet}
+              />
             ) : (
               <DashboardCatalogProductsSection
                 productCatalogCount={productCatalogCount}
@@ -405,6 +423,7 @@ export function WbDashboardShell({
                 priceCounts={priceCounts}
                 ordersSumValues={ordersSumValues}
                 revenueValues={revenueValues}
+                costSumValues={costSumValues}
                 priceChangeStatuses={priceChangeStatuses}
                 onProductsSearchChange={onProductsSearchChange}
                 onProductsSortToggle={onProductsSortToggle}
@@ -415,6 +434,7 @@ export function WbDashboardShell({
                 onOpenPricesSheet={onOpenPricesSheet}
                 onOpenOrdersSumSheet={onOpenOrdersSumSheet}
                 onOpenRevenueSheet={onOpenRevenueSheet}
+                onOpenCostSumSheet={onOpenCostSumSheet}
                 onCostSaved={onCostSaved}
                 onCostCleared={onCostCleared}
                 onPriceSaved={onPriceSaved}

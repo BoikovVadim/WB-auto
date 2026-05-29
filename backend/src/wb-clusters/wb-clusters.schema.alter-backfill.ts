@@ -517,6 +517,37 @@ export function getProductBuyoutDailySnapshotAlterStatements({
   ];
 }
 
+/**
+ * wb_product_cost_sum_daily_snapshot: ежедневный снапшот «С/с продаж» (себестоимость
+ * выкупленных заказов) = orders_count(день) × %выкупа(день) × себестоимость(на день).
+ * Заполняется cron-ом раз в сутки ПОСЛЕ снапшота % выкупа (тот же %, что использует
+ * «Выручка»). Серия начинается с момента запуска и копится вперёд — backfill истории
+ * НЕ делаем (намеренно: себестоимость по прошлым дням недостоверна). Ретроспектива
+ * читает строки одним SELECT'ом, «сегодня» считается на лету в сервисе.
+ */
+export function getProductCostSumDailySnapshotCreateStatements({
+  tableName,
+}: WbClustersSchemaContext): string[] {
+  return [
+    `
+      CREATE TABLE IF NOT EXISTS ${tableName("wb_product_cost_sum_daily_snapshot")} (
+        nm_id          BIGINT       NOT NULL,
+        snapshot_date  DATE         NOT NULL,
+        orders_count   INT          NOT NULL DEFAULT 0,
+        buyout_percent NUMERIC(6,3),
+        cost_value     NUMERIC(14,2),
+        cost_sum       NUMERIC(16,2),
+        updated_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (nm_id, snapshot_date)
+      )
+    `,
+    `
+      CREATE INDEX IF NOT EXISTS wb_product_cost_sum_daily_snapshot_date_idx
+        ON ${tableName("wb_product_cost_sum_daily_snapshot")} (snapshot_date DESC)
+    `,
+  ];
+}
+
 /** wb_product_daily_stocks: daily stock snapshot per product (total quantity across all warehouses). */
 export function getProductDailyStocksCreateStatements({
   tableName,

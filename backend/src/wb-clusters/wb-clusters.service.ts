@@ -877,6 +877,66 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     return { dates, products };
   }
 
+  // ─── С/с продаж (производная: Заказы × % выкупа × себестоимость) ──────────────
+  //
+  // Себестоимость выкупленных заказов — зеркало «Выручки», только себестоимость
+  // вместо суммы заказов. Метрика считается ЗДЕСЬ, на сервере (фронт рисует).
+  // «Сегодня»: заказы(today) × rolling-выкуп(365) × текущая себестоимость.
+  // «История»: cost_sum за день из снапшот-таблицы (тот же % выкупа, что у Выручки).
+  // Ретроспектива стартует с момента запуска и копится вперёд — backfill НЕ делаем
+  // (себестоимость по прошлым дням недостоверна). «Нет данных» → товар не в выдаче,
+  // если нет заказов ИЛИ нет выкупа (0 выкупов = лаг WB) ИЛИ нет себестоимости.
+
+  /** Сегодняшняя «С/с продаж» по товарам: заказы(today) × rolling-выкуп × себестоимость. */
+  async getTodayCostSum(): Promise<{ items: { nmId: number; costSum: number }[] }> {
+    if (!this.wbClustersRepository.isConfigured()) return { items: [] };
+    await this.wbClustersRepository.ensureSchema();
+    const [todayCounts, rolling, costs] = await Promise.all([
+      this.wbClustersRepository.getTodayBuyoutCounts(),
+      this.wbClustersRepository.getRollingBuyoutCounts(365),
+      this.wbClustersRepository.getAllCurrentCostPrices(),
+    ]);
+    const rollingByNmId = new Map<number, { ordersCount: number; buyoutsCount: number }>();
+    for (const b of rolling) rollingByNmId.set(b.nmId, b);
+    const costByNmId = new Map<number, number>();
+    for (const c of costs) costByNmId.set(c.nmId, c.costValue);
+    const items: { nmId: number; costSum: number }[] = [];
+    for (const t of todayCounts) {
+      if (t.ordersCount <= 0) continue;
+      const b = rollingByNmId.get(t.nmId);
+      if (!b || b.ordersCount === 0 || b.buyoutsCount === 0) continue;
+      const cost = costByNmId.get(t.nmId);
+      if (cost == null || cost <= 0) continue;
+      const buyoutFraction = b.buyoutsCount / b.ordersCount;
+      items.push({ nmId: t.nmId, costSum: t.ordersCount * buyoutFraction * cost });
+    }
+    return { items };
+  }
+
+  /** Матрица "товары × даты" «С/с продаж» (compact) — читается из снапшот-таблицы. */
+  async getCostSumMatrixCompact(): Promise<{
+    dates: string[];
+    products: { nmId: number; vals: (number | null)[] }[];
+  }> {
+    if (!this.wbClustersRepository.isConfigured()) return { dates: [], products: [] };
+    await this.wbClustersRepository.ensureSchema();
+    return this.wbClustersRepository.getCostSumSnapshotMatrix();
+  }
+
+  /**
+   * Фиксирует «С/с продаж» за вчера (Москва) в снапшот-таблицу. Запускается cron-ом
+   * раз в сутки ПОСЛЕ снапшота % выкупа (тот же %, что и у «Выручки»). Строка за
+   * закрытый день неизменна; история копится вперёд от момента запуска.
+   */
+  async snapshotCostSumForYesterday(): Promise<void> {
+    if (!this.wbClustersRepository.isConfigured()) return;
+    await this.wbClustersRepository.ensureSchema();
+    const result = await this.wbClustersRepository.materializeCostSumSnapshotForYesterday();
+    this.logger.log(
+      `Cost-sum snapshot materialized for ${result.snapshotDate}: ${result.rowsWritten} rows`,
+    );
+  }
+
   /**
    * Fixes the «% выкупа» snapshot for yesterday (Moscow) based on the last `days`
    * days of wb_product_daily_orders. Runs once a day from cron at 03:40 МСК — after

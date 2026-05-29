@@ -37,6 +37,7 @@ type DashboardCatalogProductsSectionProps = {
   priceCounts: Map<number, CurrentPriceEntry>;
   ordersSumValues: Map<number, number>;
   revenueValues: Map<number, number>;
+  costSumValues: Map<number, number>;
   priceChangeStatuses: Map<number, PriceChangeStatus>;
   onProductsSearchChange: (value: string) => void;
   onProductsSortToggle: (key: ProductListSortKey) => void;
@@ -47,6 +48,7 @@ type DashboardCatalogProductsSectionProps = {
   onOpenPricesSheet: () => void;
   onOpenOrdersSumSheet: () => void;
   onOpenRevenueSheet: () => void;
+  onOpenCostSumSheet: () => void;
   onCostSaved: (nmId: number, value: number) => Promise<void>;
   onCostCleared: (nmIds: number[]) => Promise<void>;
   /** ⚠️ Запись новой цены «со скидкой» на маркетплейс WB. */
@@ -54,7 +56,7 @@ type DashboardCatalogProductsSectionProps = {
 };
 
 // ─── Local sort key (for columns backed by external Maps) ────────────────────
-type LocalSortKey = "cost" | "price" | "orders" | "buyout" | "stock" | "ordersSum" | "revenue";
+type LocalSortKey = "cost" | "price" | "orders" | "buyout" | "stock" | "ordersSum" | "revenue" | "costSum";
 
 function SortArrow({
   active,
@@ -392,6 +394,7 @@ function getColLabel(key: ProductsColumnKey): string {
     case "stock":     return "Остатки";
     case "ordersSum": return "Сумма заказов";
     case "revenue":   return "Выручка";
+    case "costSum":   return "С/с продаж";
   }
 }
 
@@ -487,6 +490,9 @@ export const DashboardCatalogProductsSection = memo(
         } else if (localSortKey === "revenue") {
           av = a.nmId !== null ? (props.revenueValues.get(a.nmId) ?? 0) : 0;
           bv = b.nmId !== null ? (props.revenueValues.get(b.nmId) ?? 0) : 0;
+        } else if (localSortKey === "costSum") {
+          av = a.nmId !== null ? (props.costSumValues.get(a.nmId) ?? 0) : 0;
+          bv = b.nmId !== null ? (props.costSumValues.get(b.nmId) ?? 0) : 0;
         } else if (localSortKey === "price") {
           av = a.nmId !== null ? (props.priceCounts.get(a.nmId)?.priceWithDiscount ?? 0) : 0;
           bv = b.nmId !== null ? (props.priceCounts.get(b.nmId)?.priceWithDiscount ?? 0) : 0;
@@ -497,7 +503,7 @@ export const DashboardCatalogProductsSection = memo(
         }
         return localSortDir === "asc" ? av - bv : bv - av;
       });
-    }, [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costPrices, props.priceCounts]);
+    }, [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costSumValues, props.costPrices, props.priceCounts]);
 
     const handleCommitEdit = useCallback(() => {
       setEditingNmId(null);
@@ -790,6 +796,17 @@ export const DashboardCatalogProductsSection = memo(
       return hasAny ? sum : null;
     }, [props.filteredProducts, props.revenueValues]);
 
+    const totalCostSum = useMemo(() => {
+      let sum = 0;
+      let hasAny = false;
+      for (const p of props.filteredProducts) {
+        if (p.nmId === null) continue;
+        const v = props.costSumValues.get(p.nmId);
+        if (v !== undefined && v > 0) { sum += v; hasAny = true; }
+      }
+      return hasAny ? sum : null;
+    }, [props.filteredProducts, props.costSumValues]);
+
     // ── Header cell renderer ───────────────────────────────────────────────────
 
     const renderHeaderCell = (col: ProductColumnDefinition, colIdx: number) => {
@@ -798,7 +815,7 @@ export const DashboardCatalogProductsSection = memo(
       const isParentActive = localSortKey === null && parentSortKey !== null && sortKey === parentSortKey;
       const isLocalActive = localSortKey === key;
       const isResizable = key === "vendorCode" || key === "category" || key === "subject";
-      const isNumeric = key === "index" || key === "nmId" || key === "cost" || key === "price" || key === "orders" || key === "buyout" || key === "stock" || key === "ordersSum" || key === "revenue";
+      const isNumeric = key === "index" || key === "nmId" || key === "cost" || key === "price" || key === "orders" || key === "buyout" || key === "stock" || key === "ordersSum" || key === "revenue" || key === "costSum";
       const isDragging = draggedColumn === key;
 
       const dragHandlers = {
@@ -917,6 +934,8 @@ export const DashboardCatalogProductsSection = memo(
             return renderSheetHeader("Сумма заказов", "ordersSum", props.onOpenOrdersSumSheet, "Открыть ретроспективу суммы заказов");
           case "revenue":
             return renderSheetHeader("Выручка", "revenue", props.onOpenRevenueSheet, "Открыть ретроспективу выручки");
+          case "costSum":
+            return renderSheetHeader("С/с продаж", "costSum", props.onOpenCostSumSheet, "Открыть ретроспективу С/с продаж");
         }
       })();
 
@@ -974,6 +993,12 @@ export const DashboardCatalogProductsSection = memo(
           return (
             <th key={key} className="wb-table-cell--numeric">
               {totalRevenue !== null ? formatMoney(totalRevenue) : "—"}
+            </th>
+          );
+        case "costSum":
+          return (
+            <th key={key} className="wb-table-cell--numeric">
+              {totalCostSum !== null ? formatMoney(totalCostSum) : "—"}
             </th>
           );
         default:
@@ -1110,6 +1135,16 @@ export const DashboardCatalogProductsSection = memo(
             <td key={key} className="wb-table-cell--numeric">
               {revenue !== undefined && revenue > 0
                 ? formatMoney(revenue)
+                : <span style={{ opacity: 0.3 }}>—</span>}
+            </td>
+          );
+        }
+        case "costSum": {
+          const costSum = nmId !== null ? props.costSumValues.get(nmId) : undefined;
+          return (
+            <td key={key} className="wb-table-cell--numeric">
+              {costSum !== undefined && costSum > 0
+                ? formatMoney(costSum)
                 : <span style={{ opacity: 0.3 }}>—</span>}
             </td>
           );
