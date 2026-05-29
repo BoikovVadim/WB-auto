@@ -1080,16 +1080,18 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     const currentFinal = this.finalFromBase(currentBase, discount);
 
     // Обратный пересчёт: целевой итог → целая базовая цена (скидка неизменна).
+    // WB принимает только целую базу; фактическую цену «со скидкой» он считает сам
+    // как base × (1 − discount/100) — она получается с копейками. Фиксируем именно
+    // эту реальную цену (с копейками), а не округлённое введённое значение, чтобы
+    // ячейка показывала ровно то, что установит WB.
     const newBase = Math.round(targetFinal / (1 - discount / 100));
     const actualFinal = this.finalFromBase(newBase, discount);
-    // Витринная цена WB — в целых рублях; её и фиксируем как итог (ровно введённое).
-    const shelfFinal = Math.round(actualFinal);
 
     const result = {
       nmId,
       desiredBasePrice: newBase,
       desiredDiscount: discount,
-      desiredFinal: shelfFinal,
+      desiredFinal: actualFinal,
       currentBasePrice: currentBase,
       currentFinal,
       lastError: null as string | null,
@@ -1103,7 +1105,7 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
       nmId,
       basePrice: newBase,
       discount,
-      finalPrice: shelfFinal,
+      finalPrice: actualFinal,
     });
 
     this.wbClustersRepository
@@ -1112,8 +1114,8 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
         nmId,
         entityLabel: `Товар #${String(nmId)}`,
         changeType: "set",
-        oldValue: `${String(Math.round(currentFinal))} ₽ (база ${String(currentBase)})`,
-        newValue: `${String(shelfFinal)} ₽ (база ${String(newBase)})`,
+        oldValue: `${currentFinal.toFixed(2)} ₽ (база ${String(currentBase)})`,
+        newValue: `${actualFinal.toFixed(2)} ₽ (база ${String(newBase)})`,
       })
       .catch(() => {/* non-critical */});
 

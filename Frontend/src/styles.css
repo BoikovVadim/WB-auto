@@ -2904,15 +2904,11 @@ input {
   white-space: nowrap;
   user-select: none;
   cursor: default;
-  transition: background 0.1s;
 }
 
-.wb-cost-price-display:hover {
-  background: rgba(0, 0, 0, 0.04);
-}
-
-/* Карандаш-аффорданс слева от значения себестоимости. Клик по нему или по цифре
-   открывает редактирование. Видим всегда (приглушённо), ярче при наведении. */
+/* Карандаш-аффорданс слева от значения. Клик по нему или по цифре открывает
+   редактирование. Видим всегда с постоянной прозрачностью — без реакции на hover,
+   чтобы при движении курсора по ячейкам ничего не «дёргалось». */
 /* Карандаш прижат к левому краю ячейки (вне потока), чтобы цифра центрировалась
    по всей ячейке, а не вместе с иконкой. */
 .wb-cost-price-edit-icon {
@@ -2929,15 +2925,6 @@ input {
   color: var(--wb-gold-dark);
   cursor: pointer;
   opacity: 0.65;
-  transition: opacity 0.1s;
-}
-
-.wb-cost-price-display:hover .wb-cost-price-edit-icon {
-  opacity: 1;
-}
-
-.wb-cost-price-edit-icon:hover {
-  opacity: 1;
 }
 
 .wb-cost-price-value {

@@ -350,7 +350,7 @@ const PriceConfirmModal = memo(function PriceConfirmModal({
             <span className="wb-price-confirm-arrow">→</span>
             <span className="wb-price-confirm-new">{formatMoney(shelf)}</span>
           </div>
-          <div className="wb-price-confirm-note">Цена на витрине WB станет {String(shelf)} ₽.</div>
+          <div className="wb-price-confirm-note">Фактическая цена со скидкой на WB станет {formatMoney(shelf)}.</div>
         </div>
         <div className="wb-price-confirm-actions">
           <button type="button" className="wb-btn-secondary" onClick={onCancel}>
@@ -1212,7 +1212,9 @@ export const DashboardCatalogProductsSection = memo(
           const e = props.priceCounts.get(priceConfirm.nmId);
           const d = e?.discount ?? 0;
           const base = Math.round(priceConfirm.target / (1 - d / 100));
-          const shelf = Math.round(base * (1 - d / 100));
+          // Фактическая цена «со скидкой», которую установит WB: целая база × скидка,
+          // получается с копейками. Показываем именно её, а не округлённое введённое.
+          const shelf = Math.round(base * (1 - d / 100) * 100) / 100;
           const overlay = props.priceChangeStatuses.get(priceConfirm.nmId);
           const oldFinal = overlay ? overlay.desiredFinal : (e?.priceWithDiscount ?? null);
           const product = props.filteredProducts.find((p) => p.nmId === priceConfirm.nmId);
