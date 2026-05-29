@@ -62,64 +62,79 @@ export abstract class WbClustersRepositoryOrders extends WbClustersRepositoryCha
     const today = "(NOW() AT TIME ZONE 'Europe/Moscow')::DATE";
 
     const COLS = 7;
-    const values: unknown[] = [];
-    const placeholders = rows.map((r, i) => {
-      const b = i * COLS;
-      values.push(
-        r.nmId,
-        r.orderDate,
-        r.ordersCount,
-        r.cancelledCount,
-        r.ordersSum,
-        r.buyoutsCount,
-        r.buyoutsSum,
+    // Postgres encodes the bind-message parameter count as Int16 (max 65535).
+    // Годовая сверка апсертит весь год (товары × ~365 дней) — это сотни тысяч
+    // параметров, счётчик переполнялся → `bind message has N parameter formats
+    // but 0 parameters` (08P01), и годовая сверка молча падала. Режем на чанки
+    // c запасом: 5000 строк × 7 = 35000 параметров на запрос. Апсерт diff-aware
+    // и идемпотентный, так что разбиение на несколько запросов безопасно.
+    const CHUNK_ROWS = 5000;
+
+    let changedRows = 0;
+    const changedDateSet = new Set<string>();
+
+    for (let offset = 0; offset < rows.length; offset += CHUNK_ROWS) {
+      const chunk = rows.slice(offset, offset + CHUNK_ROWS);
+      const values: unknown[] = [];
+      const placeholders = chunk.map((r, i) => {
+        const b = i * COLS;
+        values.push(
+          r.nmId,
+          r.orderDate,
+          r.ordersCount,
+          r.cancelledCount,
+          r.ordersSum,
+          r.buyoutsCount,
+          r.buyoutsSum,
+        );
+        return `($${b+1}, $${b+2}, $${b+3}, $${b+4}, $${b+5}, $${b+6}, $${b+7}, NOW())`;
+      });
+
+      const result = await this.getPool().query<{ order_date: string }>(
+        `INSERT INTO ${tbl}
+           (nm_id, order_date, orders_count, cancelled_count, orders_sum,
+            buyouts_count, buyouts_sum, updated_at)
+         VALUES ${placeholders.join(", ")}
+         ON CONFLICT (nm_id, order_date) DO UPDATE SET
+           orders_count    = CASE
+             WHEN ${tbl}.order_date = ${today}
+               THEN ${tbl}.orders_count
+             ELSE EXCLUDED.orders_count
+           END,
+           cancelled_count = CASE
+             WHEN ${tbl}.order_date = ${today}
+               THEN ${tbl}.cancelled_count
+             ELSE EXCLUDED.cancelled_count
+           END,
+           orders_sum      = CASE
+             WHEN ${tbl}.order_date = ${today}
+               THEN ${tbl}.orders_sum
+             ELSE EXCLUDED.orders_sum
+           END,
+           buyouts_count   = EXCLUDED.buyouts_count,
+           buyouts_sum     = EXCLUDED.buyouts_sum,
+           updated_at      = NOW()
+         WHERE
+           (${tbl}.order_date = ${today} AND (
+              ${tbl}.buyouts_count IS DISTINCT FROM EXCLUDED.buyouts_count OR
+              ${tbl}.buyouts_sum   IS DISTINCT FROM EXCLUDED.buyouts_sum))
+           OR
+           (${tbl}.order_date <> ${today} AND (
+              ${tbl}.orders_count    IS DISTINCT FROM EXCLUDED.orders_count    OR
+              ${tbl}.cancelled_count IS DISTINCT FROM EXCLUDED.cancelled_count OR
+              ${tbl}.orders_sum      IS DISTINCT FROM EXCLUDED.orders_sum      OR
+              ${tbl}.buyouts_count   IS DISTINCT FROM EXCLUDED.buyouts_count   OR
+              ${tbl}.buyouts_sum     IS DISTINCT FROM EXCLUDED.buyouts_sum))
+         RETURNING TO_CHAR(order_date, 'YYYY-MM-DD') AS order_date`,
+        values,
       );
-      return `($${b+1}, $${b+2}, $${b+3}, $${b+4}, $${b+5}, $${b+6}, $${b+7}, NOW())`;
-    });
 
-    const result = await this.getPool().query<{ order_date: string }>(
-      `INSERT INTO ${tbl}
-         (nm_id, order_date, orders_count, cancelled_count, orders_sum,
-          buyouts_count, buyouts_sum, updated_at)
-       VALUES ${placeholders.join(", ")}
-       ON CONFLICT (nm_id, order_date) DO UPDATE SET
-         orders_count    = CASE
-           WHEN ${tbl}.order_date = ${today}
-             THEN ${tbl}.orders_count
-           ELSE EXCLUDED.orders_count
-         END,
-         cancelled_count = CASE
-           WHEN ${tbl}.order_date = ${today}
-             THEN ${tbl}.cancelled_count
-           ELSE EXCLUDED.cancelled_count
-         END,
-         orders_sum      = CASE
-           WHEN ${tbl}.order_date = ${today}
-             THEN ${tbl}.orders_sum
-           ELSE EXCLUDED.orders_sum
-         END,
-         buyouts_count   = EXCLUDED.buyouts_count,
-         buyouts_sum     = EXCLUDED.buyouts_sum,
-         updated_at      = NOW()
-       WHERE
-         (${tbl}.order_date = ${today} AND (
-            ${tbl}.buyouts_count IS DISTINCT FROM EXCLUDED.buyouts_count OR
-            ${tbl}.buyouts_sum   IS DISTINCT FROM EXCLUDED.buyouts_sum))
-         OR
-         (${tbl}.order_date <> ${today} AND (
-            ${tbl}.orders_count    IS DISTINCT FROM EXCLUDED.orders_count    OR
-            ${tbl}.cancelled_count IS DISTINCT FROM EXCLUDED.cancelled_count OR
-            ${tbl}.orders_sum      IS DISTINCT FROM EXCLUDED.orders_sum      OR
-            ${tbl}.buyouts_count   IS DISTINCT FROM EXCLUDED.buyouts_count   OR
-            ${tbl}.buyouts_sum     IS DISTINCT FROM EXCLUDED.buyouts_sum))
-       RETURNING TO_CHAR(order_date, 'YYYY-MM-DD') AS order_date`,
-      values,
-    );
+      changedRows += result.rowCount ?? result.rows.length;
+      for (const r of result.rows) changedDateSet.add(r.order_date);
+    }
 
-    const changedDates = Array.from(new Set(result.rows.map((r) => r.order_date))).sort(
-      (a, b) => (a < b ? 1 : -1),
-    );
-    return { changedRows: result.rowCount ?? result.rows.length, changedDates };
+    const changedDates = Array.from(changedDateSet).sort((a, b) => (a < b ? 1 : -1));
+    return { changedRows, changedDates };
   }
 
   /**
