@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { formatDateWithWeekday } from "../../formatters";
 
 import { fetchStocksMatrix, type StocksMatrixRow } from "../../api/syncClientStocks";
 import type { ProductListItem } from "./useDashboardProductsWorkspace";
@@ -14,11 +15,6 @@ type Props = {
   stockCounts: Map<number, number>;
   onBack: () => void;
 };
-
-function formatDate(isoDate: string): string {
-  const [year, month, day] = isoDate.split("-");
-  return `${day ?? ""}.${month ?? ""}.${year ?? ""}`;
-}
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -147,7 +143,6 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
   const hasLive = stockCounts.size > 0;
   const latestSnapshotDate = matrix.dates[0] ?? null;
   const pinnedKey = hasLive ? today : latestSnapshotDate;
-  const pinnedIsLive = hasLive;
 
   const pastDates = useMemo(
     () => matrix.dates.filter((d) => d !== today && d !== pinnedKey),
@@ -203,7 +198,7 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
 
   const pinnedCol: DateColumn | undefined = useMemo(() => {
     if (!pinnedKey) return undefined;
-    const label = pinnedIsLive ? "Сегодня" : formatDate(pinnedKey);
+    const label = formatDateWithWeekday(pinnedKey);
     return {
       key: pinnedKey,
       headerLabel: label,
@@ -214,13 +209,13 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
       totalDisplay: dateTotals[0] > 0 ? String(dateTotals[0]) : "—",
       accent: true,
     };
-  }, [pinnedKey, pinnedIsLive, dateTotals, sortCol, sortDir, handleSortToggle]);
+  }, [pinnedKey, dateTotals, sortCol, sortDir, handleSortToggle]);
 
   const dataCols: DateColumn[] = useMemo(
     () =>
       pastDates.map((d, i) => ({
         key: d,
-        headerLabel: formatDate(d),
+        headerLabel: formatDateWithWeekday(d),
         onHeaderClick: () => {
           handleSortToggle(d);
         },

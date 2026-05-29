@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { formatDateWithWeekday } from "../../formatters";
 
 import { fetchJamDailyMatrix, type JamDailyRow } from "../../api/syncClientJam";
 import type { ProductListItem } from "./useDashboardProductsWorkspace";
@@ -35,11 +36,6 @@ function formatMetricValue(key: Metric, value: number | null): string {
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-function formatDate(isoDate: string): string {
-  const [year, month, day] = isoDate.split("-");
-  return `${day ?? ""}.${month ?? ""}.${year ?? ""}`;
-}
 
 type JamMatrix = {
   dates: string[];
@@ -272,7 +268,7 @@ export function DashboardJamDailySection({ products, onBack }: Props) {
                         className="wb-table-cell--numeric"
                         style={{ width: COL_DATE }}
                       >
-                        <span>{formatDate(d)}</span>
+                        <span>{formatDateWithWeekday(d)}</span>
                         <div
                           className="wb-col-resize-handle"
                           data-col-idx={String(3 + i)}

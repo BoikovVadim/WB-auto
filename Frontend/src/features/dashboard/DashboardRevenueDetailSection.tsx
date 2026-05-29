@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 
-import { formatMoney } from "../../formatters";
+import { formatMoney, formatDateWithWeekday } from "../../formatters";
 import type { RevenueMatrix } from "./useRevenueMatrix";
 import type { ProductListItem } from "./useDashboardProductsWorkspace";
 import {
@@ -17,11 +17,6 @@ type Props = {
   revenueMatrix: RevenueMatrix;
   onBack: () => void;
 };
-
-function formatDate(isoDate: string): string {
-  const [year, month, day] = isoDate.split("-");
-  return `${day ?? ""}.${month ?? ""}.${year ?? ""}`;
-}
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -95,7 +90,7 @@ export function DashboardRevenueDetailSection({
   const pinnedCol: DateColumn = useMemo(
     () => ({
       key: today,
-      headerLabel: formatDate(today),
+      headerLabel: formatDateWithWeekday(today),
       totalDisplay: dateTotals[0] > 0 ? formatMoney(dateTotals[0]) : "—",
       accent: true,
     }),
@@ -106,7 +101,7 @@ export function DashboardRevenueDetailSection({
     () =>
       pastDates.map((d, i) => ({
         key: d,
-        headerLabel: formatDate(d),
+        headerLabel: formatDateWithWeekday(d),
         totalDisplay: (dateTotals[i + 1] ?? 0) > 0 ? formatMoney(dateTotals[i + 1]!) : "—",
       })),
     [pastDates, dateTotals],

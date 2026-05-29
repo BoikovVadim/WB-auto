@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 
-import { formatPercent } from "../../formatters";
+import { formatPercent, formatDateWithWeekday } from "../../formatters";
 import type { SppMatrix } from "./useSppMatrix";
 import type { ProductListItem } from "./useDashboardProductsWorkspace";
 import {
@@ -17,11 +17,6 @@ type Props = {
   sppMatrix: SppMatrix;
   onBack: () => void;
 };
-
-function formatDate(isoDate: string): string {
-  const [year, month, day] = isoDate.split("-");
-  return `${day ?? ""}.${month ?? ""}.${year ?? ""}`;
-}
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -99,7 +94,7 @@ export function DashboardSppDetailSection({
   const pinnedCol: DateColumn = useMemo(
     () => ({
       key: today,
-      headerLabel: formatDate(today),
+      headerLabel: formatDateWithWeekday(today),
       totalDisplay: formatPercent(dateTotals[0] ?? null),
       accent: true,
     }),
@@ -110,7 +105,7 @@ export function DashboardSppDetailSection({
     () =>
       pastDates.map((d, i) => ({
         key: d,
-        headerLabel: formatDate(d),
+        headerLabel: formatDateWithWeekday(d),
         totalDisplay: formatPercent(dateTotals[i + 1] ?? null),
       })),
     [pastDates, dateTotals],

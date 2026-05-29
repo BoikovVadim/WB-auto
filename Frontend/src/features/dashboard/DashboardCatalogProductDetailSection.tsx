@@ -5,7 +5,7 @@ import {
   type CostPriceCurrent,
   type CostPriceMatrix,
 } from "../../api/syncClientCostPrice";
-import { formatMoney } from "../../formatters";
+import { formatMoney, formatDateWithWeekday } from "../../formatters";
 import type { ProductListItem } from "./useDashboardProductsWorkspace";
 import {
   VirtualMatrixTable,
@@ -19,11 +19,6 @@ type Props = {
   costPrices: Map<number, CostPriceCurrent>;
   onBack: () => void;
 };
-
-function formatDate(isoDate: string): string {
-  const [year, month, day] = isoDate.split("-");
-  return `${day ?? ""}.${month ?? ""}.${year ?? ""}`;
-}
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -180,7 +175,7 @@ export function DashboardCatalogProductDetailSection({ products, costPrices, onB
 
   const pinnedCol: DateColumn | undefined = useMemo(() => {
     if (!pinnedKey) return undefined;
-    const label = pinnedIsLive ? "Сегодня" : formatDate(pinnedKey);
+    const label = formatDateWithWeekday(pinnedKey);
     return {
       key: pinnedKey,
       headerLabel: label,
@@ -190,13 +185,13 @@ export function DashboardCatalogProductDetailSection({ products, costPrices, onB
       sortIndicator: <SortArrow active={sortCol === pinnedKey} dir={sortDir} />,
       accent: true,
     };
-  }, [pinnedKey, pinnedIsLive, sortCol, sortDir, handleSortToggle]);
+  }, [pinnedKey, sortCol, sortDir, handleSortToggle]);
 
   const dataCols: DateColumn[] = useMemo(
     () =>
       pastDates.map((d) => ({
         key: d,
-        headerLabel: formatDate(d),
+        headerLabel: formatDateWithWeekday(d),
         onHeaderClick: () => {
           handleSortToggle(d);
         },

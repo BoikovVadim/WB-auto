@@ -850,9 +850,15 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     const buyoutByNmId = new Map<number, (number | null)[]>();
     for (const p of buyoutMatrix.products) buyoutByNmId.set(p.nmId, p.percents);
 
-    // Колонки привязаны к датам суммы заказов (без суммы заказов выручки нет).
+    // Колонки = дни, за которые есть И сумма заказов, И снапшот %выкупа: выручка =
+    // ordersSum × %выкупа, без %выкупа её не посчитать. Заказы бэкфилятся за год назад,
+    // а снапшоты %выкупа копятся вперёд от момента запуска — поэтому без фильтра по
+    // выкупу матрица показывала год пустых колонок «—». Оставляем только дни с реальными
+    // данными; история копится сама по мере накопления снапшотов выкупа.
     const datesSet = new Set<string>();
-    for (const r of ordersRows) datesSet.add(r.orderDate);
+    for (const r of ordersRows) {
+      if (buyoutDateIdx.has(r.orderDate)) datesSet.add(r.orderDate);
+    }
     const dates = Array.from(datesSet).sort((a, b) => (a < b ? 1 : -1));
     const dateIdx = new Map<string, number>();
     for (let i = 0; i < dates.length; i++) dateIdx.set(dates[i]!, i);

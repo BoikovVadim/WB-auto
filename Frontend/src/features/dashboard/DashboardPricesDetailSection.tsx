@@ -5,7 +5,7 @@ import {
   priceWithDiscount,
   type PricesMatrixRow,
 } from "../../api/syncClientPrices";
-import { formatMoney } from "../../formatters";
+import { formatMoney, formatDateWithWeekday } from "../../formatters";
 import type { CurrentPriceEntry } from "./useCurrentPrices";
 import type { ProductListItem } from "./useDashboardProductsWorkspace";
 import {
@@ -19,11 +19,6 @@ type Props = {
   priceCounts: Map<number, CurrentPriceEntry>;
   onBack: () => void;
 };
-
-function formatDate(isoDate: string): string {
-  const [year, month, day] = isoDate.split("-");
-  return `${day ?? ""}.${month ?? ""}.${year ?? ""}`;
-}
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -206,7 +201,7 @@ export function DashboardPricesDetailSection({ products, priceCounts, onBack }: 
     if (!pinnedKey) return undefined;
     return {
       key: pinnedKey,
-      headerLabel: formatDate(pinnedKey),
+      headerLabel: formatDateWithWeekday(pinnedKey),
       onHeaderClick: () => {
         handleSortToggle(pinnedKey);
       },
@@ -219,7 +214,7 @@ export function DashboardPricesDetailSection({ products, priceCounts, onBack }: 
     () =>
       pastDates.map((d) => ({
         key: d,
-        headerLabel: formatDate(d),
+        headerLabel: formatDateWithWeekday(d),
         onHeaderClick: () => {
           handleSortToggle(d);
         },

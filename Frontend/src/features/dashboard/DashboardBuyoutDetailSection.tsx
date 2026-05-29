@@ -5,7 +5,7 @@ import {
   type BuyoutSnapshotMatrix,
   type TodayBuyoutCount,
 } from "../../api/syncClientBuyouts";
-import { formatPercent } from "../../formatters";
+import { formatPercent, formatDateWithWeekday } from "../../formatters";
 import type { ProductListItem } from "./useDashboardProductsWorkspace";
 import {
   VirtualMatrixTable,
@@ -23,11 +23,6 @@ type Props = {
   rollingBuyoutCounts: Map<number, TodayBuyoutCount>;
   onBack: () => void;
 };
-
-function formatDate(isoDate: string): string {
-  const [year, month, day] = isoDate.split("-");
-  return `${day ?? ""}.${month ?? ""}.${year ?? ""}`;
-}
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -242,7 +237,7 @@ export function DashboardBuyoutDetailSection({
   const pinnedCol: DateColumn = useMemo(
     () => ({
       key: today,
-      headerLabel: formatDate(today),
+      headerLabel: formatDateWithWeekday(today),
       onHeaderClick: () => {
         handleSortToggle(today);
       },
@@ -257,7 +252,7 @@ export function DashboardBuyoutDetailSection({
     () =>
       pastDates.map((d, i) => ({
         key: d,
-        headerLabel: formatDate(d),
+        headerLabel: formatDateWithWeekday(d),
         onHeaderClick: () => {
           handleSortToggle(d);
         },
