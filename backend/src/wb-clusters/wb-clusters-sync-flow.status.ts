@@ -268,15 +268,6 @@ export async function handleScheduledJamSync(self: WbClustersService) {
       // yesterday (just finalized above) is correctly skipped here.
       await self.runJamSyncForNmIds(nmIds, warningMessages);
 
-      // Materialize aggregated daily rows into wb_product_jam_daily for the last 2 days
-      // (yesterday finalized above + today if any intraday data exists).
-      try {
-        await self.materializeJamDaily(1);
-      } catch (matErr) {
-        const msg = matErr instanceof Error ? matErr.message : String(matErr);
-        self.logger.warn(`JAM daily materialization failed (non-fatal): ${msg}`);
-      }
-
       self.logger.log(
         `Scheduled JAM sync completed for ${nmIds.length} nmIds. Warnings: ${warningMessages.length}.`,
       );

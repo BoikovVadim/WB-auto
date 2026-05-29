@@ -1,4 +1,4 @@
-import { WbClustersRepositoryJamDaily } from "./wb-clusters.repository.jam-daily";
+import { WbClustersRepositorySppDaily } from "./wb-clusters.repository.spp-daily";
 
 export type DailyStocksRow = {
   nmId: number;
@@ -6,7 +6,7 @@ export type DailyStocksRow = {
   quantity: number;
 };
 
-export abstract class WbClustersRepositoryStocks extends WbClustersRepositoryJamDaily {
+export abstract class WbClustersRepositoryStocks extends WbClustersRepositorySppDaily {
   /** Upserts daily stock snapshot (total quantity across all warehouses) per nmId. */
   async upsertDailyStocks(rows: DailyStocksRow[]): Promise<void> {
     if (rows.length === 0) return;

@@ -22,7 +22,6 @@ export type {
 
 export type { ChangeLogEntry } from "./wb-clusters.repository.change-log";
 export type { DailyOrdersRow } from "./wb-clusters.repository.orders";
-export type { JamDailyRow } from "./wb-clusters.repository.jam-daily";
 export type { DailyStocksRow } from "./wb-clusters.repository.stocks";
 
 @Injectable()

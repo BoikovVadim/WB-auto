@@ -7,7 +7,6 @@ import {
   getCatalogAlterStatements,
   getChangeLogCreateStatements,
   getCostPriceCreateStatements,
-  getJamDailyCreateStatements,
   getProductBuyoutDailySnapshotAlterStatements,
   getProductBuyoutDailySnapshotCreateStatements,
   getProductCostSumDailySnapshotCreateStatements,
@@ -75,7 +74,6 @@ export async function initializeWbClustersSchema(input: {
   await executeSchemaStatements(context, getProductBuyoutDailySnapshotAlterStatements(context));
   await executeSchemaStatements(context, getProductCostSumDailySnapshotCreateStatements(context));
   await executeSchemaStatements(context, getProductSppDailyCreateStatements(context));
-  await executeSchemaStatements(context, getJamDailyCreateStatements(context));
   await executeSchemaStatements(context, getProductDailyStocksCreateStatements(context));
   await executeSchemaStatements(context, getProductDailyPricesCreateStatements(context));
   await executeSchemaStatements(context, getProductPriceChangesCreateStatements(context));

@@ -607,38 +607,6 @@ export function getProductDailyStocksCreateStatements({
   ];
 }
 
-/**
- * wb_product_jam_daily: daily JAM metrics aggregated per product.
- * Materialized from wb_product_search_text_range_snapshots + _rows after each nightly JAM sync.
- * One row per (nm_id, jam_date). Frontend reads with simple SELECT for any date range.
- */
-export function getJamDailyCreateStatements({
-  tableName,
-}: WbClustersSchemaContext): string[] {
-  return [
-    `
-      CREATE TABLE IF NOT EXISTS ${tableName("wb_product_jam_daily")} (
-        nm_id             BIGINT      NOT NULL,
-        jam_date          DATE        NOT NULL,
-        avg_position      NUMERIC     NULL,
-        best_position     NUMERIC     NULL,
-        total_frequency   BIGINT      NOT NULL DEFAULT 0,
-        top_frequency     BIGINT      NOT NULL DEFAULT 0,
-        total_clicks      INT         NOT NULL DEFAULT 0,
-        total_add_to_cart INT         NOT NULL DEFAULT 0,
-        total_orders      INT         NOT NULL DEFAULT 0,
-        query_count       INT         NOT NULL DEFAULT 0,
-        updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        PRIMARY KEY (nm_id, jam_date)
-      )
-    `,
-    `
-      CREATE INDEX IF NOT EXISTS wb_product_jam_daily_date_idx
-        ON ${tableName("wb_product_jam_daily")} (jam_date DESC)
-    `,
-  ];
-}
-
 export function getMonthlyFrequencyAlterStatements({
   tableName,
 }: WbClustersSchemaContext): string[] {

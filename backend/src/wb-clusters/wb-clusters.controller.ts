@@ -631,55 +631,6 @@ export class WbClustersController {
     return { status: "started" };
   }
 
-  // ─── JAM daily read-model ────────────────────────────────────────────────────
-
-  /** Latest JAM position per product (most recent jam_date). */
-  @Get("products/jam-positions")
-  getLatestJamPositions() {
-    return this.wbClustersService.getLatestJamPositions();
-  }
-
-  /** All JAM daily rows for all products. Used for retrospective matrix. */
-  @Get("products/jam-matrix")
-  getJamDailyMatrix() {
-    return this.wbClustersService.getJamDailyMatrix();
-  }
-
-  /** Manually trigger JAM daily materialization for today (after manual JAM backfill). */
-  @Post("products/jam-materialize")
-  @UseGuards(WbClustersWriteGuard)
-  triggerJamMaterialize() {
-    this.wbClustersService.materializeJamDaily(0).catch((error: unknown) => {
-      this.logger.error("Background materializeJamDaily failed", error);
-    });
-    return { status: "started" };
-  }
-
-  /**
-   * Backfill JAM daily read-model for the entire current calendar month.
-   * Run once after initial setup; safe to re-run (idempotent ON CONFLICT DO UPDATE).
-   */
-  @Post("products/jam-backfill-month")
-  @UseGuards(WbClustersWriteGuard)
-  async triggerJamBackfillMonth() {
-    const rows = await this.wbClustersService.materializeJamDailyForMonth();
-    return { status: "done", rowsWritten: rows };
-  }
-
-  /**
-   * Returns summed JAM metrics for a single product over a date range.
-   * Used by the advertising cluster view date-range JAM panel.
-   * Query params: from=YYYY-MM-DD&to=YYYY-MM-DD
-   */
-  @Get("products/:nmId/jam-summary")
-  getJamSummaryForProduct(
-    @Param("nmId", ParseIntPipe) nmId: number,
-    @Query("from") from: string,
-    @Query("to") to: string,
-  ) {
-    return this.wbClustersService.getJamDailySummaryForProduct(nmId, from, to);
-  }
-
   @Get("products/:nmId/cost-price-history")
   getCostPriceHistory(@Param("nmId", ParseIntPipe) nmId: number) {
     return this.wbClustersService.getCostPriceHistory(nmId);
