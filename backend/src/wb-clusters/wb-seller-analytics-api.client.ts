@@ -17,7 +17,9 @@
 import { appEnv } from "../common/env";
 
 const NMIDS_PER_BATCH = 20;       // WB API hard limit
-const INTERVAL_MS     = 22_000;   // 3 req/min = 1 per 20s + 2s buffer
+const INTERVAL_MS     = 25_000;   // 3 req/min = 1 per 20s; +5s buffer (22s всё равно ловил 429)
+const RATE_LIMIT_WAIT_MS = 60_000; // пауза перед повтором после 429
+const MAX_429_RETRIES = 4;
 
 export type SalesFunnelDayEntry = {
   date: string;        // "YYYY-MM-DD"
@@ -82,42 +84,56 @@ export class WbSellerAnalyticsApiClient {
     endDate: string,
     nmIds: number[],
   ): Promise<SalesFunnelProductHistory[]> {
-    await this.throttle();
+    // Лимит 3 req/min хрупкий — даже при 25-сек интервале WB иногда отдаёт 429.
+    // На 429 ждём минуту и повторяем тот же батч (до MAX_429_RETRIES раз), чтобы
+    // прогон по всему каталогу не падал целиком из-за одного троттла.
+    for (let attempt = 0; ; attempt++) {
+      await this.throttle();
 
-    const token = this.getToken();
-    if (!token) throw new Error("Analytics API token not configured (WB_API_TOKEN)");
+      const token = this.getToken();
+      if (!token) throw new Error("Analytics API token not configured (WB_API_TOKEN)");
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => { controller.abort(); }, 60_000);
+      const controller = new AbortController();
+      const timer = setTimeout(() => { controller.abort(); }, 60_000);
 
-    try {
-      const resp = await fetch(
-        `${appEnv.wbSellerAnalyticsApiBaseUrl}/api/analytics/v3/sales-funnel/products/history`,
-        {
-          method: "POST",
-          headers: { Authorization: token, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            selectedPeriod: { start: startDate, end: endDate },
-            nmIds,
-            brandNames: [],
-            tagIds: [],
-            subjectIds: [],
-          }),
-          signal: controller.signal,
-        },
-      );
-      clearTimeout(timer);
+      try {
+        const resp = await fetch(
+          `${appEnv.wbSellerAnalyticsApiBaseUrl}/api/analytics/v3/sales-funnel/products/history`,
+          {
+            method: "POST",
+            headers: { Authorization: token, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              selectedPeriod: { start: startDate, end: endDate },
+              nmIds,
+              brandNames: [],
+              tagIds: [],
+              subjectIds: [],
+            }),
+            signal: controller.signal,
+          },
+        );
+        clearTimeout(timer);
 
-      if (!resp.ok) {
-        const text = await resp.text().catch(() => "");
-        throw new Error(`Analytics API ${resp.status}: ${text}`);
+        if (resp.status === 429) {
+          if (attempt >= MAX_429_RETRIES) {
+            const text = await resp.text().catch(() => "");
+            throw new Error(`Analytics API 429 (исчерпаны ${MAX_429_RETRIES} ретраев): ${text}`);
+          }
+          await new Promise<void>((r) => { setTimeout(r, RATE_LIMIT_WAIT_MS); });
+          continue;
+        }
+
+        if (!resp.ok) {
+          const text = await resp.text().catch(() => "");
+          throw new Error(`Analytics API ${resp.status}: ${text}`);
+        }
+
+        const data = await resp.json() as SalesFunnelProductHistory[];
+        return Array.isArray(data) ? data : [];
+      } catch (err) {
+        clearTimeout(timer);
+        throw err;
       }
-
-      const data = await resp.json() as SalesFunnelProductHistory[];
-      return Array.isArray(data) ? data : [];
-    } catch (err) {
-      clearTimeout(timer);
-      throw err;
     }
   }
 }

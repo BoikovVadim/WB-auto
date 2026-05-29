@@ -151,11 +151,12 @@ export abstract class WbClustersRepositoryOrders extends WbClustersRepositoryCha
   }
 
   /**
-   * Upserts today's live aggregates from WB Statistics API.
-   * Writes orders_count, cancelled_count, orders_sum (finishedPrice — с СПП, как у CSV).
+   * Upserts today's live aggregates from the WB Sales Funnel (Воронка продаж).
+   * Writes orders_count, cancelled_count, orders_sum (orderCount/orderSum —
+   * метрика кабинета «Заказали товаров (на сумму)», включает неоплаченные).
    * Buyouts intentionally untouched (CSV-only source).
    */
-  async upsertOrdersTodayFromStatsApi(
+  async upsertOrdersTodayLive(
     rows: { nmId: number; ordersCount: number; cancelledCount: number; ordersSum: number }[],
   ): Promise<void> {
     if (rows.length === 0) return;
@@ -260,12 +261,12 @@ export abstract class WbClustersRepositoryOrders extends WbClustersRepositoryCha
   }
 
   /**
-   * Returns today's orders sum per product. Источник: orders_sum из Analytics CSV
-   * (DETAIL_HISTORY_REPORT, поле ordersSumRub). Это finishedPrice-сумма — совпадает
-   * с цифрой WB-дашборда «Заказали товаров на сумму».
+   * Returns today's orders sum per product. Источник orders_sum: за СЕГОДНЯ —
+   * Sales Funnel (orderSum), за прошлые дни — Analytics CSV (ordersSumRub). Оба
+   * совпадают с цифрой WB-дашборда «Заказали товаров на сумму».
    *
-   * NB: Statistics API исключает заказы с неподтверждённой оплатой (~18% потерь),
-   * поэтому priceWithDisc отсюда брать нельзя — будет систематическая недосумма.
+   * NB: Statistics API (priceWithDisc) здесь НЕ используется — он исключает заказы
+   * с неподтверждённой оплатой и давал систематическую недосумму (~11–12%).
    */
   async getTodayOrdersSum(): Promise<{ nmId: number; ordersSum: number }[]> {
     const result = await this.getPool().query<{ nm_id: string; orders_sum: string }>(

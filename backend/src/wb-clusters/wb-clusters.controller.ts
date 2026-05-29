@@ -459,14 +459,14 @@ export class WbClustersController {
   }
 
   /**
-   * Ручной триггер почасовой синки сегодняшних заказов через Statistics API.
-   * Обычно стреляет крон каждый час, эндпойнт для ad-hoc обновления.
+   * Ручной триггер почасовой синки сегодняшних заказов через Sales Funnel (Воронку).
+   * Обычно стреляет крон раз в час, эндпойнт для ad-hoc обновления.
    */
   @Post("products/sync-orders-today")
   @UseGuards(WbClustersWriteGuard)
-  triggerOrdersTodayFromStatsApi() {
-    this.wbClustersService.syncOrdersTodayFromStatsApi().catch((error: unknown) => {
-      this.logger.error("Background syncOrdersTodayFromStatsApi failed", error);
+  triggerOrdersTodayFromSalesFunnel() {
+    this.wbClustersService.syncOrdersTodayFromSalesFunnel().catch((error: unknown) => {
+      this.logger.error("Background syncOrdersTodayFromSalesFunnel failed", error);
     });
     return { status: "started" };
   }

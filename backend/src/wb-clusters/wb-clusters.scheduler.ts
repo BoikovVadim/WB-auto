@@ -118,8 +118,8 @@ export class WbClustersScheduler implements OnModuleInit {
   // Новая схема:
   //   - CSV (Analytics) только ночью: финализация вчера (02:00 МСК) + год-бэкфилл (03:30 МСК).
   //     Сегодня CSV намеренно НЕ перезаписывает (CASE WHEN в upsert и фильтр в clear).
-  //   - Сегодня в реальном времени тянет Statistics API — почасовой крон
-  //     handleOrdersTodayFromStatsApi ниже. У него лимит per-second, не per-day.
+  //   - Сегодня тянет Sales Funnel (Воронка) — часовой крон
+  //     handleOrdersTodayFromSalesFunnel ниже (совпадает с кабинетом WB).
   //   - Прошлые дни в CSV не меняются после финализации, обновлять чаще раза в сутки смысла нет.
 
   /**
@@ -165,19 +165,32 @@ export class WbClustersScheduler implements OnModuleInit {
       .catch((err: Error) => this.logger.warn(`Orders finalize error: ${err.message}`));
   }
 
+  private ordersTodaySyncRunning = false;
+
   /**
-   * Освежаем СЕГОДНЯ через Statistics API (по умолчанию каждые 10 минут —
-   * см. wbOrdersSyncCron). Пишем orders_count, cancelled_count, orders_sum
-   * (priceWithDisc). Stats API не упирается в дневной лимит Analytics — это
-   * другая квота (~1 req/min), один запрос раз в 10 мин в неё укладывается.
+   * Освежаем СЕГОДНЯ через Sales Funnel (Воронку) — orderCount/orderSum совпадают
+   * с кабинетом WB «Заказали товаров», в отличие от Statistics API (тот выкидывал
+   * заказы с неподтверждённой оплатой → недосчёт ~12%). По умолчанию ЧАСОВОЙ cron
+   * (см. wbOrdersSyncCron): данные Воронки и так обновляются раз в час, а прогон
+   * по всему каталогу (~450 nmId, батчи по 20, 25с троттл) занимает ~10 мин.
+   * Гард ordersTodaySyncRunning страхует от наложения, если прогон затянулся.
    * Частоту можно переопределить через WB_ORDERS_SYNC_CRON.
    */
   @Cron(appEnv.wbOrdersSyncCron)
-  async handleOrdersTodayFromStatsApi() {
+  async handleOrdersTodayFromSalesFunnel() {
     if (!appEnv.wbOrdersSyncEnabled) return;
-    await this.wbClustersService
-      .syncOrdersTodayFromStatsApi()
-      .catch((err: Error) => this.logger.warn(`Orders Stats today sync error: ${err.message}`));
+    if (this.ordersTodaySyncRunning) {
+      this.logger.warn("Orders Sales Funnel sync: предыдущий прогон ещё идёт, пропускаю тик.");
+      return;
+    }
+    this.ordersTodaySyncRunning = true;
+    try {
+      await this.wbClustersService.syncOrdersTodayFromSalesFunnel();
+    } catch (err) {
+      this.logger.warn(`Orders Sales Funnel sync error: ${(err as Error).message}`);
+    } finally {
+      this.ordersTodaySyncRunning = false;
+    }
   }
 
 
