@@ -23,24 +23,14 @@ export class WbClustersScheduler implements OnModuleInit {
           .catch((err: Error) => this.logger.warn(`onModuleInit category sync error: ${err.message}`)),
       )
       .catch((err: Error) => this.logger.warn(`onModuleInit vendor sync error: ${err.message}`));
-    // Warm query-frequencies in-memory cache 30 s after boot so that the first
-    // browser request is served from memory rather than hitting the DB cold.
-    setTimeout(() => {
-      this.wbClustersService
-        .getRawQueryFrequencies(300_000)
-        .then((rows) => this.logger.log(`Query frequencies cache warmed: ${rows.length} rows`))
-        .catch((err: Error) => this.logger.warn(`Query frequencies warmup error: ${err.message}`));
-    }, 30_000);
-    // Startup warmup re-enabled (May 2026). setImmediate yields added to PATH B
-    // prevent the event loop from blocking and give GC time to reclaim memory
-    // between batches. Concurrency is "startup" priority = 1 product at a time,
-    // so the DB pool and HTTP handlers remain responsive throughout.
-    // 5-minute delay lets crash recovery, schema init and backfill finish first.
-    setTimeout(() => {
-      this.wbClustersService
-        .triggerStartupWarmup()
-        .catch((err: Error) => this.logger.warn(`Startup warmup error: ${err.message}`));
-    }, 5 * 60 * 1000);
+    // No on-boot warmup. Eagerly loading the 300k-row query-frequencies array
+    // into the in-memory cache on every PM2 restart pushed RSS past the 900M
+    // max_memory_restart limit, which triggered a restart that re-ran the
+    // warmup — a self-reinforcing crash loop (~470 restarts/day). The frequency
+    // download itself stays on its weekly Sunday cron; the in-memory cache now
+    // fills lazily on the first browser request and lives its normal 65-min TTL.
+    // (triggerStartupWarmup is also a no-op — bulk materialization on boot was
+    // disabled earlier for the same OOM reason; see WbClustersService.)
     this.logger.log(
       "JAM boot backfill is disabled; nightly cron and explicit manual backfill remain active.",
     );
