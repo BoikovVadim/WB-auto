@@ -15,6 +15,7 @@ export type ProductsColumnKey =
   | "price"
   | "orders"
   | "buyout"
+  | "spp"
   | "stock"
   | "ordersSum"
   | "revenue"
@@ -25,7 +26,9 @@ export type ProductColumnDefinition = {
   defaultWidth: number;
 };
 
-export const PRODUCTS_COLUMN_STORAGE_KEY = "wb-products-column-order-v2";
+// v3: добавлена колонка «СПП» справа от «% выкупа» — бамп сбрасывает сохранённый
+// порядок к дефолту, чтобы новая колонка встала на нужное место (не уехала в конец).
+export const PRODUCTS_COLUMN_STORAGE_KEY = "wb-products-column-order-v3";
 
 export const productsTableColumnDefs: ProductColumnDefinition[] = [
   { key: "index",     defaultWidth: 48  },
@@ -37,6 +40,7 @@ export const productsTableColumnDefs: ProductColumnDefinition[] = [
   { key: "price",     defaultWidth: 130 },
   { key: "orders",    defaultWidth: 110 },
   { key: "buyout",    defaultWidth: 110 },
+  { key: "spp",       defaultWidth: 110 },
   { key: "stock",     defaultWidth: 100 },
   { key: "ordersSum", defaultWidth: 130 },
   { key: "revenue",   defaultWidth: 130 },

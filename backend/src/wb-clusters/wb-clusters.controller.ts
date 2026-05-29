@@ -470,6 +470,34 @@ export class WbClustersController {
     return this.wbClustersService.getCostSumMatrixCompact();
   }
 
+  /** Сегодняшняя средняя СПП (скидка постоянного покупателя) по товарам. */
+  @Get("products/spp-today")
+  getTodaySpp() {
+    return this.wbClustersService.getTodaySpp();
+  }
+
+  /** Матрица "товары × даты" СПП (compact) — закрытые дни из wb_product_spp_daily. */
+  @Get("products/spp-matrix-compact")
+  getSppMatrixCompact() {
+    return this.wbClustersService.getSppMatrixCompact();
+  }
+
+  /**
+   * Разовый backfill СПП: сегодня + последние N закрытых дней (по умолчанию 7).
+   * Тяжёлый (Statistics API ~1 req/min) → запускается в фоне, отвечает сразу.
+   * Override окна через ?days=N.
+   */
+  @Post("products/spp-backfill")
+  @UseGuards(WbClustersWriteGuard)
+  triggerSppBackfill(@Query("days") daysRaw?: string) {
+    const parsed = daysRaw !== undefined ? Math.floor(Number(daysRaw)) : 7;
+    const days = Number.isFinite(parsed) ? Math.min(364, Math.max(0, parsed)) : 7;
+    this.wbClustersService.backfillSppLastDays(days).catch((error: unknown) => {
+      this.logger.error("Background backfillSppLastDays failed", error);
+    });
+    return { status: "started", days };
+  }
+
   /**
    * Ручной триггер почасовой синки сегодняшних заказов через Sales Funnel (Воронку).
    * Обычно стреляет крон раз в час, эндпойнт для ad-hoc обновления.

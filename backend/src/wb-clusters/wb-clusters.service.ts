@@ -952,6 +952,92 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     );
   }
 
+  // ─── СПП (средняя скидка постоянного покупателя по заказам) ────────────────────
+  //
+  // spp приходит на каждый заказ ТОЛЬКО из Statistics API (/api/v1/supplier/orders).
+  // «СПП за день» = простое среднее AVG(spp) по всем заказам товара за московский день.
+  // «Сегодня» освежает 6-часовой cron, закрытый день добивается ночью, история — разовым
+  // backfill за неделю. Источник тяжёлый (лимит ~1 запрос/мин) → НЕ считаем на лету на
+  // каждый рендер: фронт читает уже сохранённые строки wb_product_spp_daily.
+
+  /** Группирует строки заказов по nmId и считает простое среднее spp за день. */
+  private aggregateSppByNm(
+    rows: Awaited<ReturnType<WbStatisticsApiClient["fetchOrdersForDay"]>>,
+  ): { nmId: number; sppAvg: number; ordersCount: number }[] {
+    const acc = new Map<number, { sum: number; count: number }>();
+    for (const r of rows) {
+      if (typeof r.nmId !== "number" || typeof r.spp !== "number") continue;
+      const e = acc.get(r.nmId);
+      if (e) { e.sum += r.spp; e.count += 1; }
+      else acc.set(r.nmId, { sum: r.spp, count: 1 });
+    }
+    const out: { nmId: number; sppAvg: number; ordersCount: number }[] = [];
+    for (const [nmId, e] of acc) {
+      if (e.count === 0) continue;
+      out.push({ nmId, sppAvg: e.sum / e.count, ordersCount: e.count });
+    }
+    return out;
+  }
+
+  /** Тянет заказы за конкретный московский день (flag=1), считает среднюю СПП и апсертит. */
+  async syncSppForDay(moscowDateStr: string): Promise<void> {
+    if (!await this.guardOrdersSync()) return;
+    let rows: Awaited<ReturnType<WbStatisticsApiClient["fetchOrdersForDay"]>>;
+    try {
+      rows = await this.statisticsApiClient.fetchOrdersForDay(moscowDateStr);
+    } catch (err) {
+      this.logger.warn(`SPP sync ${moscowDateStr}: ошибка загрузки заказов: ${(err as Error).message}`);
+      return;
+    }
+    const aggregates = this.aggregateSppByNm(rows);
+    const written = await this.wbClustersRepository.upsertSppDaily(moscowDateStr, aggregates);
+    this.logger.log(`SPP sync ${moscowDateStr}: ${written} товаров (из ${rows.length} заказов)`);
+  }
+
+  /** Освежает СПП за сегодня (Москва). Cron каждые 6 часов. */
+  async syncSppToday(): Promise<void> {
+    await this.syncSppForDay(this.getMoscowDateStr(0));
+  }
+
+  /** Добивает СПП за вчера (Москва) после закрытия дня. Ночной cron. */
+  async syncSppYesterday(): Promise<void> {
+    await this.syncSppForDay(this.getMoscowDateStr(-1));
+  }
+
+  /**
+   * Разовый backfill СПП: сегодня + последние `days` закрытых дней. Каждый день —
+   * отдельный запрос к Statistics API (троттл клиента ~1 req/min), поэтому 7 дней
+   * ≈ 7-8 минут. Идемпотентно (ON CONFLICT перезаписывает день). Запускается в фоне
+   * из контроллера разово после деплоя.
+   */
+  async backfillSppLastDays(days = 7): Promise<{ days: number }> {
+    if (!await this.guardOrdersSync()) return { days: 0 };
+    let done = 0;
+    for (let offset = 0; offset <= days; offset++) {
+      await this.syncSppForDay(this.getMoscowDateStr(-offset));
+      done += 1;
+    }
+    this.logger.log(`SPP backfill завершён: ${done} дней (сегодня + ${days})`);
+    return { days: done };
+  }
+
+  /** Сегодняшняя средняя СПП по товарам (читается из wb_product_spp_daily). */
+  async getTodaySpp(): Promise<{ items: { nmId: number; spp: number }[] }> {
+    if (!this.wbClustersRepository.isConfigured()) return { items: [] };
+    await this.wbClustersRepository.ensureSchema();
+    return { items: await this.wbClustersRepository.getSppToday() };
+  }
+
+  /** Матрица "товары × даты" СПП (compact) — закрытые дни из wb_product_spp_daily. */
+  async getSppMatrixCompact(): Promise<{
+    dates: string[];
+    products: { nmId: number; vals: (number | null)[] }[];
+  }> {
+    if (!this.wbClustersRepository.isConfigured()) return { dates: [], products: [] };
+    await this.wbClustersRepository.ensureSchema();
+    return this.wbClustersRepository.getSppDailyMatrix();
+  }
+
   /**
    * Rolling-window orders/cancels/returns aggregate per product (default 365 days).
    * Frontend computes % выкупа = (orders − cancels − returns) / orders × 100.

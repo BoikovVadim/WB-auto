@@ -179,6 +179,54 @@ export class WbClustersScheduler implements OnModuleInit {
       .catch((err: Error) => this.logger.warn(`Orders finalize error: ${err.message}`));
   }
 
+  private sppTodaySyncRunning = false;
+
+  /**
+   * Освежаем СПП (среднюю скидку постоянного покупателя) за СЕГОДНЯ каждые 6 часов
+   * (00:00/06:00/12:00/18:00 МСК). spp есть только в Statistics API (лимит ~1 req/min),
+   * поэтому считать на лету на каждый рендер нельзя — крон пишет в wb_product_spp_daily,
+   * фронт читает готовые строки. Гард sppTodaySyncRunning страхует от наложения с
+   * долгой ночной финализацией / бэкфиллом.
+   */
+  @Cron("0 0 */6 * * *")
+  async handleSppTodaySync() {
+    if (!appEnv.wbOrdersSyncEnabled) return;
+    if (this.sppTodaySyncRunning) {
+      this.logger.warn("SPP today sync: предыдущий прогон ещё идёт, пропускаю тик.");
+      return;
+    }
+    this.sppTodaySyncRunning = true;
+    try {
+      await this.wbClustersService.syncSppToday();
+    } catch (err) {
+      this.logger.warn(`SPP today sync error: ${(err as Error).message}`);
+    } finally {
+      this.sppTodaySyncRunning = false;
+    }
+  }
+
+  /**
+   * В 00:55 МСК добиваем СПП за вчера: последний 6-часовой проход (18:00) не видел
+   * заказы 18:00-24:00, а ночью день уже закрыт — финальный проход фиксирует полный
+   * день. Эта строка уходит в ретроспективу (матрица читает spp_date < сегодня).
+   */
+  @Cron("0 55 0 * * *")
+  async handleSppFinalizeYesterday() {
+    if (!appEnv.wbOrdersSyncEnabled) return;
+    if (this.sppTodaySyncRunning) {
+      this.logger.warn("SPP finalize: today-sync ещё идёт, пропускаю тик.");
+      return;
+    }
+    this.sppTodaySyncRunning = true;
+    try {
+      await this.wbClustersService.syncSppYesterday();
+    } catch (err) {
+      this.logger.warn(`SPP finalize error: ${(err as Error).message}`);
+    } finally {
+      this.sppTodaySyncRunning = false;
+    }
+  }
+
   private ordersTodaySyncRunning = false;
 
   /**

@@ -557,6 +557,35 @@ export function getProductCostSumDailySnapshotCreateStatements({
   ];
 }
 
+/**
+ * wb_product_spp_daily: ежедневная средняя СПП (скидка постоянного покупателя) по
+ * заказам товара. spp приходит на каждый заказ только из Statistics API
+ * (/api/v1/supplier/orders). spp_avg = AVG(spp) по всем заказам товара за день,
+ * orders_count — число этих заказов. «Сегодня» обновляет 6-часовой cron, закрытый
+ * день финализируется ночью; разовый backfill за неделю. Ретроспектива читает строки
+ * одним SELECT'ом, «сегодня» (последняя дата) — pinned-колонка, как у «Заказов».
+ */
+export function getProductSppDailyCreateStatements({
+  tableName,
+}: WbClustersSchemaContext): string[] {
+  return [
+    `
+      CREATE TABLE IF NOT EXISTS ${tableName("wb_product_spp_daily")} (
+        nm_id        BIGINT      NOT NULL,
+        spp_date     DATE        NOT NULL,
+        spp_avg      NUMERIC(6,3),
+        orders_count INT         NOT NULL DEFAULT 0,
+        updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (nm_id, spp_date)
+      )
+    `,
+    `
+      CREATE INDEX IF NOT EXISTS wb_product_spp_daily_date_idx
+        ON ${tableName("wb_product_spp_daily")} (spp_date DESC)
+    `,
+  ];
+}
+
 /** wb_product_daily_stocks: daily stock snapshot per product (total quantity across all warehouses). */
 export function getProductDailyStocksCreateStatements({
   tableName,
