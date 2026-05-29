@@ -1,6 +1,7 @@
 import { memo, useEffect, useState } from "react";
 
 import { fetchUnifiedChangeLog, type UnifiedChangeLogEntry } from "../../api/syncClientChangeLog";
+import { clusterStatusLabel } from "./changeLogLabels";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -38,6 +39,12 @@ function changeTypeLabel(changeType: string): string {
     case "status_change": return "Изменён статус";
     default:              return changeType;
   }
+}
+
+/** Значение для колонок «Было»/«Стало». У статуса кластера enum active/excluded → русское слово. */
+function valueLabel(entityType: string, value: string | null): string | null {
+  if (entityType === "cluster_status") return clusterStatusLabel(value);
+  return value;
 }
 
 type BadgeColor = "blue" | "red" | "green" | "orange" | "gray";
@@ -85,14 +92,14 @@ function ChangeRow({ entry }: { entry: UnifiedChangeLogEntry }) {
       </td>
       <td className="wb-change-history-cell wb-change-history-cell--value">
         {entry.oldValue != null ? (
-          <span className="wb-change-history-old">{entry.oldValue}</span>
+          <span className="wb-change-history-old">{valueLabel(entry.entityType, entry.oldValue)}</span>
         ) : (
           <span className="wb-change-history-empty">—</span>
         )}
       </td>
       <td className="wb-change-history-cell wb-change-history-cell--value">
         {entry.newValue != null ? (
-          <span className="wb-change-history-new">{entry.newValue}</span>
+          <span className="wb-change-history-new">{valueLabel(entry.entityType, entry.newValue)}</span>
         ) : (
           <span className="wb-change-history-empty">—</span>
         )}

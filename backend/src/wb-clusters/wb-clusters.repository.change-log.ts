@@ -156,42 +156,80 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
     );
   }
 
-  /** Returns unified change history from both tables, newest first. */
+  /**
+   * Returns unified change history from both tables, newest first.
+   *
+   * Дедупликация: внешний репрайсер иногда дважды шлёт один и тот же PUT .../price —
+   * оба запроса читают ещё не применённую (queued) цену как «текущую» и пишут две
+   * идентичные записи. Схлопываем идущие подряд во времени записи с одинаковым
+   * (change_type, old_value, new_value) для одного объекта — это повтор того же
+   * состояния, не новое изменение. Реальные переходы (A→B→A) не трогаются: соседние
+   * записи у них различаются. Сырые строки в таблицах остаются — режем только на чтении.
+   */
   async getUnifiedChangeLog(limit = 500): Promise<UnifiedChangeLogEntry[]> {
     const pool = this.getPool();
     const result = await pool.query<UnifiedChangeLogRow>(
       `
+      WITH unified AS (
+        SELECT
+          id,
+          'cluster' AS source,
+          CASE change_type
+            WHEN 'bid_change'    THEN 'cluster_bid'
+            WHEN 'status_change' THEN 'cluster_status'
+            ELSE change_type
+          END AS entity_type,
+          nm_id::text AS nm_id,
+          cluster_name AS entity_label,
+          change_type,
+          old_value,
+          new_value,
+          applied_at AS event_at
+        FROM ${this.tableName("wb_cluster_change_log")}
+
+        UNION ALL
+
+        SELECT
+          id,
+          'system' AS source,
+          entity_type,
+          nm_id::text AS nm_id,
+          entity_label,
+          change_type,
+          old_value,
+          new_value,
+          created_at AS event_at
+        FROM ${this.tableName("wb_system_change_log")}
+      ),
+      flagged AS (
+        SELECT
+          unified.*,
+          LAG(change_type) OVER w AS prev_change_type,
+          LAG(old_value)   OVER w AS prev_old_value,
+          LAG(new_value)   OVER w AS prev_new_value
+        FROM unified
+        WINDOW w AS (
+          PARTITION BY source, entity_type, nm_id, COALESCE(entity_label, '')
+          ORDER BY event_at, id
+        )
+      )
       SELECT
         id,
-        'cluster' AS source,
-        CASE change_type
-          WHEN 'bid_change'    THEN 'cluster_bid'
-          WHEN 'status_change' THEN 'cluster_status'
-          ELSE change_type
-        END AS entity_type,
-        nm_id::text AS nm_id,
-        cluster_name AS entity_label,
-        change_type,
-        old_value,
-        new_value,
-        TO_CHAR(applied_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
-      FROM ${this.tableName("wb_cluster_change_log")}
-
-      UNION ALL
-
-      SELECT
-        id,
-        'system' AS source,
+        source,
         entity_type,
-        nm_id::text AS nm_id,
+        nm_id,
         entity_label,
         change_type,
         old_value,
         new_value,
-        TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
-      FROM ${this.tableName("wb_system_change_log")}
-
-      ORDER BY created_at DESC
+        TO_CHAR(event_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+      FROM flagged
+      WHERE NOT (
+        change_type IS NOT DISTINCT FROM prev_change_type
+        AND old_value IS NOT DISTINCT FROM prev_old_value
+        AND new_value IS NOT DISTINCT FROM prev_new_value
+      )
+      ORDER BY event_at DESC, id DESC
       LIMIT $1
       `,
       [limit],

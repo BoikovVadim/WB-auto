@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClusterChangeLogEntry } from "../../../api/syncClientAdvertisingRead";
 import { fetchClusterChangeLog } from "../../../api/syncClientAdvertisingRead";
+import { clusterStatusLabel } from "../changeLogLabels";
 
 type Props = {
   nmId: number;
@@ -24,9 +25,7 @@ function formatChangeValue(entry: ClusterChangeLogEntry): string {
     }
     return `→ ${entry.newValue} ₽`;
   }
-  if (entry.newValue === "active") return "→ Активен";
-  if (entry.newValue === "excluded") return "→ Исключён";
-  return `→ ${entry.newValue}`;
+  return `→ ${clusterStatusLabel(entry.newValue) ?? entry.newValue}`;
 }
 
 function formatDate(isoString: string): string {
