@@ -35,6 +35,7 @@ type DashboardCatalogProductsSectionProps = {
   stockCounts: Map<number, number>;
   priceCounts: Map<number, CurrentPriceEntry>;
   ordersSumValues: Map<number, number>;
+  revenueValues: Map<number, number>;
   onProductsSearchChange: (value: string) => void;
   onProductsSortToggle: (key: ProductListSortKey) => void;
   onOpenCostPriceSheet: () => void;
@@ -50,20 +51,6 @@ type DashboardCatalogProductsSectionProps = {
 
 // ─── Local sort key (for columns backed by external Maps) ────────────────────
 type LocalSortKey = "cost" | "price" | "orders" | "buyout" | "stock" | "ordersSum" | "revenue";
-
-// Потенциальная выручка за день = сумма заказов × % выкупа (доля бьётся на 100).
-// «Нет данных» (—) когда нет суммы заказов ИЛИ нет выкупа — ровно те же товары,
-// что выпадают в колонках «Сумма заказов» и «% выкупа» (0 выкупов = данных ещё нет,
-// WB отдаёт выкупы с лагом). Возвращаем null, чтобы ячейка/тоталы это учитывали.
-function computeRevenue(
-  ordersSum: number | undefined,
-  buyout: { ordersCount: number; buyoutsCount: number } | undefined,
-): number | null {
-  if (ordersSum === undefined || ordersSum <= 0) return null;
-  if (!buyout || buyout.ordersCount === 0 || buyout.buyoutsCount === 0) return null;
-  const buyoutPercent = (buyout.buyoutsCount / buyout.ordersCount) * 100;
-  return (ordersSum * buyoutPercent) / 100;
-}
 
 function SortArrow({
   active,
@@ -323,12 +310,8 @@ export const DashboardCatalogProductsSection = memo(
           av = a.nmId !== null ? (props.ordersSumValues.get(a.nmId) ?? 0) : 0;
           bv = b.nmId !== null ? (props.ordersSumValues.get(b.nmId) ?? 0) : 0;
         } else if (localSortKey === "revenue") {
-          const revenueOf = (nmId: number | null): number =>
-            nmId !== null
-              ? (computeRevenue(props.ordersSumValues.get(nmId), props.rollingBuyoutCounts.get(nmId)) ?? -1)
-              : -1;
-          av = revenueOf(a.nmId);
-          bv = revenueOf(b.nmId);
+          av = a.nmId !== null ? (props.revenueValues.get(a.nmId) ?? 0) : 0;
+          bv = b.nmId !== null ? (props.revenueValues.get(b.nmId) ?? 0) : 0;
         } else if (localSortKey === "price") {
           av = a.nmId !== null ? (props.priceCounts.get(a.nmId)?.priceWithDiscount ?? 0) : 0;
           bv = b.nmId !== null ? (props.priceCounts.get(b.nmId)?.priceWithDiscount ?? 0) : 0;
@@ -339,7 +322,7 @@ export const DashboardCatalogProductsSection = memo(
         }
         return localSortDir === "asc" ? av - bv : bv - av;
       });
-    }, [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.costPrices, props.priceCounts]);
+    }, [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costPrices, props.priceCounts]);
 
     const handleCommitEdit = useCallback(() => {
       setEditingNmId(null);
@@ -599,14 +582,11 @@ export const DashboardCatalogProductsSection = memo(
       let hasAny = false;
       for (const p of props.filteredProducts) {
         if (p.nmId === null) continue;
-        const v = computeRevenue(
-          props.ordersSumValues.get(p.nmId),
-          props.rollingBuyoutCounts.get(p.nmId),
-        );
-        if (v !== null) { sum += v; hasAny = true; }
+        const v = props.revenueValues.get(p.nmId);
+        if (v !== undefined && v > 0) { sum += v; hasAny = true; }
       }
       return hasAny ? sum : null;
-    }, [props.filteredProducts, props.ordersSumValues, props.rollingBuyoutCounts]);
+    }, [props.filteredProducts, props.revenueValues]);
 
     // ── Header cell renderer ───────────────────────────────────────────────────
 
@@ -913,10 +893,10 @@ export const DashboardCatalogProductsSection = memo(
             </td>
           );
         case "revenue": {
-          const revenue = computeRevenue(ordersSum, buyout);
+          const revenue = nmId !== null ? props.revenueValues.get(nmId) : undefined;
           return (
             <td key={key} className="wb-table-cell--numeric">
-              {revenue !== null
+              {revenue !== undefined && revenue > 0
                 ? formatMoney(revenue)
                 : <span style={{ opacity: 0.3 }}>—</span>}
             </td>

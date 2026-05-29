@@ -101,6 +101,8 @@ type WbDashboardShellProps = {
   priceCounts: Map<number, import("./useCurrentPrices").CurrentPriceEntry>;
   ordersSumValues: Map<number, number>;
   ordersSumMatrix: import("./useOrdersSumMatrix").OrdersSumMatrix;
+  revenueValues: Map<number, number>;
+  revenueMatrix: import("./useRevenueMatrix").RevenueMatrix;
   isOrdersSheetOpen: boolean;
   isBuyoutSheetOpen: boolean;
   isStocksSheetOpen: boolean;
@@ -202,6 +204,8 @@ export function WbDashboardShell({
   priceCounts,
   ordersSumValues,
   ordersSumMatrix,
+  revenueValues,
+  revenueMatrix,
   isOrdersSheetOpen,
   isBuyoutSheetOpen,
   isStocksSheetOpen,
@@ -376,9 +380,8 @@ export function WbDashboardShell({
             ) : isRevenueSheetOpen ? (
               <DashboardRevenueDetailSection
                 products={filteredProducts}
-                ordersSumValues={ordersSumValues}
-                ordersSumMatrix={ordersSumMatrix}
-                rollingBuyoutCounts={rollingBuyoutCounts}
+                revenueValues={revenueValues}
+                revenueMatrix={revenueMatrix}
                 onBack={onCloseRevenueSheet}
               />
             ) : (
@@ -397,6 +400,7 @@ export function WbDashboardShell({
                 stockCounts={stockCounts}
                 priceCounts={priceCounts}
                 ordersSumValues={ordersSumValues}
+                revenueValues={revenueValues}
                 onProductsSearchChange={onProductsSearchChange}
                 onProductsSortToggle={onProductsSortToggle}
                 onOpenCostPriceSheet={onOpenCostPriceSheet}

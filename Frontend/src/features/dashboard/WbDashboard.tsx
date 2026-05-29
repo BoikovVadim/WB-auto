@@ -47,6 +47,8 @@ import { useCurrentStocks } from "./useCurrentStocks";
 import { useCurrentPrices } from "./useCurrentPrices";
 import { useOrdersSum } from "./useOrdersSum";
 import { useOrdersSumMatrix } from "./useOrdersSumMatrix";
+import { useRevenue } from "./useRevenue";
+import { useRevenueMatrix } from "./useRevenueMatrix";
 import { useDashboardBootstrap } from "./useDashboardBootstrap";
 import { useDashboardBrowserEffects } from "./useDashboardBrowserEffects";
 import { useDashboardExportView } from "./useDashboardExportView";
@@ -146,6 +148,8 @@ export function WbDashboard() {
   const { priceCounts } = useCurrentPrices();
   const { ordersSumValues } = useOrdersSum();
   const { ordersSumMatrix } = useOrdersSumMatrix();
+  const { revenueValues } = useRevenue();
+  const { revenueMatrix } = useRevenueMatrix();
   const invalidateProductAdvertisingDetail = useCallback(
     (target: ProductAdvertisingDetailInvalidationTarget = "all") => {
       setProductAdvertisingDetailRevisions((currentValue) =>
@@ -487,6 +491,8 @@ export function WbDashboard() {
       priceCounts={priceCounts}
       ordersSumValues={ordersSumValues}
       ordersSumMatrix={ordersSumMatrix}
+      revenueValues={revenueValues}
+      revenueMatrix={revenueMatrix}
       isCostPricesLoading={isCostPricesLoading}
       costPrices={costPrices}
       onOpenCostPriceSheet={() => { setActiveSheet("cost-price"); }}

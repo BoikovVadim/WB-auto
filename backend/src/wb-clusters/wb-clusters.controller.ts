@@ -445,6 +445,18 @@ export class WbClustersController {
     return this.wbClustersService.getOrdersSumMatrixCompact();
   }
 
+  /** Сегодняшняя потенциальная выручка (Сумма заказов × % выкупа). */
+  @Get("products/revenue-today")
+  getTodayRevenue() {
+    return this.wbClustersService.getTodayRevenue();
+  }
+
+  /** Матрица "товары × даты" выручки (Сумма заказов × % выкупа за тот же день). */
+  @Get("products/revenue-matrix-compact")
+  getRevenueMatrixCompact() {
+    return this.wbClustersService.getRevenueMatrixCompact();
+  }
+
   /**
    * Ручной триггер почасовой синки сегодняшних заказов через Statistics API.
    * Обычно стреляет крон каждый час, эндпойнт для ad-hoc обновления.

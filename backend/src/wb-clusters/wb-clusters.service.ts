@@ -791,6 +791,85 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     return this.wbClustersRepository.getBuyoutSnapshotMatrix();
   }
 
+  // ─── Выручка (производная: Сумма заказов × % выкупа) ──────────────────────────
+  //
+  // Потенциальная выручка за день = сумма заказов × доля выкупа. Метрика
+  // полностью считается ЗДЕСЬ, на сервере (фронт только рисует) — из этих цифр
+  // дальше вырастут более сложные формулы (минус возвраты, комиссия, логистика,
+  // хранение), и им место в одном источнике истины под тестами.
+  //
+  // «Сегодня»: ordersSum(today) × rolling-выкуп(365). «История»: ordersSum(дата) ×
+  // %выкупа(дата) из снапшот-матрицы — ровно тот же выкуп, что показывает
+  // ретроспектива «% выкупа» за этот день. «Нет данных» → товар не попадает в
+  // выдачу, если нет суммы заказов ИЛИ нет выкупа (0 выкупов = WB ещё не отдал).
+
+  /** Сегодняшняя потенциальная выручка по товарам: ordersSum × rolling-выкуп. */
+  async getTodayRevenue(): Promise<{ items: { nmId: number; revenue: number }[] }> {
+    if (!this.wbClustersRepository.isConfigured()) return { items: [] };
+    await this.wbClustersRepository.ensureSchema();
+    const [ordersSum, buyout] = await Promise.all([
+      this.wbClustersRepository.getTodayOrdersSum(),
+      this.wbClustersRepository.getRollingBuyoutCounts(365),
+    ]);
+    const buyoutByNmId = new Map<number, { ordersCount: number; buyoutsCount: number }>();
+    for (const b of buyout) buyoutByNmId.set(b.nmId, b);
+    const items: { nmId: number; revenue: number }[] = [];
+    for (const o of ordersSum) {
+      if (o.ordersSum <= 0) continue;
+      const b = buyoutByNmId.get(o.nmId);
+      if (!b || b.ordersCount === 0 || b.buyoutsCount === 0) continue;
+      const buyoutFraction = b.buyoutsCount / b.ordersCount;
+      items.push({ nmId: o.nmId, revenue: o.ordersSum * buyoutFraction });
+    }
+    return { items };
+  }
+
+  /** Матрица "товары × даты" выручки (compact): ordersSum(дата) × %выкупа(дата) / 100. */
+  async getRevenueMatrixCompact(): Promise<{
+    dates: string[];
+    products: { nmId: number; vals: (number | null)[] }[];
+  }> {
+    if (!this.wbClustersRepository.isConfigured()) return { dates: [], products: [] };
+    await this.wbClustersRepository.ensureSchema();
+    const [ordersRows, buyoutMatrix] = await Promise.all([
+      this.wbClustersRepository.getOrdersSumMatrix(),
+      this.wbClustersRepository.getBuyoutSnapshotMatrix(),
+    ]);
+    if (ordersRows.length === 0) return { dates: [], products: [] };
+
+    // %выкупа по (nmId, дата) из снапшот-матрицы — для быстрого джойна с заказами.
+    const buyoutDateIdx = new Map<string, number>();
+    buyoutMatrix.dates.forEach((d, i) => buyoutDateIdx.set(d, i));
+    const buyoutByNmId = new Map<number, (number | null)[]>();
+    for (const p of buyoutMatrix.products) buyoutByNmId.set(p.nmId, p.percents);
+
+    // Колонки привязаны к датам суммы заказов (без суммы заказов выручки нет).
+    const datesSet = new Set<string>();
+    for (const r of ordersRows) datesSet.add(r.orderDate);
+    const dates = Array.from(datesSet).sort((a, b) => (a < b ? 1 : -1));
+    const dateIdx = new Map<string, number>();
+    for (let i = 0; i < dates.length; i++) dateIdx.set(dates[i]!, i);
+
+    const productMap = new Map<number, (number | null)[]>();
+    for (const r of ordersRows) {
+      const colIdx = dateIdx.get(r.orderDate);
+      if (colIdx === undefined) continue;
+      if (r.ordersSum <= 0) continue;
+      const percents = buyoutByNmId.get(r.nmId);
+      const bIdx = buyoutDateIdx.get(r.orderDate);
+      const percent = percents && bIdx !== undefined ? percents[bIdx] : null;
+      if (percent == null) continue; // нет выкупа за этот день → «нет данных»
+      let vals = productMap.get(r.nmId);
+      if (!vals) {
+        vals = new Array<number | null>(dates.length).fill(null);
+        productMap.set(r.nmId, vals);
+      }
+      vals[colIdx] = (r.ordersSum * percent) / 100;
+    }
+    const products = Array.from(productMap.entries()).map(([nmId, vals]) => ({ nmId, vals }));
+    return { dates, products };
+  }
+
   /**
    * Fixes the «% выкупа» snapshot for yesterday (Moscow) based on the last `days`
    * days of wb_product_daily_orders. Runs once a day from cron at 03:40 МСК — after
