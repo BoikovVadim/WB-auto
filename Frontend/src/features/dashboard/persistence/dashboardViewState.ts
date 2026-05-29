@@ -47,7 +47,7 @@ export function readDashboardViewState(): DashboardViewState {
         productAdvertisingEndDate:
           urlValue.productAdvertisingEndDate ?? storageValue.productAdvertisingEndDate,
         scrollY: storageValue.scrollY,
-        activeSheet: storageValue.activeSheet,
+        activeSheet: urlValue.activeSheet ?? storageValue.activeSheet,
         productsSearch: storageValue.productsSearch,
         productsSortKey: storageValue.productsSortKey,
         productsSortDirection: storageValue.productsSortDirection,
@@ -69,7 +69,7 @@ export function readDashboardViewState(): DashboardViewState {
       productAdvertisingEndDate:
         urlValue.productAdvertisingEndDate ?? storageValue.productAdvertisingEndDate,
       scrollY: storageValue.scrollY,
-      activeSheet: storageValue.activeSheet,
+      activeSheet: urlValue.activeSheet ?? storageValue.activeSheet,
       productsSearch: storageValue.productsSearch,
       productsSortKey: storageValue.productsSortKey,
       productsSortDirection: storageValue.productsSortDirection,
@@ -79,14 +79,17 @@ export function readDashboardViewState(): DashboardViewState {
   }
 }
 
-export function writeDashboardViewState(patch: Partial<DashboardViewState>) {
+export function writeDashboardViewState(
+  patch: Partial<DashboardViewState>,
+  options: { urlMode?: "push" | "replace" } = {},
+) {
   if (typeof window === "undefined") {
     return;
   }
 
   try {
     const currentValue = readDashboardViewState();
-    writeDashboardViewStateToSessionStorage(currentValue, patch);
+    writeDashboardViewStateToSessionStorage(currentValue, patch, options);
   } catch {
     return;
   }

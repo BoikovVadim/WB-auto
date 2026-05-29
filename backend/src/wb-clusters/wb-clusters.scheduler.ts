@@ -120,25 +120,53 @@ export class WbClustersScheduler implements OnModuleInit {
       .catch((err: Error) => this.logger.warn(`Cost price snapshot error: ${err.message}`));
   }
 
-  // ─── Orders (Analytics CSV) ──────────────────────────────────────────────────
+  // ─── Orders (Analytics CSV — for past days only) ─────────────────────────────
   //
-  // How accumulation works:
-  //   - Every hour: refresh last 7 days (upsert, old data preserved)
-  //   - At 02:00 МСК: finalize the day — WB closes yesterday by ~01:00 МСК
-  //   - Result: wb_product_daily_orders grows by 1 row per product each day
+  // WB Analytics API лимит: 20 POST-запросов в сутки на создание отчёта.
+  // Раньше почасовая синка съедала 24+ → 429 с середины дня.
   //
-  // Data source: DETAIL_HISTORY_REPORT CSV (one request, all products × 7 days)
+  // Новая схема:
+  //   - CSV (Analytics) только ночью: финализация вчера (02:00 МСК) + год-бэкфилл (03:30 МСК).
+  //     Сегодня CSV намеренно НЕ перезаписывает (CASE WHEN в upsert и фильтр в clear).
+  //   - Сегодня в реальном времени тянет Statistics API — почасовой крон
+  //     handleOrdersTodayFromStatsApi ниже. У него лимит per-second, не per-day.
+  //   - Прошлые дни в CSV не меняются после финализации, обновлять чаще раза в сутки смысла нет.
 
-  /** Every hour: refresh today's running total from WB Analytics CSV. */
-  @Cron(appEnv.wbOrdersSyncCron)
-  async handleOrdersSync() {
+  /**
+   * Раз в сутки в 03:30 МСК (00:30 UTC): сверка с CSV за КОРОТКОЕ окно последних
+   * N дней (WB_ORDERS_RECONCILE_DAYS, по умолчанию 30). WB доуточняет заказы/выкупы
+   * за день ~2 недели — этого окна с запасом хватает, а короткий отчёт генерится за
+   * секунды и почти не ловит 429 на поллинге (в отличие от годового). diff-aware
+   * upsert трогает только реально изменившиеся дни. Полный год тянем не здесь, а
+   * разово через эндпоинт products/sync-orders-year (первая установка / пропуски).
+   */
+  @Cron("0 30 0 * * *")
+  async handleOrdersRecentReconcile() {
     if (!appEnv.wbOrdersSyncEnabled) return;
     await this.wbClustersService
-      .syncOrdersFromAnalytics(0)
-      .catch((err: Error) => this.logger.warn(`Orders sync error: ${err.message}`));
+      .syncOrdersFromAnalyticsFullYear(appEnv.wbOrdersReconcileDays)
+      .catch((err: Error) => this.logger.warn(`Orders recent reconcile error: ${err.message}`));
   }
 
-  /** At 02:00 МСК (23:00 UTC): sync yesterday + today to finalize the previous day. */
+  /**
+   * Раз в сутки в 03:40 МСК (00:40 UTC): фиксируем итоговый % выкупа за вчера
+   * (плавающее окно 365 дней, заканчивающееся вчерашним днём). Запускается
+   * через 10 минут после полной перезаливки заказов, когда WB уже закрыл день.
+   * Эта строка становится неизменной исторической записью — финал закрытого дня.
+   * Карточка товаров читает самый свежий snapshot одним SELECT'ом — мгновенно.
+   */
+  @Cron("0 40 0 * * *")
+  async handleBuyoutPercentSnapshot() {
+    if (!appEnv.wbOrdersSyncEnabled) return;
+    await this.wbClustersService
+      .snapshotBuyoutsRolling(365)
+      .catch((err: Error) => this.logger.warn(`Buyout-percent snapshot error: ${err.message}`));
+  }
+
+  /** В 02:00 МСК (по умолчанию): финализируем вчера через CSV. Сегодня в
+   *  clear/upsert не трогается. Сервер в Europe/Moscow → cron-строка трактуется
+   *  как МСК; раньше дефолт стоял "0 0 23 * * *" с пометкой "23 UTC = 02 МСК",
+   *  но это срабатывало в 23:00 МСК и упиралось в дневной 429 от Analytics API. */
   @Cron(appEnv.wbOrdersFinalizeCron)
   async handleOrdersFinalize() {
     if (!appEnv.wbOrdersSyncEnabled) return;
@@ -146,6 +174,20 @@ export class WbClustersScheduler implements OnModuleInit {
       .syncOrdersFromAnalytics(1)
       .catch((err: Error) => this.logger.warn(`Orders finalize error: ${err.message}`));
   }
+
+  /**
+   * Каждый час: освежаем сегодня через Statistics API.
+   * Пишем orders_count, cancelled_count, orders_sum (finishedPrice).
+   * Stats API не упирается в дневной лимит Analytics — это другая квота.
+   */
+  @Cron("0 0 * * * *")
+  async handleOrdersTodayFromStatsApi() {
+    if (!appEnv.wbOrdersSyncEnabled) return;
+    await this.wbClustersService
+      .syncOrdersTodayFromStatsApi()
+      .catch((err: Error) => this.logger.warn(`Orders Stats today sync error: ${err.message}`));
+  }
+
 
   // ─── Stocks snapshot ─────────────────────────────────────────────────────────
   //
@@ -159,5 +201,18 @@ export class WbClustersScheduler implements OnModuleInit {
     await this.wbClustersService
       .syncStocksSnapshot()
       .catch((err: Error) => this.logger.warn(`Stocks snapshot error: ${err.message}`));
+  }
+
+  // ─── Prices snapshot ─────────────────────────────────────────────────────────
+  //
+  // Run once a day at 01:05 МСК (22:05 UTC), 5 minutes after stocks snapshot.
+  // Downloads current prices and seller discounts from WB Prices API
+  // and writes one row per product into wb_product_daily_prices.
+
+  @Cron("5 22 * * *")
+  async handlePricesSnapshot() {
+    await this.wbClustersService
+      .syncPricesFromWb()
+      .catch((err: Error) => this.logger.warn(`Prices snapshot error: ${err.message}`));
   }
 }

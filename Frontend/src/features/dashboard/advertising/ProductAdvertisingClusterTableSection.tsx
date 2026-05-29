@@ -102,7 +102,10 @@ export type ProductAdvertisingClusterTableSectionProps = {
   onPageChange: (page: number) => void;
   expandedClusterKeys: string[];
   selectedClusterKeys: string[];
-  onToggleSelectedClusterGroup: (groupKey: string) => void;
+  onToggleSelectedClusterGroup: (
+    groupKey: string,
+    options?: { extendRange?: boolean },
+  ) => void;
   onToggleClusterGroup: (groupKey: string) => void;
   productAdvertisingClusterQueriesByKey: Record<string, ClusterQueriesState>;
   renderClusterBidCell: (

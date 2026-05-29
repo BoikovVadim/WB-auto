@@ -25,6 +25,8 @@ export type AnalyticsCsvRow = {
   ordersCount: number;
   cancelCount: number;
   ordersSum: number;
+  buyoutsCount: number;
+  buyoutsSum: number;
 };
 
 type ReportStatus = {
@@ -38,6 +40,20 @@ type ReportStatus = {
 };
 
 const BASE = "https://seller-analytics-api.wildberries.ru";
+
+/** Per-request timeout. WB sometimes accepts the request but never closes the socket;
+ *  without an AbortController the whole sync hangs silently. */
+const REQUEST_TIMEOUT_MS = 30_000;
+
+async function fetchWithTimeout(input: string, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => { controller.abort(); }, REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 export class WbAnalyticsCsvClient {
   constructor(private readonly getToken: () => string) {}
@@ -60,7 +76,7 @@ export class WbAnalyticsCsvClient {
       "a" + createHash("md5").update(startDate + endDate).digest("hex").slice(0, 3) + "-" +
       createHash("md5").update(endDate + startDate).digest("hex").slice(0, 12);
 
-    const resp = await fetch(`${BASE}/api/v2/nm-report/downloads`, {
+    const resp = await fetchWithTimeout(`${BASE}/api/v2/nm-report/downloads`, {
       method: "POST",
       headers: this.authHeaders,
       body: JSON.stringify({
@@ -81,12 +97,30 @@ export class WbAnalyticsCsvClient {
   /**
    * Polls until the report is ready or timeout is reached.
    * Returns true if ready, false on timeout.
+   *
+   * WB жёстко лимитирует эндпоинт списка отчётов (нечастый 429). Поэтому:
+   *   - поллим раз в 20 с, а не каждые 5 с (5-секундный поллинг сам провоцировал 429);
+   *   - 429 на listReports НЕ фатален — это «подожди ещё», а не «отчёт сломался»:
+   *     делаем увеличенную паузу и продолжаем поллинг до общего дедлайна.
+   * Раньше первый же 429 ронял waitForReport, ночная сверка падала, и прошлые
+   * дни не подтягивались к актуальным цифрам WB.
    */
   async waitForReport(reportId: string, timeoutMs = 5 * 60_000): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
+    const pollMs = 20_000;
+    const backoffMs = 60_000;
     while (Date.now() < deadline) {
-      await new Promise<void>((r) => { setTimeout(r, 5_000); });
-      const statuses = await this.listReports();
+      await new Promise<void>((r) => { setTimeout(r, pollMs); });
+      let statuses: ReportStatus[];
+      try {
+        statuses = await this.listReports();
+      } catch (err) {
+        if ((err as Error).message.includes("429")) {
+          await new Promise<void>((r) => { setTimeout(r, backoffMs); });
+          continue;
+        }
+        throw err;
+      }
       const task = statuses.find((s) => s.id === reportId);
       if (!task) continue;
       if (task.status === "SUCCESS") return true;
@@ -97,7 +131,7 @@ export class WbAnalyticsCsvClient {
 
   /** Lists all generated reports for this seller. */
   async listReports(): Promise<ReportStatus[]> {
-    const resp = await fetch(`${BASE}/api/v2/nm-report/downloads`, {
+    const resp = await fetchWithTimeout(`${BASE}/api/v2/nm-report/downloads`, {
       headers: this.authHeaders,
     });
     if (!resp.ok) {
@@ -113,7 +147,7 @@ export class WbAnalyticsCsvClient {
    * The ZIP contains a single CSV with all products × all days.
    */
   async downloadAndParse(reportId: string): Promise<AnalyticsCsvRow[]> {
-    const resp = await fetch(
+    const resp = await fetchWithTimeout(
       `${BASE}/api/v2/nm-report/downloads/file/${reportId}`,
       { headers: this.authHeaders },
     );
@@ -131,14 +165,24 @@ export class WbAnalyticsCsvClient {
   /**
    * Full flow: create → wait → download → parse.
    * Returns all order rows for the period.
+   *
+   * `waitTimeoutMs` — сколько ждать генерации отчёта на стороне WB. Годовой
+   * DETAIL_HISTORY_REPORT (365 дней × все товары) часто генерится дольше 5 минут,
+   * поэтому для полной сверки вызывающий код передаёт увеличенный таймаут.
    */
-  async fetchOrdersReport(startDate: string, endDate: string): Promise<AnalyticsCsvRow[]> {
+  async fetchOrdersReport(
+    startDate: string,
+    endDate: string,
+    waitTimeoutMs = 5 * 60_000,
+  ): Promise<AnalyticsCsvRow[]> {
     const token = this.getToken();
     if (!token) throw new Error("WB_API_TOKEN not configured");
 
     const reportId = await this.createReport(startDate, endDate);
-    const ready = await this.waitForReport(reportId);
-    if (!ready) throw new Error(`CSV report ${reportId} timed out after 5 min`);
+    const ready = await this.waitForReport(reportId, waitTimeoutMs);
+    if (!ready) {
+      throw new Error(`CSV report ${reportId} timed out after ${Math.round(waitTimeoutMs / 60_000)} min`);
+    }
     return this.downloadAndParse(reportId);
   }
 }
@@ -188,6 +232,8 @@ function parseCsv(text: string): AnalyticsCsvRow[] {
   const COL_DT          = 1;
   const COL_ORDERS      = 4;
   const COL_ORDERS_SUM  = 5;
+  const COL_BUYOUTS     = 6;
+  const COL_BUYOUTS_SUM = 7;
   const COL_CANCEL      = 8;
 
   const rows: AnalyticsCsvRow[] = [];
@@ -203,11 +249,13 @@ function parseCsv(text: string): AnalyticsCsvRow[] {
     const orderDate  = (parts[COL_DT] ?? "").trim();
     const ordersCount = Number(parts[COL_ORDERS] ?? "0");
     const ordersSum  = Number(parts[COL_ORDERS_SUM] ?? "0");
+    const buyoutsCount = Number(parts[COL_BUYOUTS] ?? "0");
+    const buyoutsSum   = Number(parts[COL_BUYOUTS_SUM] ?? "0");
     const cancelCount = Number(parts[COL_CANCEL] ?? "0");
 
     if (!nmId || !orderDate || !/^\d{4}-\d{2}-\d{2}$/.test(orderDate)) continue;
 
-    rows.push({ nmId, orderDate, ordersCount, cancelCount, ordersSum });
+    rows.push({ nmId, orderDate, ordersCount, cancelCount, ordersSum, buyoutsCount, buyoutsSum });
   }
 
   return rows;

@@ -61,6 +61,26 @@ export type WbOrderRow = {
   srid: string;
 };
 
+/**
+ * Row returned by /api/v1/supplier/sales. Same shape as orders, plus `saleID`.
+ * saleID starting with "S" — выкуп (sale), "R" — возврат (return).
+ * priceWithDisc / finishedPrice могут быть отрицательными для возвратов.
+ */
+export type WbSaleRow = {
+  date: string;
+  lastChangeDate: string;
+  warehouseName: string;
+  nmId: number;
+  supplierArticle: string;
+  saleID: string;
+  totalPrice: number;
+  discountPercent: number;
+  finishedPrice: number;
+  priceWithDisc: number;
+  forPay: number;
+  srid: string;
+};
+
 export class WbStatisticsApiClient {
   private lastRequestAt = 0;
 
@@ -117,8 +137,13 @@ export class WbStatisticsApiClient {
    * @param moscowDateStr — "YYYY-MM-DD" in Moscow timezone (e.g. "2026-05-21")
    */
   async fetchOrdersForDay(moscowDateStr: string): Promise<WbOrderRow[]> {
-    // Pass midnight Moscow as dateFrom so WB knows which calendar day we want
-    const dateFrom = new Date(`${moscowDateStr}T00:00:00+03:00`);
+    // flag=1: WB берёт ТОЛЬКО дату из dateFrom (время игнорируется), причём из
+    // строки, которую мы шлём через dateFrom.toISOString() — т.е. из UTC-даты.
+    // Если послать полночь по Москве (`${d}T00:00:00+03:00`), toISOString даёт
+    // предыдущий день в UTC (21:00Z), и WB отдаёт заказы за ВЧЕРА → данные «сегодня»
+    // оказываются вчерашними и замороженными. Берём полдень по Москве (09:00Z) —
+    // UTC-дата гарантированно совпадает с нужным московским днём (запас ±3 ч).
+    const dateFrom = new Date(`${moscowDateStr}T12:00:00+03:00`);
     await this.throttle();
     const rows = await this.fetchOrdersPage(dateFrom, 1);
 
@@ -144,6 +169,62 @@ export class WbStatisticsApiClient {
     }
 
     return allRows;
+  }
+
+  /**
+   * Downloads ALL sales + returns changed since `dateFrom` (flag=0 cursor).
+   * Returns: returns are rows whose saleID starts with "R".
+   * Paginates automatically if the response hits the 80k-row limit.
+   */
+  async fetchAllSales(dateFrom: Date): Promise<WbSaleRow[]> {
+    await this.throttle();
+    const rows = await this.fetchSalesPage(dateFrom);
+    if (rows.length < 80000) return rows;
+
+    const all = [...rows];
+    let cursor = new Date(rows[rows.length - 1]!.lastChangeDate);
+    for (;;) {
+      await this.throttle();
+      const page = await this.fetchSalesPage(cursor);
+      if (page.length === 0) break;
+      all.push(...page);
+      if (page.length < 80000) break;
+      const last = page[page.length - 1];
+      if (!last) break;
+      const next = new Date(last.lastChangeDate);
+      if (isNaN(next.getTime()) || next <= cursor) break;
+      cursor = next;
+    }
+    return all;
+  }
+
+  private async fetchSalesPage(dateFrom: Date): Promise<WbSaleRow[]> {
+    const token = this.getToken();
+    if (!token) throw new Error("WB Statistics API token not configured (WB_API_TOKEN)");
+
+    const url = new URL(`${appEnv.wbStatisticsApiBaseUrl}/api/v1/supplier/sales`);
+    url.searchParams.set("dateFrom", dateFrom.toISOString());
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => { controller.abort(); }, appEnv.wbStatisticsApiTimeoutMs);
+
+    try {
+      const response = await fetch(url.toString(), {
+        method: "GET",
+        headers: { Authorization: token, "Content-Type": "application/json" },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(`WB Statistics sales API ${response.status}: ${body}`);
+      }
+      const data = await response.json() as WbSaleRow[];
+      return Array.isArray(data) ? data : [];
+    } catch (err) {
+      clearTimeout(timeoutId);
+      throw err;
+    }
   }
 
   private async fetchOrdersPage(dateFrom: Date, flag: 0 | 1): Promise<WbOrderRow[]> {

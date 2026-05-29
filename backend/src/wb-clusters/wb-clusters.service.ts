@@ -5,6 +5,7 @@ import { WbApiClient } from "../wb-sync/wb-api.client";
 import { WbSellerAnalyticsApiClient } from "./wb-seller-analytics-api.client";
 import { WbAnalyticsCsvClient } from "./wb-analytics-csv.client";
 import { WbStatisticsApiClient } from "./wb-statistics-api.client";
+import { WbPricesApiClient } from "./wb-prices-api.client";
 import { WbRuntimeConfigService } from "../wb-sync/wb-runtime-config.service";
 import { WbCabinetPrivateApiClient } from "./wb-cabinet-private-api.client";
 import { WbCmpSafariClient } from "./wb-cmp-safari.client";
@@ -60,6 +61,9 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     () => this.wbRuntimeConfigService.getResolvedToken() || appEnv.wbApiToken,
   );
   private readonly statisticsApiClient = new WbStatisticsApiClient(
+    () => this.wbRuntimeConfigService.getResolvedToken() || appEnv.wbApiToken,
+  );
+  private readonly pricesApiClient = new WbPricesApiClient(
     () => this.wbRuntimeConfigService.getResolvedToken() || appEnv.wbApiToken,
   );
 
@@ -391,11 +395,41 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
   // Orders sync (WB Statistics API)
   // ─────────────────────────────────────────────────────────────────────────
 
-  /** Returns per-product per-day order rows from wb_product_daily_orders. Simple SELECT. */
-  async getOrdersMatrix() {
-    if (!this.wbClustersRepository.isConfigured()) return [];
+  /**
+   * Compact-format orders matrix: { dates, products: [{ nmId, vals: (number | null)[] }] }.
+   * `vals[i]` is orders count on `dates[i]`; `null` means «no row in DB». This preserves
+   * the original UX where 0 (WB reported zero orders) is shown as «0» and absence as «—».
+   * Replaces the row-per-(nmId,date) format and shrinks the payload ~10-15× while keeping
+   * the visual semantics identical to the legacy /orders-matrix endpoint.
+   */
+  async getOrdersMatrixCompact(): Promise<{
+    dates: string[];
+    products: { nmId: number; vals: (number | null)[] }[];
+  }> {
+    if (!this.wbClustersRepository.isConfigured()) return { dates: [], products: [] };
     await this.wbClustersRepository.ensureSchema();
-    return this.wbClustersRepository.getOrdersMatrix();
+    const rows = await this.wbClustersRepository.getOrdersMatrix();
+    if (rows.length === 0) return { dates: [], products: [] };
+
+    const datesSet = new Set<string>();
+    for (const r of rows) datesSet.add(r.orderDate);
+    const dates = Array.from(datesSet).sort((a, b) => (a < b ? 1 : -1));
+    const dateIdx = new Map<string, number>();
+    for (let i = 0; i < dates.length; i++) dateIdx.set(dates[i]!, i);
+
+    const productMap = new Map<number, (number | null)[]>();
+    for (const r of rows) {
+      const idx = dateIdx.get(r.orderDate);
+      if (idx === undefined) continue;
+      let vals = productMap.get(r.nmId);
+      if (!vals) {
+        vals = new Array<number | null>(dates.length).fill(null);
+        productMap.set(r.nmId, vals);
+      }
+      vals[idx] = r.ordersCount;
+    }
+    const products = Array.from(productMap.entries()).map(([nmId, vals]) => ({ nmId, vals }));
+    return { dates, products };
   }
 
   /** Returns all JAM daily rows from wb_product_jam_daily for the retrospective matrix. */
@@ -480,6 +514,45 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     return { items };
   }
 
+  /** Returns today's orders sum per product (CSV-derived, совпадает с WB-дашбордом). */
+  async getTodayOrdersSum() {
+    if (!this.wbClustersRepository.isConfigured()) return { items: [] };
+    await this.wbClustersRepository.ensureSchema();
+    const items = await this.wbClustersRepository.getTodayOrdersSum();
+    return { items };
+  }
+
+  /** Returns orders-sum matrix (compact: dates[] + products[]{nmId, vals[]}) для ретроспективы. */
+  async getOrdersSumMatrixCompact(): Promise<{
+    dates: string[];
+    products: { nmId: number; vals: (number | null)[] }[];
+  }> {
+    if (!this.wbClustersRepository.isConfigured()) return { dates: [], products: [] };
+    await this.wbClustersRepository.ensureSchema();
+    const rows = await this.wbClustersRepository.getOrdersSumMatrix();
+    if (rows.length === 0) return { dates: [], products: [] };
+
+    const datesSet = new Set<string>();
+    for (const r of rows) datesSet.add(r.orderDate);
+    const dates = Array.from(datesSet).sort((a, b) => (a < b ? 1 : -1));
+    const dateIdx = new Map<string, number>();
+    for (let i = 0; i < dates.length; i++) dateIdx.set(dates[i]!, i);
+
+    const productMap = new Map<number, (number | null)[]>();
+    for (const r of rows) {
+      const idx = dateIdx.get(r.orderDate);
+      if (idx === undefined) continue;
+      let vals = productMap.get(r.nmId);
+      if (!vals) {
+        vals = new Array<number | null>(dates.length).fill(null);
+        productMap.set(r.nmId, vals);
+      }
+      vals[idx] = r.ordersSum;
+    }
+    const products = Array.from(productMap.entries()).map(([nmId, vals]) => ({ nmId, vals }));
+    return { dates, products };
+  }
+
   // ─── Orders sync ────────────────────────────────────────────────────────────
   //
   // Architecture (Google-Sheets style):
@@ -543,6 +616,8 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
       ordersCount: r.ordersCount,
       cancelledCount: r.cancelCount,
       ordersSum: r.ordersSum,
+      buyoutsCount: r.buyoutsCount,
+      buyoutsSum: r.buyoutsSum,
     }));
 
     await this.wbClustersRepository.clearOrdersForDateRange(startDate);
@@ -550,6 +625,246 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     this.logger.log(`Orders CSV sync done: ${upsertRows.length} product-day rows`);
   }
 
+  /**
+   * Reconcile `wb_product_daily_orders` against WB Analytics CSV (DETAIL_HISTORY_REPORT)
+   * for the last `daysBack` days. WB revises a day's orders/buyouts for ~2 weeks after
+   * the order date, поэтому ночью достаточно тянуть КОРОТКИЙ отчёт (по умолчанию 30 дней),
+   * а не годовой: он генерится у WB за секунды, поллинг успевает за 1–2 итерации и почти
+   * не задевает rate-limit списка отчётов (именно долгая генерация годового отчёта держала
+   * нас в поллинге минутами и ловила 429). Старшие 30 дней дни уже финальны и не меняются —
+   * перетягивать их каждую ночь незачем.
+   *
+   * `daysBack = 364` — разовый/редкий полный бэкфилл (первая установка, заполнение
+   * пропусков); вызывается вручную через эндпоинт. Идемпотентно и diff-aware.
+   */
+  async syncOrdersFromAnalyticsFullYear(daysBack = 364): Promise<{ status: "ok" | "skipped"; rows: number }> {
+    if (!await this.guardOrdersSync()) return { status: "skipped", rows: 0 };
+
+    const windowDays = Math.max(1, Math.floor(daysBack));
+    const endDate   = this.getMoscowDateStr(0);
+    const startDate = this.getMoscowDateStr(-windowDays);
+    this.logger.log(`Orders CSV reconcile (${windowDays} d): ${startDate} → ${endDate}`);
+
+    // Короткий отчёт генерится быстро, но оставляем запас по времени и ретраи —
+    // на случай дневного троттлинга списка отчётов 429.
+    const WAIT_MS = 15 * 60_000;
+    const MAX_ATTEMPTS = 3;
+    let rows: Awaited<ReturnType<WbAnalyticsCsvClient["fetchOrdersReport"]>> | null = null;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        rows = await this.analyticsCsvClient.fetchOrdersReport(startDate, endDate, WAIT_MS);
+        break;
+      } catch (err) {
+        this.logger.warn(
+          `Orders CSV reconcile (${windowDays} d) attempt ${attempt}/${MAX_ATTEMPTS} failed: ${(err as Error).message}`,
+        );
+        if (attempt === MAX_ATTEMPTS) return { status: "skipped", rows: 0 };
+        await new Promise<void>((r) => { setTimeout(r, 60_000); });
+      }
+    }
+    if (!rows) return { status: "skipped", rows: 0 };
+
+    if (rows.length === 0) {
+      this.logger.log(`Orders CSV reconcile (${windowDays} d): empty report.`);
+      return { status: "ok", rows: 0 };
+    }
+
+    const upsertRows = rows.map((r) => ({
+      nmId: r.nmId,
+      orderDate: r.orderDate,
+      ordersCount: r.ordersCount,
+      cancelledCount: r.cancelCount,
+      ordersSum: r.ordersSum,
+      buyoutsCount: r.buyoutsCount,
+      buyoutsSum: r.buyoutsSum,
+    }));
+
+    // Сверка идемпотентна и diff-aware: НЕ чистим диапазон (иначе пропуски в
+    // выгрузке временно обнулили бы данные), а upsert сам трогает только те
+    // строки, где значение реально изменилось.
+    const { changedRows, changedDates } = await this.wbClustersRepository.upsertDailyOrders(upsertRows);
+    if (changedRows === 0) {
+      this.logger.log(`Orders CSV reconcile (${windowDays} d): ${upsertRows.length} rows checked, nothing changed.`);
+    } else {
+      this.logger.log(
+        `Orders CSV reconcile (${windowDays} d): ${upsertRows.length} rows checked, ` +
+          `${changedRows} updated across ${changedDates.length} day(s): ${changedDates.join(", ")}`,
+      );
+    }
+    return { status: "ok", rows: changedRows };
+  }
+
+  // ─── Today's live orders via Statistics API ─────────────────────────────────
+  //
+  // Источник: /api/v1/supplier/orders flag=1 (один запрос на «сегодня»).
+  // Не имеет дневного лимита WB Analytics (Stats API на другой квоте).
+  //
+  // Что пишем для сегодняшней даты:
+  //   - orders_count (всего заказов сегодня)
+  //   - cancelled_count (из них отменённых)
+  //   - orders_sum (sum(priceWithDisc) — co скидкой продавца, БЕЗ СПП;
+  //     та же метрика, что и CSV ordersSumRub, и что показывает WB-дашборд
+  //     «Заказали товаров на сумму»)
+  // Buyouts (выкупы) не трогаем — CSV их закрывает в ночной финализации.
+  //
+  // NB: Statistics API не показывает заказы с неподтверждённой оплатой (~3% потерь
+  // по count). Это компромисс ради real-time: за вчера WB-аналитика (CSV)
+  // даёт «правильное» число, а сегодня будет немного занижено.
+
+  async syncOrdersTodayFromStatsApi(): Promise<void> {
+    if (!await this.guardOrdersSync()) return;
+
+    const todayStr = this.getMoscowDateStr(0);
+    let rows: Awaited<ReturnType<WbStatisticsApiClient["fetchOrdersForDay"]>>;
+    try {
+      rows = await this.statisticsApiClient.fetchOrdersForDay(todayStr);
+    } catch (err) {
+      this.logger.warn(`Orders Stats today sync error: ${(err as Error).message}`);
+      return;
+    }
+
+    // Aggregate per nmId: count, cancelled count, priceWithDisc sum.
+    const byNm = new Map<number, { ordersCount: number; cancelledCount: number; ordersSum: number }>();
+    for (const r of rows) {
+      let agg = byNm.get(r.nmId);
+      if (!agg) {
+        agg = { ordersCount: 0, cancelledCount: 0, ordersSum: 0 };
+        byNm.set(r.nmId, agg);
+      }
+      agg.ordersCount += 1;
+      if (r.isCancel) agg.cancelledCount += 1;
+      agg.ordersSum += Number(r.priceWithDisc) || 0;
+    }
+
+    const upserts = [...byNm.entries()].map(([nmId, agg]) => ({
+      nmId,
+      ordersCount: agg.ordersCount,
+      cancelledCount: agg.cancelledCount,
+      ordersSum: Math.round(agg.ordersSum * 100) / 100,
+    }));
+
+    // Reset all today rows to 0 first so products whose orders were cancelled/removed
+    // since last sync drop correctly. Then upsert today's live aggregates.
+    await this.wbClustersRepository.resetTodayLiveOrdersFields();
+    if (upserts.length > 0) {
+      await this.wbClustersRepository.upsertOrdersTodayFromStatsApi(upserts);
+    }
+    this.logger.log(`Orders Stats today sync (${todayStr}): ${rows.length} orders → ${upserts.length} products`);
+  }
+
+  // ─── Buyout % read-model ────────────────────────────────────────────────────
+
+  /** Returns today's buyout counts (with matching orders counts) per product. */
+  async getTodayBuyoutCounts() {
+    if (!this.wbClustersRepository.isConfigured()) return { items: [] };
+    await this.wbClustersRepository.ensureSchema();
+    const items = await this.wbClustersRepository.getTodayBuyoutCounts();
+    return { items };
+  }
+
+  /**
+   * Rolling-window buyout counts (default: 365 days). Frontend renders
+   * % выкупа = buyouts / orders × 100 for this aggregate.
+   *
+   * Reads the precomputed daily snapshot (instant). Falls back to on-the-fly
+   * aggregation only if the snapshot table is empty (cold start).
+   */
+  async getRollingBuyoutCounts(days = 365) {
+    if (!this.wbClustersRepository.isConfigured()) return { items: [] };
+    await this.wbClustersRepository.ensureSchema();
+    // Считаем ЖИВОЕ скользящее окно, заканчивающееся СЕГОДНЯ. Раньше тут
+    // короткозамыкался getLatestBuyoutSnapshot() (последний снапшот = вчера),
+    // из-за чего колонка «сегодня» в ретроспективе байт-в-байт повторяла колонку
+    // «вчера» — это и была «нет разницы в Итого». Окно до сегодня отличается от
+    // вчерашнего снапшота (включает сегодняшние заказы), так что дубля больше нет.
+    const items = await this.wbClustersRepository.getRollingBuyoutCounts(days);
+    return { items };
+  }
+
+  /**
+   * Snapshot matrix for the «% выкупа» retrospective: dates + per-product %
+   * per day. Read straight from wb_product_buyout_daily_snapshot — instant.
+   */
+  async getBuyoutSnapshotMatrix() {
+    if (!this.wbClustersRepository.isConfigured()) return { dates: [], products: [] };
+    await this.wbClustersRepository.ensureSchema();
+    return this.wbClustersRepository.getBuyoutSnapshotMatrix();
+  }
+
+  /**
+   * Fixes the «% выкупа» snapshot for yesterday (Moscow) based on the last `days`
+   * days of wb_product_daily_orders. Runs once a day from cron at 03:40 МСК — after
+   * the full-year orders backfill (03:30) and well after WB has finalized yesterday's
+   * numbers (~02:00). The resulting row is the closed-day historical record.
+   */
+  async snapshotBuyoutsRolling(days = 365): Promise<void> {
+    if (!this.wbClustersRepository.isConfigured()) return;
+    await this.wbClustersRepository.ensureSchema();
+    const result = await this.wbClustersRepository.materializeBuyoutSnapshotForYesterday(days);
+    this.logger.log(
+      `Buyout-percent snapshot materialized for ${result.snapshotDate}: ${result.rowsWritten} rows (window ${days} d)`,
+    );
+  }
+
+  /**
+   * Rolling-window orders/cancels/returns aggregate per product (default 365 days).
+   * Frontend computes % выкупа = (orders − cancels − returns) / orders × 100.
+   */
+  async getRollingBuyoutBreakdown(days = 365) {
+    if (!this.wbClustersRepository.isConfigured()) return { items: [] };
+    await this.wbClustersRepository.ensureSchema();
+    const items = await this.wbClustersRepository.getRollingBuyoutBreakdown(days);
+    return { items };
+  }
+
+  /**
+   * Downloads sales (включая возвраты) from WB Statistics API since `daysBack` days ago,
+   * filters returns (saleID starts with "R"), aggregates per nmId × date, and upserts
+   * into wb_product_daily_returns. Always also clears the range to avoid stale rows
+   * if WB later un-publishes a return entry.
+   */
+  async syncReturnsFromStatistics(daysBack = 7): Promise<void> {
+    if (!await this.guardOrdersSync()) return;
+
+    const fromDateStr = this.getMoscowDateStr(-daysBack);
+    const dateFrom    = new Date(`${fromDateStr}T00:00:00+03:00`);
+    this.logger.log(`Returns sync: from ${fromDateStr} (Moscow)`);
+
+    type SaleRow = Awaited<ReturnType<WbStatisticsApiClient["fetchAllSales"]>>[number];
+    let rows: SaleRow[];
+    try {
+      rows = await this.statisticsApiClient.fetchAllSales(dateFrom);
+    } catch (err) {
+      this.logger.warn(`Returns sync error: ${(err as Error).message}`);
+      return;
+    }
+
+    // saleID starts with "R" → return. Use the `date` field as the customer-facing
+    // event date (Moscow tz). Ignore anything older than fromDate.
+    const counts = new Map<string, { nmId: number; returnDate: string; count: number }>();
+    for (const r of rows) {
+      if (typeof r.saleID !== "string" || !r.saleID.startsWith("R")) continue;
+      if (!r.nmId || typeof r.date !== "string") continue;
+      const dateOnly = r.date.slice(0, 10);
+      if (dateOnly < fromDateStr) continue;
+      const key = `${r.nmId}|${dateOnly}`;
+      const entry = counts.get(key);
+      if (entry) entry.count += 1;
+      else counts.set(key, { nmId: r.nmId, returnDate: dateOnly, count: 1 });
+    }
+
+    const upsertRows = Array.from(counts.values()).map((c) => ({
+      nmId: c.nmId,
+      returnDate: c.returnDate,
+      returnsCount: c.count,
+    }));
+
+    await this.wbClustersRepository.clearReturnsForDateRange(fromDateStr);
+    if (upsertRows.length > 0) {
+      await this.wbClustersRepository.upsertDailyReturns(upsertRows);
+    }
+    this.logger.log(`Returns sync done: ${upsertRows.length} product-day rows`);
+  }
 
   /**
    * Downloads current stock balances from WB Statistics API and saves a daily snapshot.
@@ -605,6 +920,54 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     if (!this.wbClustersRepository.isConfigured()) return [];
     await this.wbClustersRepository.ensureSchema();
     return this.wbClustersRepository.getStocksMatrix();
+  }
+
+  /**
+   * Downloads current prices and seller discounts from WB Prices API
+   * and saves a daily snapshot.
+   */
+  async syncPricesFromWb(): Promise<void> {
+    if (!this.wbClustersRepository.isConfigured()) return;
+    await this.wbClustersRepository.ensureSchema();
+    const token = this.wbRuntimeConfigService.getResolvedToken() || appEnv.wbApiToken;
+    if (!token) { this.logger.warn("Prices sync: WB_API_TOKEN not set, skip."); return; }
+
+    const priceDate = this.getMoscowDateStr(0);
+    this.logger.log(`Prices sync: fetching for date ${priceDate}`);
+
+    let goods: Awaited<ReturnType<WbPricesApiClient["fetchAllGoods"]>>;
+    try {
+      goods = await this.pricesApiClient.fetchAllGoods();
+    } catch (err) {
+      this.logger.warn(`Prices sync fetch error: ${(err as Error).message}`);
+      return;
+    }
+
+    if (goods.length === 0) { this.logger.log("Prices sync: empty response."); return; }
+
+    // Take the first size price as representative for the nmId (all sizes share the same discount)
+    const rows = goods.flatMap((g) => {
+      const firstSize = g.sizes[0];
+      if (!firstSize || firstSize.price <= 0) return [];
+      return [{ nmId: g.nmID, priceDate, price: firstSize.price, discount: g.discount }];
+    });
+
+    await this.wbClustersRepository.upsertDailyPrices(rows);
+    this.logger.log(`Prices sync done: ${rows.length} products saved for ${priceDate}`);
+  }
+
+  /** Returns the latest price per nmId (price with seller discount). */
+  async getLatestPrices(): Promise<{ nmId: number; price: number; discount: number }[]> {
+    if (!this.wbClustersRepository.isConfigured()) return [];
+    await this.wbClustersRepository.ensureSchema();
+    return this.wbClustersRepository.getLatestPrices();
+  }
+
+  /** Returns the full prices matrix (all dates × all products) for the frontend. */
+  async getPricesMatrix(): Promise<{ nmId: number; priceDate: string; price: number; discount: number }[]> {
+    if (!this.wbClustersRepository.isConfigured()) return [];
+    await this.wbClustersRepository.ensureSchema();
+    return this.wbClustersRepository.getPricesMatrix();
   }
 
   /** Nightly snapshot: copies each product's latest cost price into today's row (idempotent). */

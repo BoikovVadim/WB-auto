@@ -78,6 +78,7 @@ export function readDashboardViewStateFromSessionStorage(): DashboardViewState {
 export function writeDashboardViewStateToSessionStorage(
   currentValue: DashboardViewState,
   patch: Partial<DashboardViewState>,
+  options: { urlMode?: "push" | "replace" } = {},
 ) {
   if (typeof window === "undefined") {
     return;
@@ -93,7 +94,7 @@ export function writeDashboardViewStateToSessionStorage(
   } catch {
     // Quota exceeded — not fatal, next write will retry.
   }
-  writeDashboardViewStateToUrl(nextValue);
+  writeDashboardViewStateToUrl(nextValue, { mode: options.urlMode });
 }
 
 export function restoreWindowScrollPosition(

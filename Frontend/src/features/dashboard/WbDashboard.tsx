@@ -41,7 +41,12 @@ import {
 import { WbDashboardShell } from "./WbDashboardShell";
 import { useCostPrices } from "./useCostPrices";
 import { useOrders } from "./useOrders";
+import { useOrdersMatrix } from "./useOrdersMatrix";
+import { useBuyouts } from "./useBuyouts";
 import { useCurrentStocks } from "./useCurrentStocks";
+import { useCurrentPrices } from "./useCurrentPrices";
+import { useOrdersSum } from "./useOrdersSum";
+import { useOrdersSumMatrix } from "./useOrdersSumMatrix";
 import { useDashboardBootstrap } from "./useDashboardBootstrap";
 import { useDashboardBrowserEffects } from "./useDashboardBrowserEffects";
 import { useDashboardExportView } from "./useDashboardExportView";
@@ -128,10 +133,19 @@ export function WbDashboard() {
   );
   const isCostPriceSheetOpen = activeSection === "catalog-products" && activeSheet === "cost-price";
   const isOrdersSheetOpen    = activeSection === "catalog-products" && activeSheet === "orders";
+  const isBuyoutSheetOpen    = activeSection === "catalog-products" && activeSheet === "buyout";
   const isStocksSheetOpen    = activeSection === "catalog-products" && activeSheet === "stocks";
+  const isPricesSheetOpen    = activeSection === "catalog-products" && activeSheet === "prices";
+  const isOrdersSumSheetOpen = activeSection === "catalog-products" && activeSheet === "orders-sum";
+  const isRevenueSheetOpen   = activeSection === "catalog-products" && activeSheet === "revenue";
   const { costPrices, isCostPricesLoading, prefetchCostPrices, handleCostSaved, handleCostCleared } = useCostPrices();
   const { orderCounts } = useOrders();
+  const { ordersMatrix } = useOrdersMatrix();
+  const { buyoutCounts, rollingBuyoutCounts } = useBuyouts();
   const { stockCounts } = useCurrentStocks();
+  const { priceCounts } = useCurrentPrices();
+  const { ordersSumValues } = useOrdersSum();
+  const { ordersSumMatrix } = useOrdersSumMatrix();
   const invalidateProductAdvertisingDetail = useCallback(
     (target: ProductAdvertisingDetailInvalidationTarget = "all") => {
       setProductAdvertisingDetailRevisions((currentValue) =>
@@ -172,6 +186,8 @@ export function WbDashboard() {
     productsSearch,
     productsSortKey,
     productsSortDirection,
+    setActiveSection,
+    setActiveSheet,
   });
 
   const currentMethod = useMemo(() => {
@@ -458,17 +474,35 @@ export function WbDashboard() {
       onOpenChangeHistorySection={() => { setActiveSection("change-history"); }}
       isCostPriceSheetOpen={isCostPriceSheetOpen}
       isOrdersSheetOpen={isOrdersSheetOpen}
+      isBuyoutSheetOpen={isBuyoutSheetOpen}
       isStocksSheetOpen={isStocksSheetOpen}
+      isPricesSheetOpen={isPricesSheetOpen}
+      isOrdersSumSheetOpen={isOrdersSumSheetOpen}
+      isRevenueSheetOpen={isRevenueSheetOpen}
       orderCounts={orderCounts}
+      ordersMatrix={ordersMatrix}
+      buyoutCounts={buyoutCounts}
+      rollingBuyoutCounts={rollingBuyoutCounts}
       stockCounts={stockCounts}
+      priceCounts={priceCounts}
+      ordersSumValues={ordersSumValues}
+      ordersSumMatrix={ordersSumMatrix}
       isCostPricesLoading={isCostPricesLoading}
       costPrices={costPrices}
       onOpenCostPriceSheet={() => { setActiveSheet("cost-price"); }}
       onCloseCostPriceSheet={() => { setActiveSheet("none"); }}
       onOpenOrdersSheet={() => { setActiveSection("catalog-products"); setActiveSheet("orders"); }}
       onCloseOrdersSheet={() => { setActiveSheet("none"); }}
+      onOpenBuyoutSheet={() => { setActiveSection("catalog-products"); setActiveSheet("buyout"); }}
+      onCloseBuyoutSheet={() => { setActiveSheet("none"); }}
       onOpenStocksSheet={() => { setActiveSection("catalog-products"); setActiveSheet("stocks"); }}
       onCloseStocksSheet={() => { setActiveSheet("none"); }}
+      onOpenPricesSheet={() => { setActiveSection("catalog-products"); setActiveSheet("prices"); }}
+      onClosePricesSheet={() => { setActiveSheet("none"); }}
+      onOpenOrdersSumSheet={() => { setActiveSection("catalog-products"); setActiveSheet("orders-sum"); }}
+      onCloseOrdersSumSheet={() => { setActiveSheet("none"); }}
+      onOpenRevenueSheet={() => { setActiveSection("catalog-products"); setActiveSheet("revenue"); }}
+      onCloseRevenueSheet={() => { setActiveSheet("none"); }}
       onCostSaved={handleCostSaved}
       onCostCleared={handleCostCleared}
       onRefresh={() => void handleDashboardRefresh()}

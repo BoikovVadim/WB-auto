@@ -615,6 +615,7 @@ input {
   min-width: 520px;
 }
 
+
 .wb-data-table th,
 .wb-data-table td {
   padding: var(--wb-table-cell-padding);
@@ -1196,6 +1197,44 @@ input {
   min-width: 120px;
 }
 
+/* ── Products table drag-to-reorder ───────────────────────────────────────── */
+
+.wb-data-table--products th[draggable="true"] {
+  cursor: grab;
+}
+
+.wb-data-table--products th[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.wb-products-column--dragging {
+  opacity: 0.72;
+  box-shadow: inset 0 0 0 1px rgba(201, 162, 39, 0.35);
+}
+
+/* Split header: main sort button + small ↗ sheet-link */
+.wb-products-col-header-split {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 2px;
+}
+
+/* Retrospective sort button */
+.wb-retro-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 .wb-products-sort-button {
   display: inline-flex;
   align-items: center;
@@ -1209,6 +1248,39 @@ input {
   font: inherit;
   font-weight: 700;
   cursor: pointer;
+}
+
+/* Заголовок столбца с ретроспективой: название = ссылка на лист, стрелка = сортировка */
+.wb-products-header-sheet-btn {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.wb-products-header-sheet-btn:hover {
+  color: var(--wb-gold-dark);
+  text-decoration: underline;
+}
+
+.wb-products-header-sort-btn {
+  flex-shrink: 0;
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  line-height: 1;
 }
 
 /* Resize handles use position:absolute — containing block provided by position:sticky on th */
@@ -2811,6 +2883,7 @@ input {
 /* Cost price display button (non-edit state) */
 /* Cost price display span — fixed height so editing never expands the row */
 .wb-cost-price-display {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2836,6 +2909,40 @@ input {
 
 .wb-cost-price-display:hover {
   background: rgba(0, 0, 0, 0.04);
+}
+
+/* Карандаш-аффорданс слева от значения себестоимости. Клик по нему или по цифре
+   открывает редактирование. Видим всегда (приглушённо), ярче при наведении. */
+/* Карандаш прижат к левому краю ячейки (вне потока), чтобы цифра центрировалась
+   по всей ячейке, а не вместе с иконкой. */
+.wb-cost-price-edit-icon {
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px;
+  border: none;
+  background: transparent;
+  color: var(--wb-gold-dark);
+  cursor: pointer;
+  opacity: 0.65;
+  transition: opacity 0.1s;
+}
+
+.wb-cost-price-display:hover .wb-cost-price-edit-icon {
+  opacity: 1;
+}
+
+.wb-cost-price-edit-icon:hover {
+  opacity: 1;
+}
+
+.wb-cost-price-value {
+  display: inline-flex;
+  align-items: center;
 }
 
 .wb-cost-price-display--selected {

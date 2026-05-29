@@ -15,6 +15,9 @@ export function useAdvertisingClusterGroupSelection(
 ) {
   const [expandedClusterKeys, setExpandedClusterKeys] = useState<string[]>([]);
   const [selectedClusterKeys, setSelectedClusterKeys] = useState<string[]>([]);
+  // Якорь последней одиночной операции по галочке: с него Shift+клик расширяет
+  // выделение до текущей строки (поведение как в Gmail/Excel/Finder).
+  const lastSelectionAnchorRef = useRef<string | null>(null);
 
   const visibleClusterRowKeys = useMemo(
     () => visibleClusterRows.map((row) => buildAdvertisingClusterGroupKey(row)),
@@ -65,13 +68,47 @@ export function useAdvertisingClusterGroupSelection(
     );
   }, []);
 
-  const toggleSelectedClusterGroup = useCallback((groupKey: string) => {
-    setSelectedClusterKeys((currentValue) =>
-      currentValue.includes(groupKey)
-        ? currentValue.filter((item) => item !== groupKey)
-        : [...currentValue, groupKey],
-    );
-  }, []);
+  const toggleSelectedClusterGroup = useCallback(
+    (groupKey: string, options?: { extendRange?: boolean }) => {
+      const anchor = lastSelectionAnchorRef.current;
+      // Shift+клик: распространяем состояние якоря на весь диапазон.
+      // Если якорь сейчас ВЫДЕЛЕН — добавляем все строки диапазона в selection.
+      // Если якорь сейчас НЕ выделен — снимаем все строки диапазона.
+      // Поведение Gmail/«облачных» табличных интерфейсов: галочка-якорь задаёт
+      // «что хотим сделать», а Shift+клик повторяет это для диапазона.
+      if (options?.extendRange && anchor !== null) {
+        const anchorIndex = visibleClusterRowKeys.indexOf(anchor);
+        const targetIndex = visibleClusterRowKeys.indexOf(groupKey);
+        if (anchorIndex >= 0 && targetIndex >= 0) {
+          const [start, end] =
+            anchorIndex < targetIndex
+              ? [anchorIndex, targetIndex]
+              : [targetIndex, anchorIndex];
+          const rangeKeys = visibleClusterRowKeys.slice(start, end + 1);
+          setSelectedClusterKeys((currentValue) => {
+            const currentSet = new Set(currentValue);
+            const anchorIsSelected = currentSet.has(anchor);
+            if (anchorIsSelected) {
+              const next = new Set(currentValue);
+              for (const key of rangeKeys) next.add(key);
+              return Array.from(next);
+            }
+            const removeSet = new Set(rangeKeys);
+            return currentValue.filter((item) => !removeSet.has(item));
+          });
+          lastSelectionAnchorRef.current = groupKey;
+          return;
+        }
+      }
+      setSelectedClusterKeys((currentValue) =>
+        currentValue.includes(groupKey)
+          ? currentValue.filter((item) => item !== groupKey)
+          : [...currentValue, groupKey],
+      );
+      lastSelectionAnchorRef.current = groupKey;
+    },
+    [visibleClusterRowKeys],
+  );
 
   const toggleSelectAllClusterGroups = useCallback(() => {
     setSelectedClusterKeys((currentValue) => {

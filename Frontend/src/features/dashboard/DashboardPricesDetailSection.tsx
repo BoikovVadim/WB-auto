@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { fetchStocksMatrix, type StocksMatrixRow } from "../../api/syncClientStocks";
+import {
+  fetchPricesMatrix,
+  priceWithDiscount,
+  type PricesMatrixRow,
+} from "../../api/syncClientPrices";
+import { formatMoney } from "../../formatters";
+import type { CurrentPriceEntry } from "./useCurrentPrices";
 import type { ProductListItem } from "./useDashboardProductsWorkspace";
 import {
   VirtualMatrixTable,
@@ -10,8 +16,7 @@ import {
 
 type Props = {
   products: ProductListItem[];
-  /** Latest stock quantities — same data shown in the Products tab */
-  stockCounts: Map<number, number>;
+  priceCounts: Map<number, CurrentPriceEntry>;
   onBack: () => void;
 };
 
@@ -24,43 +29,51 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-type StocksMatrix = { dates: string[]; products: { nmId: number; values: (number | null)[] }[] };
+type PricesMatrix = {
+  dates: string[];
+  products: {
+    nmId: number;
+    prices: (number | null)[];
+    discounts: (number | null)[];
+  }[];
+};
 
-const STOCKS_MATRIX_CACHE_KEY = "wb_stocks_matrix_v1";
-const STOCKS_MATRIX_CACHE_DATE = "wb_stocks_matrix_v1_date";
+const PRICES_MATRIX_CACHE_KEY = "wb_prices_matrix_v1";
+const PRICES_MATRIX_CACHE_DATE = "wb_prices_matrix_v1_date";
 
-function readMatrixCache(): StocksMatrix | null {
+function readMatrixCache(): PricesMatrix | null {
   try {
-    const savedDate = localStorage.getItem(STOCKS_MATRIX_CACHE_DATE);
+    const savedDate = localStorage.getItem(PRICES_MATRIX_CACHE_DATE);
     if (savedDate !== todayIso()) return null;
-    const raw = localStorage.getItem(STOCKS_MATRIX_CACHE_KEY);
-    return raw ? (JSON.parse(raw) as StocksMatrix) : null;
+    const raw = localStorage.getItem(PRICES_MATRIX_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as PricesMatrix) : null;
   } catch {
     return null;
   }
 }
 
-function writeMatrixCache(m: StocksMatrix) {
+function writeMatrixCache(m: PricesMatrix) {
   try {
-    localStorage.setItem(STOCKS_MATRIX_CACHE_KEY, JSON.stringify(m));
-    localStorage.setItem(STOCKS_MATRIX_CACHE_DATE, todayIso());
+    localStorage.setItem(PRICES_MATRIX_CACHE_KEY, JSON.stringify(m));
+    localStorage.setItem(PRICES_MATRIX_CACHE_DATE, todayIso());
   } catch {
     /* quota */
   }
 }
 
-function buildMatrix(rows: StocksMatrixRow[]): StocksMatrix {
+function buildMatrix(rows: PricesMatrixRow[]): PricesMatrix {
   const datesSet = new Set<string>();
-  for (const r of rows) datesSet.add(r.stockDate);
+  for (const r of rows) datesSet.add(r.priceDate);
   const dates = Array.from(datesSet).sort((a, b) => (a < b ? 1 : -1));
-  const byNmId = new Map<number, Map<string, number>>();
+  const byNmId = new Map<number, Map<string, { price: number; discount: number }>>();
   for (const r of rows) {
     if (!byNmId.has(r.nmId)) byNmId.set(r.nmId, new Map());
-    byNmId.get(r.nmId)!.set(r.stockDate, r.quantity);
+    byNmId.get(r.nmId)!.set(r.priceDate, { price: r.price, discount: r.discount });
   }
   const products = Array.from(byNmId.entries()).map(([nmId, dateMap]) => ({
     nmId,
-    values: dates.map((d) => dateMap.get(d) ?? null),
+    prices: dates.map((d) => dateMap.get(d)?.price ?? null),
+    discounts: dates.map((d) => dateMap.get(d)?.discount ?? null),
   }));
   return { dates, products };
 }
@@ -80,20 +93,20 @@ const EMPTY_CELL: CellContent = {
   copy: "",
 };
 
-function numCell(value: number | null): CellContent {
+function priceCell(value: number | null): CellContent {
   if (value == null) return EMPTY_CELL;
-  return { display: String(value), copy: String(value) };
+  return { display: formatMoney(value), copy: value.toFixed(2) };
 }
 
-export function DashboardStocksDetailSection({ products, stockCounts, onBack }: Props) {
+export function DashboardPricesDetailSection({ products, priceCounts, onBack }: Props) {
   const today = todayIso();
 
   const [colNo, setColNo] = useState(48);
   const [colId, setColId] = useState(110);
   const [colName, setColName] = useState(220);
-  const [colDate, setColDate] = useState(130);
+  const [colDate, setColDate] = useState(150);
 
-  const [matrix, setMatrix] = useState<StocksMatrix>(
+  const [matrix, setMatrix] = useState<PricesMatrix>(
     () => readMatrixCache() ?? { dates: [], products: [] },
   );
   const [loading, setLoading] = useState(false);
@@ -114,7 +127,7 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
 
   useEffect(() => {
     setLoading(true);
-    fetchStocksMatrix()
+    fetchPricesMatrix()
       .then((rows) => {
         const m = buildMatrix(rows);
         setMatrix(m);
@@ -133,36 +146,41 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
     [matrix.products],
   );
 
+  // Pinned column: prefer live "today" if priceCounts has data, else latest snapshot
+  const hasLive = priceCounts.size > 0;
+  const latestSnapshotDate = matrix.dates[0] ?? null;
+  const pinnedKey = hasLive ? today : latestSnapshotDate;
+  const pinnedIsLive = hasLive;
+
+  // History dates: all matrix dates excluding the one used as pinned (only if pinned is a snapshot date)
+  const pastDates = useMemo(() => {
+    if (!pinnedKey) return matrix.dates;
+    if (pinnedIsLive) return matrix.dates;
+    return matrix.dates.filter((d) => d !== pinnedKey);
+  }, [matrix.dates, pinnedKey, pinnedIsLive]);
+
   const matrixIdxByDate = useMemo(() => {
     const m = new Map<string, number>();
     matrix.dates.forEach((d, i) => m.set(d, i));
     return m;
   }, [matrix.dates]);
 
-  // Активный (закреплённый) столбец = «Сегодня» — живой остаток из stockCounts.
-  // Прошлые колонки — замороженные снапшоты прошлых дней; они копятся вечно (строки
-  // в wb_product_daily_stocks только добавляются). Сегодня НЕ дублируем в прошлых:
-  // оно всегда в закреплённой колонке. Если живых данных ещё нет — закрепляем самый
-  // свежий снапшот, чтобы лист не был пустым.
-  const hasLive = stockCounts.size > 0;
-  const latestSnapshotDate = matrix.dates[0] ?? null;
-  const pinnedKey = hasLive ? today : latestSnapshotDate;
-  const pinnedIsLive = hasLive;
-
-  const pastDates = useMemo(
-    () => matrix.dates.filter((d) => d !== today && d !== pinnedKey),
-    [matrix.dates, today, pinnedKey],
-  );
-
-  const getStockValue = useCallback(
-    (nmId: number | null, d: string | null): number | null => {
-      if (nmId === null || d === null) return null;
-      if (d === today) return stockCounts.get(nmId) ?? null;
+  const getPriceValue = useCallback(
+    (nmId: number | null, d: string): number | null => {
+      if (nmId === null) return null;
+      if (d === today) {
+        const entry = priceCounts.get(nmId);
+        return entry ? entry.priceWithDiscount : null;
+      }
       const row = matrixByNmId.get(nmId);
+      if (!row) return null;
       const idx = matrixIdxByDate.get(d);
-      return row && idx != null ? (row.values[idx] ?? null) : null;
+      if (idx == null) return null;
+      const p = row.prices[idx];
+      const disc = row.discounts[idx];
+      return p != null && disc != null ? priceWithDiscount(p, disc) : null;
     },
-    [today, stockCounts, matrixByNmId, matrixIdxByDate],
+    [today, priceCounts, matrixByNmId, matrixIdxByDate],
   );
 
   const sortedProducts = useMemo(() => {
@@ -180,26 +198,11 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
           ? av.localeCompare(bv, "ru")
           : bv.localeCompare(av, "ru");
       }
-      const av = getStockValue(a.nmId, sortCol) ?? -1;
-      const bv = getStockValue(b.nmId, sortCol) ?? -1;
+      const av = getPriceValue(a.nmId, sortCol) ?? 0;
+      const bv = getPriceValue(b.nmId, sortCol) ?? 0;
       return sortDir === "asc" ? av - bv : bv - av;
     });
-  }, [products, sortCol, sortDir, getStockValue]);
-
-  // Итого по столбцу = сумма остатков по товарам, у кого есть данные за этот день.
-  // index 0 = закреплённый (pinnedKey), index 1+ = pastDates[i-1].
-  const dateTotals = useMemo(() => {
-    const sumFor = (d: string | null): number => {
-      if (!d) return 0;
-      let total = 0;
-      for (const p of products) {
-        const v = getStockValue(p.nmId, d);
-        if (v != null) total += v;
-      }
-      return total;
-    };
-    return [pinnedKey, ...pastDates].map(sumFor);
-  }, [pinnedKey, pastDates, products, getStockValue]);
+  }, [products, sortCol, sortDir, getPriceValue]);
 
   const pinnedCol: DateColumn | undefined = useMemo(() => {
     if (!pinnedKey) return undefined;
@@ -211,23 +214,21 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
         handleSortToggle(pinnedKey);
       },
       sortIndicator: <SortArrow active={sortCol === pinnedKey} dir={sortDir} />,
-      totalDisplay: dateTotals[0] > 0 ? String(dateTotals[0]) : "—",
       accent: true,
     };
-  }, [pinnedKey, pinnedIsLive, dateTotals, sortCol, sortDir, handleSortToggle]);
+  }, [pinnedKey, pinnedIsLive, sortCol, sortDir, handleSortToggle]);
 
   const dataCols: DateColumn[] = useMemo(
     () =>
-      pastDates.map((d, i) => ({
+      pastDates.map((d) => ({
         key: d,
         headerLabel: formatDate(d),
         onHeaderClick: () => {
           handleSortToggle(d);
         },
         sortIndicator: <SortArrow active={sortCol === d} dir={sortDir} />,
-        totalDisplay: (dateTotals[i + 1] ?? 0) > 0 ? String(dateTotals[i + 1]) : "—",
       })),
-    [pastDates, dateTotals, sortCol, sortDir, handleSortToggle],
+    [pastDates, sortCol, sortDir, handleSortToggle],
   );
 
   const getRowKey = useCallback(
@@ -274,9 +275,9 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
       if (!pinnedKey) return EMPTY_CELL;
       const p = sortedProducts[rowIdx];
       if (!p) return EMPTY_CELL;
-      return numCell(getStockValue(p.nmId, pinnedKey));
+      return priceCell(getPriceValue(p.nmId, pinnedKey));
     },
-    [sortedProducts, getStockValue, pinnedKey],
+    [sortedProducts, getPriceValue, pinnedKey],
   );
 
   const getCell = useCallback(
@@ -285,9 +286,9 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
       if (!p) return EMPTY_CELL;
       const d = pastDates[dataColIdx];
       if (d == null) return EMPTY_CELL;
-      return numCell(getStockValue(p.nmId, d));
+      return priceCell(getPriceValue(p.nmId, d));
     },
-    [sortedProducts, pastDates, getStockValue],
+    [sortedProducts, pastDates, getPriceValue],
   );
 
   const toolbar = loading ? (
@@ -299,16 +300,15 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
       <p className="wb-empty-copy" style={{ padding: "32px" }}>
         Нет товаров.
       </p>
-    ) : !pinnedKey && !loading ? (
+    ) : !pinnedKey && pastDates.length === 0 && !loading ? (
       <p className="wb-empty-copy" style={{ padding: "32px" }}>
-        Нет данных. Снимок остатков снимается раз в сутки и копит историю вперёд —
-        у WB нет архива остатков, только текущий баланс.
+        Нет данных. Цены сохраняются автоматически вместе со снапшотом остатков в 01:00 МСК.
       </p>
     ) : null;
 
   return (
     <VirtualMatrixTable
-      title="Остатки"
+      title="Цены (со скидкой продавца)"
       toolbar={toolbar}
       onBack={onBack}
       empty={empty}
@@ -343,7 +343,7 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
       setDataColWidth={setColDate}
       dataColMinWidth={60}
       getCell={getCell}
-      hasTotalsRow
+      hasTotalsRow={false}
     />
   );
 }

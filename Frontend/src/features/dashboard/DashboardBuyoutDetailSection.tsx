@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { fetchStocksMatrix, type StocksMatrixRow } from "../../api/syncClientStocks";
+import {
+  fetchBuyoutSnapshotMatrix,
+  type BuyoutSnapshotMatrix,
+  type TodayBuyoutCount,
+} from "../../api/syncClientBuyouts";
+import { formatPercent } from "../../formatters";
 import type { ProductListItem } from "./useDashboardProductsWorkspace";
 import {
   VirtualMatrixTable,
@@ -10,8 +15,12 @@ import {
 
 type Props = {
   products: ProductListItem[];
-  /** Latest stock quantities — same data shown in the Products tab */
-  stockCounts: Map<number, number>;
+  /**
+   * Rolling 365-day snapshot per product (orders + buyouts) — identical to the
+   * data the inline «% выкупа» column in the catalog shows. Used as the
+   * «сегодня» column in the retrospective.
+   */
+  rollingBuyoutCounts: Map<number, TodayBuyoutCount>;
   onBack: () => void;
 };
 
@@ -24,45 +33,49 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-type StocksMatrix = { dates: string[]; products: { nmId: number; values: (number | null)[] }[] };
+type BuyoutMatrix = {
+  dates: string[];
+  products: {
+    nmId: number;
+    percents: (number | null)[];
+    orders: number[];
+    buyouts: number[];
+  }[];
+};
 
-const STOCKS_MATRIX_CACHE_KEY = "wb_stocks_matrix_v1";
-const STOCKS_MATRIX_CACHE_DATE = "wb_stocks_matrix_v1_date";
+const CACHE_KEY = "wb_buyout_snapshot_matrix_v2";
+const CACHE_DATE = "wb_buyout_snapshot_matrix_v2_date";
 
-function readMatrixCache(): StocksMatrix | null {
+function readCache(): BuyoutMatrix | null {
   try {
-    const savedDate = localStorage.getItem(STOCKS_MATRIX_CACHE_DATE);
+    const savedDate = localStorage.getItem(CACHE_DATE);
     if (savedDate !== todayIso()) return null;
-    const raw = localStorage.getItem(STOCKS_MATRIX_CACHE_KEY);
-    return raw ? (JSON.parse(raw) as StocksMatrix) : null;
+    const raw = localStorage.getItem(CACHE_KEY);
+    return raw ? (JSON.parse(raw) as BuyoutMatrix) : null;
   } catch {
     return null;
   }
 }
 
-function writeMatrixCache(m: StocksMatrix) {
+function writeCache(m: BuyoutMatrix) {
   try {
-    localStorage.setItem(STOCKS_MATRIX_CACHE_KEY, JSON.stringify(m));
-    localStorage.setItem(STOCKS_MATRIX_CACHE_DATE, todayIso());
+    localStorage.setItem(CACHE_KEY, JSON.stringify(m));
+    localStorage.setItem(CACHE_DATE, todayIso());
   } catch {
     /* quota */
   }
 }
 
-function buildMatrix(rows: StocksMatrixRow[]): StocksMatrix {
-  const datesSet = new Set<string>();
-  for (const r of rows) datesSet.add(r.stockDate);
-  const dates = Array.from(datesSet).sort((a, b) => (a < b ? 1 : -1));
-  const byNmId = new Map<number, Map<string, number>>();
-  for (const r of rows) {
-    if (!byNmId.has(r.nmId)) byNmId.set(r.nmId, new Map());
-    byNmId.get(r.nmId)!.set(r.stockDate, r.quantity);
-  }
-  const products = Array.from(byNmId.entries()).map(([nmId, dateMap]) => ({
-    nmId,
-    values: dates.map((d) => dateMap.get(d) ?? null),
-  }));
-  return { dates, products };
+function fromServer(m: BuyoutSnapshotMatrix): BuyoutMatrix {
+  return {
+    dates: m.dates,
+    products: m.products.map((p) => ({
+      nmId: p.nmId,
+      percents: p.percents,
+      orders: p.orders,
+      buyouts: p.buyouts,
+    })),
+  };
 }
 
 type SortCol = string | null;
@@ -80,12 +93,16 @@ const EMPTY_CELL: CellContent = {
   copy: "",
 };
 
-function numCell(value: number | null): CellContent {
+function pctCell(value: number | null): CellContent {
   if (value == null) return EMPTY_CELL;
-  return { display: String(value), copy: String(value) };
+  return { display: formatPercent(value), copy: value.toFixed(2) };
 }
 
-export function DashboardStocksDetailSection({ products, stockCounts, onBack }: Props) {
+export function DashboardBuyoutDetailSection({
+  products,
+  rollingBuyoutCounts,
+  onBack,
+}: Props) {
   const today = todayIso();
 
   const [colNo, setColNo] = useState(48);
@@ -93,8 +110,8 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
   const [colName, setColName] = useState(220);
   const [colDate, setColDate] = useState(130);
 
-  const [matrix, setMatrix] = useState<StocksMatrix>(
-    () => readMatrixCache() ?? { dates: [], products: [] },
+  const [matrix, setMatrix] = useState<BuyoutMatrix>(
+    () => readCache() ?? { dates: [], products: [] },
   );
   const [loading, setLoading] = useState(false);
 
@@ -114,11 +131,11 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
 
   useEffect(() => {
     setLoading(true);
-    fetchStocksMatrix()
-      .then((rows) => {
-        const m = buildMatrix(rows);
-        setMatrix(m);
-        writeMatrixCache(m);
+    fetchBuyoutSnapshotMatrix()
+      .then((m) => {
+        const local = fromServer(m);
+        setMatrix(local);
+        writeCache(local);
       })
       .catch(() => {
         /* keep cached */
@@ -139,30 +156,46 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
     return m;
   }, [matrix.dates]);
 
-  // Активный (закреплённый) столбец = «Сегодня» — живой остаток из stockCounts.
-  // Прошлые колонки — замороженные снапшоты прошлых дней; они копятся вечно (строки
-  // в wb_product_daily_stocks только добавляются). Сегодня НЕ дублируем в прошлых:
-  // оно всегда в закреплённой колонке. Если живых данных ещё нет — закрепляем самый
-  // свежий снапшот, чтобы лист не был пустым.
-  const hasLive = stockCounts.size > 0;
-  const latestSnapshotDate = matrix.dates[0] ?? null;
-  const pinnedKey = hasLive ? today : latestSnapshotDate;
-  const pinnedIsLive = hasLive;
-
+  // Past dates = all snapshot dates excluding today (no pagination — virtualization handles it)
   const pastDates = useMemo(
-    () => matrix.dates.filter((d) => d !== today && d !== pinnedKey),
-    [matrix.dates, today, pinnedKey],
+    () => matrix.dates.filter((d) => d !== today),
+    [matrix.dates, today],
   );
 
-  const getStockValue = useCallback(
-    (nmId: number | null, d: string | null): number | null => {
-      if (nmId === null || d === null) return null;
-      if (d === today) return stockCounts.get(nmId) ?? null;
+  const getPercent = useCallback(
+    (nmId: number | null, dateIso: string): number | null => {
+      if (nmId === null) return null;
+      if (dateIso === today) {
+        const e = rollingBuyoutCounts.get(nmId);
+        // Нет заказов ИЛИ нет выкупов → «нет данных» (—), а не 0 %.
+        if (!e || e.ordersCount === 0 || e.buyoutsCount === 0) return null;
+        return (e.buyoutsCount / e.ordersCount) * 100;
+      }
       const row = matrixByNmId.get(nmId);
-      const idx = matrixIdxByDate.get(d);
-      return row && idx != null ? (row.values[idx] ?? null) : null;
+      const idx = matrixIdxByDate.get(dateIso);
+      return row && idx != null ? (row.percents[idx] ?? null) : null;
     },
-    [today, stockCounts, matrixByNmId, matrixIdxByDate],
+    [today, rollingBuyoutCounts, matrixByNmId, matrixIdxByDate],
+  );
+
+  // Counts (orders, buyouts) по ячейке — для взвешенного «Итого».
+  // Возвращает null, если данных за выкуп нет (выкупов 0) — такие ячейки в
+  // «Итого» не участвуют, ровно как и в отображении (там стоит «—»).
+  const getCounts = useCallback(
+    (nmId: number | null, dateIso: string): { orders: number; buyouts: number } | null => {
+      if (nmId === null) return null;
+      if (dateIso === today) {
+        const e = rollingBuyoutCounts.get(nmId);
+        if (!e || e.ordersCount === 0 || e.buyoutsCount === 0) return null;
+        return { orders: e.ordersCount, buyouts: e.buyoutsCount };
+      }
+      const row = matrixByNmId.get(nmId);
+      const idx = matrixIdxByDate.get(dateIso);
+      if (!row || idx == null) return null;
+      if (row.percents[idx] == null) return null; // нет данных за выкуп
+      return { orders: row.orders[idx] ?? 0, buyouts: row.buyouts[idx] ?? 0 };
+    },
+    [today, rollingBuyoutCounts, matrixByNmId, matrixIdxByDate],
   );
 
   const sortedProducts = useMemo(() => {
@@ -180,41 +213,45 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
           ? av.localeCompare(bv, "ru")
           : bv.localeCompare(av, "ru");
       }
-      const av = getStockValue(a.nmId, sortCol) ?? -1;
-      const bv = getStockValue(b.nmId, sortCol) ?? -1;
+      const av = getPercent(a.nmId, sortCol) ?? -1;
+      const bv = getPercent(b.nmId, sortCol) ?? -1;
       return sortDir === "asc" ? av - bv : bv - av;
     });
-  }, [products, sortCol, sortDir, getStockValue]);
+  }, [products, sortCol, sortDir, getPercent]);
 
-  // Итого по столбцу = сумма остатков по товарам, у кого есть данные за этот день.
-  // index 0 = закреплённый (pinnedKey), index 1+ = pastDates[i-1].
+  // Totals для ВСЕХ колонок считаются одинаково — ВЗВЕШЕННО: Σвыкупов/Σзаказов
+  // по товарам, у которых за этот день есть данные. Простое среднее процентов
+  // (как было для прошлых дней) расходилось с «сегодня» на ~2 %, т.к. не учитывало
+  // объём: мелкий товар с низким выкупом весил столько же, сколько крупный.
+  // index 0 = today, index 1+ = pastDates[i-1].
   const dateTotals = useMemo(() => {
-    const sumFor = (d: string | null): number => {
-      if (!d) return 0;
-      let total = 0;
+    const weightedFor = (dateIso: string): number | null => {
+      let orders = 0;
+      let buyouts = 0;
       for (const p of products) {
-        const v = getStockValue(p.nmId, d);
-        if (v != null) total += v;
+        const c = getCounts(p.nmId, dateIso);
+        if (!c) continue;
+        orders += c.orders;
+        buyouts += c.buyouts;
       }
-      return total;
+      return orders > 0 ? (buyouts / orders) * 100 : null;
     };
-    return [pinnedKey, ...pastDates].map(sumFor);
-  }, [pinnedKey, pastDates, products, getStockValue]);
+    return [today, ...pastDates].map(weightedFor);
+  }, [today, pastDates, products, getCounts]);
 
-  const pinnedCol: DateColumn | undefined = useMemo(() => {
-    if (!pinnedKey) return undefined;
-    const label = pinnedIsLive ? "Сегодня" : formatDate(pinnedKey);
-    return {
-      key: pinnedKey,
-      headerLabel: label,
+  const pinnedCol: DateColumn = useMemo(
+    () => ({
+      key: today,
+      headerLabel: formatDate(today),
       onHeaderClick: () => {
-        handleSortToggle(pinnedKey);
+        handleSortToggle(today);
       },
-      sortIndicator: <SortArrow active={sortCol === pinnedKey} dir={sortDir} />,
-      totalDisplay: dateTotals[0] > 0 ? String(dateTotals[0]) : "—",
+      sortIndicator: <SortArrow active={sortCol === today} dir={sortDir} />,
+      totalDisplay: formatPercent(dateTotals[0] ?? null),
       accent: true,
-    };
-  }, [pinnedKey, pinnedIsLive, dateTotals, sortCol, sortDir, handleSortToggle]);
+    }),
+    [today, dateTotals, sortCol, sortDir, handleSortToggle],
+  );
 
   const dataCols: DateColumn[] = useMemo(
     () =>
@@ -225,7 +262,7 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
           handleSortToggle(d);
         },
         sortIndicator: <SortArrow active={sortCol === d} dir={sortDir} />,
-        totalDisplay: (dateTotals[i + 1] ?? 0) > 0 ? String(dateTotals[i + 1]) : "—",
+        totalDisplay: formatPercent(dateTotals[i + 1] ?? null),
       })),
     [pastDates, dateTotals, sortCol, sortDir, handleSortToggle],
   );
@@ -271,12 +308,11 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
 
   const getPinnedCell = useCallback(
     (rowIdx: number): CellContent => {
-      if (!pinnedKey) return EMPTY_CELL;
       const p = sortedProducts[rowIdx];
       if (!p) return EMPTY_CELL;
-      return numCell(getStockValue(p.nmId, pinnedKey));
+      return pctCell(getPercent(p.nmId, today));
     },
-    [sortedProducts, getStockValue, pinnedKey],
+    [sortedProducts, getPercent, today],
   );
 
   const getCell = useCallback(
@@ -285,9 +321,9 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
       if (!p) return EMPTY_CELL;
       const d = pastDates[dataColIdx];
       if (d == null) return EMPTY_CELL;
-      return numCell(getStockValue(p.nmId, d));
+      return pctCell(getPercent(p.nmId, d));
     },
-    [sortedProducts, pastDates, getStockValue],
+    [sortedProducts, pastDates, getPercent],
   );
 
   const toolbar = loading ? (
@@ -299,16 +335,11 @@ export function DashboardStocksDetailSection({ products, stockCounts, onBack }: 
       <p className="wb-empty-copy" style={{ padding: "32px" }}>
         Нет товаров.
       </p>
-    ) : !pinnedKey && !loading ? (
-      <p className="wb-empty-copy" style={{ padding: "32px" }}>
-        Нет данных. Снимок остатков снимается раз в сутки и копит историю вперёд —
-        у WB нет архива остатков, только текущий баланс.
-      </p>
     ) : null;
 
   return (
     <VirtualMatrixTable
-      title="Остатки"
+      title="% выкупа"
       toolbar={toolbar}
       onBack={onBack}
       empty={empty}

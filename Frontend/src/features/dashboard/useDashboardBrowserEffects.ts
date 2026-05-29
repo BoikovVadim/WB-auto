@@ -16,6 +16,7 @@ import {
   writeDashboardViewState,
   writePersistedCurrentExportSnapshot,
 } from "./persistence/dashboardViewState";
+import { readNavEntryFromUrl } from "./persistence/dashboardViewUrl";
 
 export function useDashboardBrowserEffects(input: {
   enablePersistence: boolean;
@@ -36,6 +37,9 @@ export function useDashboardBrowserEffects(input: {
   productsSearch: string;
   productsSortKey: PersistedProductsSortKey;
   productsSortDirection: "asc" | "desc";
+  // ── Setters used by the browser back / forward (popstate) handler ─────────
+  setActiveSection: (value: DashboardSection) => void;
+  setActiveSheet: (value: ActiveSheet) => void;
 }) {
   const {
     enablePersistence,
@@ -54,9 +58,15 @@ export function useDashboardBrowserEffects(input: {
     productsSearch,
     productsSortKey,
     productsSortDirection,
+    setActiveSection,
+    setActiveSheet,
   } = input;
   const pendingScrollRestoreRef = useRef<number | null>(initialScrollY);
   const [isMethodTablesReady, setIsMethodTablesReady] = useState(false);
+  const previousNavEntryRef = useRef<{ section: DashboardSection; sheet: ActiveSheet }>({
+    section: activeSection,
+    sheet: activeSheet,
+  });
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -114,25 +124,56 @@ export function useDashboardBrowserEffects(input: {
     };
   }, []);
 
+  // Browser back / forward: read the new URL and sync React state.
+  // The effect-driven URL writer would otherwise replay our previous push
+  // and undo the navigation; previousNavEntryRef is updated here so the
+  // writer sees the new section as "current" and emits a `replace` rather
+  // than a redundant `push`.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handlePopState = () => {
+      const entry = readNavEntryFromUrl();
+      if (!entry) return;
+      previousNavEntryRef.current = { section: entry.activeSection, sheet: entry.activeSheet };
+      setActiveSection(entry.activeSection);
+      setActiveSheet(entry.activeSheet);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => { window.removeEventListener("popstate", handlePopState); };
+  }, [setActiveSection, setActiveSheet]);
+
   useEffect(() => {
     if (!enablePersistence) {
       return;
     }
 
-    writeDashboardViewState({
-      activeSection,
-      productsMode,
-      selectedMethodEntity,
-      selectedExportId,
-      selectedProductNmId,
-      selectedCatalogVendorCode,
-      productAdvertisingStartDate: persistedAdvertisingStartDate,
-      productAdvertisingEndDate: persistedAdvertisingEndDate,
-      activeSheet,
-      productsSearch,
-      productsSortKey,
-      productsSortDirection,
-    });
+    // Use `push` only when the user navigates between sections / sheets so
+    // that the browser back/forward buttons step through the navigation
+    // history. Other writes (search/sort/filter changes) replace the current
+    // entry to keep the back stack clean.
+    const prev = previousNavEntryRef.current;
+    const isNavigation = prev.section !== activeSection || prev.sheet !== activeSheet;
+    previousNavEntryRef.current = { section: activeSection, sheet: activeSheet };
+
+    writeDashboardViewState(
+      {
+        activeSection,
+        productsMode,
+        selectedMethodEntity,
+        selectedExportId,
+        selectedProductNmId,
+        selectedCatalogVendorCode,
+        productAdvertisingStartDate: persistedAdvertisingStartDate,
+        productAdvertisingEndDate: persistedAdvertisingEndDate,
+        activeSheet,
+        productsSearch,
+        productsSortKey,
+        productsSortDirection,
+      },
+      { urlMode: isNavigation ? "push" : "replace" },
+    );
   }, [
     activeSection,
     persistedAdvertisingEndDate,

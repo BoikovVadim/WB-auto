@@ -427,20 +427,97 @@ export class WbClustersController {
     return this.wbClustersService.getTodayOrderCounts();
   }
 
-  @Get("products/orders-matrix")
-  getOrdersMatrix() {
-    return this.wbClustersService.getOrdersMatrix();
+  /** Compact orders matrix: dates[] + products[].vals[] — ~20x smaller than the legacy row format. */
+  @Get("products/orders-matrix-compact")
+  getOrdersMatrixCompact() {
+    return this.wbClustersService.getOrdersMatrixCompact();
   }
 
-  /** Downloads Analytics CSV report (7 days), stores in wb_product_daily_orders. */
+  /** Сегодняшняя сумма заказов (CSV/Analytics, совпадает с WB-дашбордом). */
+  @Get("products/orders-sum-today")
+  getTodayOrdersSum() {
+    return this.wbClustersService.getTodayOrdersSum();
+  }
+
+  /** Матрица "товары × даты" суммы заказов (CSV/Analytics). */
+  @Get("products/orders-sum-matrix-compact")
+  getOrdersSumMatrixCompact() {
+    return this.wbClustersService.getOrdersSumMatrixCompact();
+  }
+
+  /**
+   * Ручной триггер почасовой синки сегодняшних заказов через Statistics API.
+   * Обычно стреляет крон каждый час, эндпойнт для ad-hoc обновления.
+   */
+  @Post("products/sync-orders-today")
+  @UseGuards(WbClustersWriteGuard)
+  triggerOrdersTodayFromStatsApi() {
+    this.wbClustersService.syncOrdersTodayFromStatsApi().catch((error: unknown) => {
+      this.logger.error("Background syncOrdersTodayFromStatsApi failed", error);
+    });
+    return { status: "started" };
+  }
+
+  /**
+   * Downloads Analytics CSV report and stores in wb_product_daily_orders.
+   * Default window: 7 days. Override via ?daysBack=N (N in [0, 364]).
+   */
   @Post("products/sync-orders")
   @UseGuards(WbClustersWriteGuard)
-  triggerOrdersSync() {
-    this.wbClustersService.syncOrdersFromAnalytics(6).catch((error: unknown) => {
+  triggerOrdersSync(@Query("daysBack") daysBackRaw?: string) {
+    const parsed = daysBackRaw !== undefined ? Math.floor(Number(daysBackRaw)) : 6;
+    const daysBack = Number.isFinite(parsed) ? Math.min(364, Math.max(0, parsed)) : 6;
+    this.wbClustersService.syncOrdersFromAnalytics(daysBack).catch((error: unknown) => {
       this.logger.error("Background syncOrdersFromAnalytics failed", error);
     });
-    return { status: "started", mode: "csv-7-days" };
+    return { status: "started", daysBack };
   }
+
+  /**
+   * Reconcile orders + buyouts with WB Analytics CSV.
+   * `?days=N` — окно сверки (по умолчанию 364 = полный год для первичного бэкфилла;
+   * передай, напр., 30, чтобы дёрнуть короткую сверку последних дней вручную).
+   */
+  @Post("products/sync-orders-year")
+  @UseGuards(WbClustersWriteGuard)
+  triggerOrdersFullYearSync(@Query("days") days?: string) {
+    const parsed = days ? Number(days) : NaN;
+    const daysBack = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 364;
+    this.wbClustersService.syncOrdersFromAnalyticsFullYear(daysBack).catch((error: unknown) => {
+      this.logger.error("Background syncOrdersFromAnalyticsFullYear failed", error);
+    });
+    return { status: "started", mode: `csv-${daysBack}-days` };
+  }
+
+  @Get("products/buyouts-today")
+  getTodayBuyoutCounts() {
+    return this.wbClustersService.getTodayBuyoutCounts();
+  }
+
+  @Get("products/buyouts-rolling")
+  getRollingBuyoutCounts() {
+    return this.wbClustersService.getRollingBuyoutCounts(365);
+  }
+
+  /**
+   * Compact snapshot matrix for the «% выкупа» retrospective sheet.
+   * Returns dates[] + per-product rolling-365 percent for each snapshot day.
+   * Read straight from wb_product_buyout_daily_snapshot — instant.
+   */
+  @Get("products/buyout-snapshot-matrix")
+  getBuyoutSnapshotMatrix() {
+    return this.wbClustersService.getBuyoutSnapshotMatrix();
+  }
+
+  @Post("products/buyouts-snapshot")
+  @UseGuards(WbClustersWriteGuard)
+  triggerBuyoutSnapshot() {
+    this.wbClustersService.snapshotBuyoutsRolling(365).catch((error: unknown) => {
+      this.logger.error("Background snapshotBuyoutsRolling failed", error);
+    });
+    return { status: "started", windowDays: 365 };
+  }
+
 
   @Get("products/latest-stocks")
   getLatestStocks() {
@@ -458,6 +535,25 @@ export class WbClustersController {
   triggerStocksSync() {
     this.wbClustersService.syncStocksSnapshot().catch((error: unknown) => {
       this.logger.error("Background syncStocksSnapshot failed", error);
+    });
+    return { status: "started" };
+  }
+
+  @Get("products/latest-prices")
+  getLatestPrices() {
+    return this.wbClustersService.getLatestPrices();
+  }
+
+  @Get("products/prices-matrix")
+  getPricesMatrix() {
+    return this.wbClustersService.getPricesMatrix();
+  }
+
+  @Post("products/sync-prices")
+  @UseGuards(WbClustersWriteGuard)
+  triggerPricesSync() {
+    this.wbClustersService.syncPricesFromWb().catch((error: unknown) => {
+      this.logger.error("Background syncPricesFromWb failed", error);
     });
     return { status: "started" };
   }

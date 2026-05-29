@@ -384,9 +384,19 @@ export function getProductDailyOrdersCreateStatements({
         orders_count    INT         NOT NULL DEFAULT 0,
         cancelled_count INT         NOT NULL DEFAULT 0,
         orders_sum      NUMERIC     NOT NULL DEFAULT 0,
+        buyouts_count   INT         NOT NULL DEFAULT 0,
+        buyouts_sum     NUMERIC     NOT NULL DEFAULT 0,
         updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         PRIMARY KEY (nm_id, order_date)
       )
+    `,
+    `
+      ALTER TABLE ${tableName("wb_product_daily_orders")}
+        ADD COLUMN IF NOT EXISTS buyouts_count INT NOT NULL DEFAULT 0
+    `,
+    `
+      ALTER TABLE ${tableName("wb_product_daily_orders")}
+        ADD COLUMN IF NOT EXISTS buyouts_sum NUMERIC NOT NULL DEFAULT 0
     `,
     `
       CREATE INDEX IF NOT EXISTS wb_product_daily_orders_date_idx
@@ -419,6 +429,90 @@ export function getSystemChangeLogCreateStatements({
     `
       CREATE INDEX IF NOT EXISTS wb_system_change_log_nm_id_idx
         ON ${tableName("wb_system_change_log")} (nm_id, created_at DESC)
+    `,
+  ];
+}
+
+/**
+ * wb_product_daily_returns: counts of физических возвратов (товар возвращён клиентом)
+ * per product per day. Source: WB Statistics API /api/v1/supplier/sales,
+ * rows with saleID starting with "R". Used by the products % выкупа column:
+ *   % выкупа = (orders − cancels − returns) / orders × 100.
+ */
+export function getProductDailyReturnsCreateStatements({
+  tableName,
+}: WbClustersSchemaContext): string[] {
+  return [
+    `
+      CREATE TABLE IF NOT EXISTS ${tableName("wb_product_daily_returns")} (
+        nm_id          BIGINT      NOT NULL,
+        return_date    DATE        NOT NULL,
+        returns_count  INT         NOT NULL DEFAULT 0,
+        updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (nm_id, return_date)
+      )
+    `,
+    `
+      CREATE INDEX IF NOT EXISTS wb_product_daily_returns_date_idx
+        ON ${tableName("wb_product_daily_returns")} (return_date DESC)
+    `,
+  ];
+}
+
+/**
+ * wb_product_buyout_daily_snapshot: ежедневный снапшот % выкупа по плавающему
+ * окну 365 дней. Заполняется cron-ом раз в сутки после полной перезаливки
+ * заказов. Колонка % выкупа в карточке товаров читает строку за самую свежую
+ * snapshot_date одним SELECT'ом — без агрегации на лету. Параллельно копится
+ * полная история «как менялся % выкупа по дням».
+ */
+export function getProductBuyoutDailySnapshotCreateStatements({
+  tableName,
+}: WbClustersSchemaContext): string[] {
+  return [
+    `
+      CREATE TABLE IF NOT EXISTS ${tableName("wb_product_buyout_daily_snapshot")} (
+        nm_id          BIGINT      NOT NULL,
+        snapshot_date  DATE        NOT NULL,
+        window_days    INT         NOT NULL DEFAULT 365,
+        orders_count   INT         NOT NULL DEFAULT 0,
+        buyouts_count  INT         NOT NULL DEFAULT 0,
+        percent        NUMERIC(6,3) NOT NULL DEFAULT 0,
+        updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (nm_id, snapshot_date)
+      )
+    `,
+    `
+      CREATE INDEX IF NOT EXISTS wb_product_buyout_daily_snapshot_date_idx
+        ON ${tableName("wb_product_buyout_daily_snapshot")} (snapshot_date DESC)
+    `,
+  ];
+}
+
+/**
+ * wb_product_buyout_daily_snapshot: снимаем NOT NULL/DEFAULT с percent и
+ * пробэкфиливаем уже записанные нули в NULL. Логика: процент выкупа имеет смысл
+ * только когда есть и заказы, и выкупы. Нулевые ячейки (нет заказов в окне или
+ * выкупы ещё не подтянулись из-за лага WB) — это «нет данных», а не «0 % выкупа»,
+ * и они не должны попадать в «Итого» (простое среднее по непустым ячейкам).
+ */
+export function getProductBuyoutDailySnapshotAlterStatements({
+  tableName,
+}: WbClustersSchemaContext): string[] {
+  return [
+    `
+      ALTER TABLE ${tableName("wb_product_buyout_daily_snapshot")}
+      ALTER COLUMN percent DROP NOT NULL
+    `,
+    `
+      ALTER TABLE ${tableName("wb_product_buyout_daily_snapshot")}
+      ALTER COLUMN percent DROP DEFAULT
+    `,
+    `
+      UPDATE ${tableName("wb_product_buyout_daily_snapshot")}
+      SET percent = NULL
+      WHERE percent IS NOT NULL
+        AND (orders_count = 0 OR buyouts_count = 0)
     `,
   ];
 }
@@ -532,6 +626,28 @@ export function getMonthlyFrequencyAlterStatements({
     `
       ALTER TABLE ${tableName("wb_cabinet_cluster_queries")}
       ADD COLUMN IF NOT EXISTS normalized_query_identity TEXT NULL
+    `,
+  ];
+}
+
+/** wb_product_daily_prices: daily price snapshot per product (price with seller discount). */
+export function getProductDailyPricesCreateStatements({
+  tableName,
+}: WbClustersSchemaContext): string[] {
+  return [
+    `
+      CREATE TABLE IF NOT EXISTS ${tableName("wb_product_daily_prices")} (
+        nm_id      BIGINT      NOT NULL,
+        price_date DATE        NOT NULL,
+        price      INT         NOT NULL DEFAULT 0,
+        discount   INT         NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (nm_id, price_date)
+      )
+    `,
+    `
+      CREATE INDEX IF NOT EXISTS wb_product_daily_prices_date_idx
+        ON ${tableName("wb_product_daily_prices")} (price_date DESC)
     `,
   ];
 }

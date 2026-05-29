@@ -1,5 +1,7 @@
-import type { DashboardViewState } from "./dashboardViewStateTypes";
+import type { ActiveSheet, DashboardSection, DashboardViewState } from "./dashboardViewStateTypes";
 import {
+  isActiveSheet,
+  isDashboardSection,
   isSyncEntity,
   readPersistedDateValue,
 } from "./dashboardViewStateTypes";
@@ -15,6 +17,20 @@ export function hasExplicitProductAdvertisingDateRangeInUrl() {
   );
 }
 
+/**
+ * Reads dashboard view state from the URL.
+ *
+ * Behaviour:
+ *   - `view=method` / `view=products` — same as before, plus method/export/product
+ *     deep-link params (entity, exportId, productNmId, productVendor, adStart, adEnd).
+ *   - Any other valid `DashboardSection` — restores `activeSection` only; the
+ *     other state lives in localStorage.
+ *   - Unknown / missing `view` — returns an empty object (storage value wins).
+ *
+ * The URL is the source of truth on refresh and browser back/forward, so every
+ * navigable section *must* be serialised here. Otherwise refresh drops the
+ * user back to the default `exports` page (the "advertising page" regression).
+ */
 export function readDashboardViewStateFromUrl(): Partial<
   Pick<
     DashboardViewState,
@@ -26,6 +42,7 @@ export function readDashboardViewStateFromUrl(): Partial<
     | "selectedCatalogVendorCode"
     | "productAdvertisingStartDate"
     | "productAdvertisingEndDate"
+    | "activeSheet"
   >
 > {
   if (typeof window === "undefined") {
@@ -40,88 +57,165 @@ export function readDashboardViewStateFromUrl(): Partial<
   const productVendor = params.get("productVendor");
   const advertisingStartDate = params.get("adStart");
   const advertisingEndDate = params.get("adEnd");
+  const sheetParam = params.get("sheet");
 
-  if (view !== "method" && view !== "products") {
+  if (view === null || !isDashboardSection(view)) {
     return {};
   }
 
+  const activeSheet: ActiveSheet =
+    view === "catalog-products" && isActiveSheet(sheetParam) ? sheetParam : "none";
+
+  if (view === "method" || view === "products") {
+    return {
+      activeSection: view,
+      productsMode:
+        view === "products" &&
+        (productNmId !== null || (typeof productVendor === "string" && productVendor.trim()))
+          ? "detail"
+          : "list",
+      selectedMethodEntity: isSyncEntity(entity) ? entity : null,
+      selectedExportId: exportId && exportId.trim() ? exportId : null,
+      selectedProductNmId:
+        productNmId !== null && !Number.isNaN(Number(productNmId))
+          ? Number(productNmId)
+          : null,
+      selectedCatalogVendorCode:
+        typeof productVendor === "string" && productVendor.trim() ? productVendor : null,
+      productAdvertisingStartDate: readPersistedDateValue(advertisingStartDate),
+      productAdvertisingEndDate: readPersistedDateValue(advertisingEndDate),
+      activeSheet,
+    };
+  }
+
   return {
-    activeSection: view === "products" ? "products" : "method",
-    productsMode:
-      view === "products" &&
-      (productNmId !== null || (typeof productVendor === "string" && productVendor.trim()))
-        ? "detail"
-        : "list",
-    selectedMethodEntity: isSyncEntity(entity) ? entity : null,
-    selectedExportId: exportId && exportId.trim() ? exportId : null,
-    selectedProductNmId:
-      productNmId !== null && !Number.isNaN(Number(productNmId))
-        ? Number(productNmId)
-        : null,
-    selectedCatalogVendorCode:
-      typeof productVendor === "string" && productVendor.trim() ? productVendor : null,
-    productAdvertisingStartDate: readPersistedDateValue(advertisingStartDate),
-    productAdvertisingEndDate: readPersistedDateValue(advertisingEndDate),
+    activeSection: view satisfies DashboardSection,
+    activeSheet,
   };
 }
 
-export function writeDashboardViewStateToUrl(state: DashboardViewState) {
+type WriteMode = "push" | "replace";
+
+/**
+ * Writes the navigation-defining slice of the view state into the URL.
+ *
+ * The URL always carries `?view=<section>` for any non-default section so
+ * that a page refresh restores exactly the same screen. For
+ * `catalog-products` we also carry `?sheet=<activeSheet>` (orders / buyout /
+ * stocks / prices / cost-price) so deep links to a specific retrospective
+ * sheet survive refresh.
+ *
+ * Use `mode: "push"` when the user navigates between sections / sheets — that
+ * way browser back/forward steps through the navigation history. Use
+ * `mode: "replace"` (the default) for incidental state writes (sort, search,
+ * scroll) that should not pollute the history stack.
+ */
+export function writeDashboardViewStateToUrl(
+  state: DashboardViewState,
+  options: { mode?: WriteMode } = {},
+) {
   if (typeof window === "undefined") {
     return;
   }
 
   const url = new URL(window.location.href);
+  const params = url.searchParams;
 
+  // Section
+  if (state.activeSection === "exports") {
+    params.delete("view");
+  } else {
+    params.set("view", state.activeSection);
+  }
+
+  // Sheet (only meaningful for catalog-products)
+  if (state.activeSection === "catalog-products" && state.activeSheet !== "none") {
+    params.set("sheet", state.activeSheet);
+  } else {
+    params.delete("sheet");
+  }
+
+  // Method / products section deep-link params
   if (state.activeSection === "method" || state.activeSection === "products") {
-    url.searchParams.set("view", state.activeSection);
     if (state.selectedMethodEntity) {
-      url.searchParams.set("entity", state.selectedMethodEntity);
+      params.set("entity", state.selectedMethodEntity);
     } else {
-      url.searchParams.delete("entity");
+      params.delete("entity");
     }
     if (state.selectedExportId) {
-      url.searchParams.set("exportId", state.selectedExportId);
+      params.set("exportId", state.selectedExportId);
     } else {
-      url.searchParams.delete("exportId");
+      params.delete("exportId");
     }
-
     if (
       state.activeSection === "products" &&
       state.productsMode === "detail" &&
       state.selectedProductNmId !== null
     ) {
-      url.searchParams.set("productNmId", String(state.selectedProductNmId));
+      params.set("productNmId", String(state.selectedProductNmId));
     } else {
-      url.searchParams.delete("productNmId");
+      params.delete("productNmId");
     }
     if (
       state.activeSection === "products" &&
       state.productsMode === "detail" &&
       state.selectedCatalogVendorCode
     ) {
-      url.searchParams.set("productVendor", state.selectedCatalogVendorCode);
+      params.set("productVendor", state.selectedCatalogVendorCode);
     } else {
-      url.searchParams.delete("productVendor");
+      params.delete("productVendor");
     }
     if (state.productAdvertisingStartDate) {
-      url.searchParams.set("adStart", state.productAdvertisingStartDate);
+      params.set("adStart", state.productAdvertisingStartDate);
     } else {
-      url.searchParams.delete("adStart");
+      params.delete("adStart");
     }
     if (state.productAdvertisingEndDate) {
-      url.searchParams.set("adEnd", state.productAdvertisingEndDate);
+      params.set("adEnd", state.productAdvertisingEndDate);
     } else {
-      url.searchParams.delete("adEnd");
+      params.delete("adEnd");
     }
   } else {
-    url.searchParams.delete("view");
-    url.searchParams.delete("entity");
-    url.searchParams.delete("exportId");
-    url.searchParams.delete("productNmId");
-    url.searchParams.delete("productVendor");
-    url.searchParams.delete("adStart");
-    url.searchParams.delete("adEnd");
+    params.delete("entity");
+    params.delete("exportId");
+    params.delete("productNmId");
+    params.delete("productVendor");
+    params.delete("adStart");
+    params.delete("adEnd");
   }
 
-  window.history.replaceState({}, "", url);
+  const nextHref = url.toString();
+  if (nextHref === window.location.href) {
+    // Nothing to write — avoid producing redundant history entries on push mode
+    // and avoid one extra unnecessary `replaceState` call.
+    return;
+  }
+
+  if (options.mode === "push") {
+    window.history.pushState({}, "", nextHref);
+  } else {
+    window.history.replaceState({}, "", nextHref);
+  }
+}
+
+/** Section / sheet pair that defines a single history entry for back-forward navigation. */
+export type DashboardNavEntry = {
+  activeSection: DashboardSection;
+  activeSheet: ActiveSheet;
+};
+
+/**
+ * Reads section + sheet from the URL — used by the popstate handler to
+ * synchronise React state when the user clicks browser back / forward.
+ */
+export function readNavEntryFromUrl(): DashboardNavEntry | null {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  const view = params.get("view");
+  const sheetParam = params.get("sheet");
+  if (view !== null && !isDashboardSection(view)) return null;
+  const activeSection: DashboardSection = view === null ? "exports" : view;
+  const activeSheet: ActiveSheet =
+    activeSection === "catalog-products" && isActiveSheet(sheetParam) ? sheetParam : "none";
+  return { activeSection, activeSheet };
 }

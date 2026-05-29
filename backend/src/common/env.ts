@@ -171,8 +171,15 @@ export const appEnv = {
   wbOrdersSyncEnabled: parseBooleanEnv("WB_ORDERS_SYNC_ENABLED", "true"),
   // Orders CSV sync via Analytics API. WB CSV data updates hourly → sync every hour.
   wbOrdersSyncCron: getOptionalEnv("WB_ORDERS_SYNC_CRON", "0 0 * * * *").trim() || "0 0 * * * *",
-  // Finalization cron: at 02:00 Moscow (23:00 UTC) re-sync yesterday's data after WB fully closes the day.
-  wbOrdersFinalizeCron: getOptionalEnv("WB_ORDERS_FINALIZE_CRON", "0 0 23 * * *").trim() || "0 0 23 * * *",
+  // Финализация заказов за вчера через CSV. Дефолт — 02:00 МСК: к этому
+  // моменту WB сбросил дневной лимит Analytics API (20 отчётов/сутки),
+  // поэтому 429 нам не грозит. Сервер живёт по Europe/Moscow, и cron
+  // интерпретируется в местном времени → cron-строка тоже в МСК.
+  wbOrdersFinalizeCron: getOptionalEnv("WB_ORDERS_FINALIZE_CRON", "0 0 2 * * *").trim() || "0 0 2 * * *",
+  // Ночная сверка заказов/выкупов с CSV: тянем КОРОТКИЙ отчёт за последние N дней,
+  // а не годовой. WB доуточняет день ~2 недели, поэтому 30 дней с запасом покрывают
+  // «дозревающее» окно; короткий отчёт генерится за секунды и почти не ловит 429.
+  wbOrdersReconcileDays: parsePositiveIntegerEnv("WB_ORDERS_RECONCILE_DAYS", "30", 1),
   // Stocks snapshot: taken once per day at 01:00 MSK (22:00 UTC).
   // Downloads /api/v1/supplier/stocks and stores total quantity per nmId.
   wbStocksSnapshotEnabled: parseBooleanEnv("WB_STOCKS_SNAPSHOT_ENABLED", "true"),

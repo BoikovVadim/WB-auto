@@ -1,4 +1,4 @@
-import { Fragment, memo, useMemo } from "react";
+import { Fragment, memo, useMemo, useRef } from "react";
 
 import {
   getAdvertisingClusterRowClass,
@@ -34,6 +34,10 @@ export const ProductAdvertisingClusterTableBody = memo(function ProductAdvertisi
     () => new Set(tableProps.selectedClusterKeys),
     [tableProps.selectedClusterKeys],
   );
+  // Shift при mousedown/keydown сохраняем в ref и читаем в onChange.
+  // Так не нужен preventDefault — нативный toggle отрабатывает штатно,
+  // а контролируемый `checked` синхронизируется с состоянием.
+  const shiftHeldAtPressRef = useRef(false);
   const columnCount = tableProps.orderedAdvertisingColumns.length + 1;
 
   return (
@@ -73,7 +77,21 @@ export const ProductAdvertisingClusterTableBody = memo(function ProductAdvertisi
                     type="checkbox"
                     className="wb-advertising-checkbox"
                     checked={selectedClusterKeySet.has(entry.clusterKey)}
-                    onChange={() => tableProps.onToggleSelectedClusterGroup(entry.clusterKey)}
+                    onMouseDown={(event) => {
+                      shiftHeldAtPressRef.current = event.shiftKey;
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === " ") {
+                        shiftHeldAtPressRef.current = event.shiftKey;
+                      }
+                    }}
+                    onChange={() => {
+                      const extendRange = shiftHeldAtPressRef.current;
+                      shiftHeldAtPressRef.current = false;
+                      tableProps.onToggleSelectedClusterGroup(entry.clusterKey, {
+                        extendRange,
+                      });
+                    }}
                     aria-label={`Выбрать кластер ${entry.row.clusterName}`}
                   />
                 </td>

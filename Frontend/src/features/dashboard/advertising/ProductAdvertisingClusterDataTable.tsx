@@ -48,6 +48,9 @@ export function ProductAdvertisingClusterDataTable(
 ) {
   const tableWrapRef = useRef<HTMLDivElement | null>(null);
   const stickyHeaderRef = useRef<HTMLDivElement | null>(null);
+  // Shift при mousedown/keydown сохраняем в ref — потом читаем в onChange,
+  // когда срабатывает нативный toggle контролируемого чекбокса.
+  const stickyShiftHeldAtPressRef = useRef(false);
 
   // Measure the exact available height for the table-wrap so that the section
   // scroll range equals precisely the campaigns area — the table-wrap never
@@ -326,7 +329,21 @@ export function ProductAdvertisingClusterDataTable(
                     type="checkbox"
                     className="wb-advertising-checkbox"
                     checked={props.selectedClusterKeys.includes(stuckClusterKey)}
-                    onChange={() => props.onToggleSelectedClusterGroup(stuckClusterKey)}
+                    onMouseDown={(event) => {
+                      stickyShiftHeldAtPressRef.current = event.shiftKey;
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === " ") {
+                        stickyShiftHeldAtPressRef.current = event.shiftKey;
+                      }
+                    }}
+                    onChange={() => {
+                      const extendRange = stickyShiftHeldAtPressRef.current;
+                      stickyShiftHeldAtPressRef.current = false;
+                      props.onToggleSelectedClusterGroup(stuckClusterKey, {
+                        extendRange,
+                      });
+                    }}
                     aria-label={`Выбрать кластер ${stuckBodyEntry.row.clusterName}`}
                   />
                 </td>

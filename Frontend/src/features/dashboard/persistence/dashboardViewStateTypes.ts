@@ -22,7 +22,7 @@ export type ProductsMode = "list" | "detail";
 
 // Overlay sheet active within catalog-products section.
 // "none" means the main products table is shown.
-export type ActiveSheet = "none" | "cost-price" | "orders" | "stocks";
+export type ActiveSheet = "none" | "cost-price" | "orders" | "stocks" | "prices" | "buyout" | "orders-sum" | "revenue";
 
 // Valid sort keys for the products table — must stay in sync with ProductListSortKey.
 export type PersistedProductsSortKey =
@@ -72,7 +72,7 @@ export function createDefaultDashboardViewState(): DashboardViewState {
 }
 
 export function isActiveSheet(value: unknown): value is ActiveSheet {
-  return value === "none" || value === "cost-price" || value === "orders" || value === "stocks";
+  return value === "none" || value === "cost-price" || value === "orders" || value === "stocks" || value === "prices" || value === "buyout" || value === "orders-sum" || value === "revenue";
 }
 
 export function isPersistedProductsSortKey(value: unknown): value is PersistedProductsSortKey {

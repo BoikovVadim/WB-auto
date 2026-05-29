@@ -6,12 +6,6 @@ export type TodayOrderCount = {
   cancelledCount: number;
 };
 
-export type OrdersMatrixRow = {
-  nmId: number;
-  orderDate: string;
-  ordersCount: number;
-};
-
 export async function fetchTodayOrderCounts(): Promise<TodayOrderCount[]> {
   const response = await apiClient.get<{ items: TodayOrderCount[] }>(
     "/wb-clusters/products/orders-today",
@@ -19,9 +13,19 @@ export async function fetchTodayOrderCounts(): Promise<TodayOrderCount[]> {
   return response.data?.items ?? [];
 }
 
-export async function fetchOrdersMatrix(): Promise<OrdersMatrixRow[]> {
-  const response = await apiClient.get<OrdersMatrixRow[]>(
-    "/wb-clusters/products/orders-matrix",
+/**
+ * Compact orders matrix: dates[] is shared across all products; vals[i] is the
+ * orders count for products[k].nmId on dates[i]. Missing days are 0.
+ * ~20x smaller payload than the legacy row-based format.
+ */
+export type OrdersMatrixCompact = {
+  dates: string[];
+  products: { nmId: number; vals: number[] }[];
+};
+
+export async function fetchOrdersMatrixCompact(): Promise<OrdersMatrixCompact> {
+  const response = await apiClient.get<OrdersMatrixCompact>(
+    "/wb-clusters/products/orders-matrix-compact",
   );
-  return Array.isArray(response.data) ? response.data : [];
+  return response.data ?? { dates: [], products: [] };
 }

@@ -1,15 +1,22 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 import type { CostPriceCurrent } from "../../api/syncClientCostPrice";
 import type { TodayOrderCount } from "../../api/syncClientOrders";
+import type { TodayBuyoutCount } from "../../api/syncClientBuyouts";
+import { formatMoney, formatPercent } from "../../formatters";
+import type { CurrentPriceEntry } from "./useCurrentPrices";
 import { ui } from "./copy";
 import {
   loadScrollPosition,
   saveScrollPosition,
 } from "./persistence/scrollPositionPersistence";
+import type { ProductColumnDefinition, ProductsColumnKey } from "./productsTableColumns";
+import { useProductsColumnOrderState } from "./useProductsColumnOrderState";
 import type { ProductListItem, ProductListSortKey } from "./useDashboardProductsWorkspace";
 
 export type { CostPriceCurrent };
+export type { CurrentPriceEntry };
 
 const CATALOG_PRODUCTS_SCROLL_KEY = "catalog-products-list";
 
@@ -23,15 +30,40 @@ type DashboardCatalogProductsSectionProps = {
   productsSortDirection: "asc" | "desc";
   costPrices: Map<number, CostPriceCurrent>;
   orderCounts: Map<number, TodayOrderCount>;
+  buyoutCounts: Map<number, TodayBuyoutCount>;
+  rollingBuyoutCounts: Map<number, TodayBuyoutCount>;
   stockCounts: Map<number, number>;
+  priceCounts: Map<number, CurrentPriceEntry>;
+  ordersSumValues: Map<number, number>;
   onProductsSearchChange: (value: string) => void;
   onProductsSortToggle: (key: ProductListSortKey) => void;
   onOpenCostPriceSheet: () => void;
   onOpenOrdersSheet: () => void;
+  onOpenBuyoutSheet: () => void;
   onOpenStocksSheet: () => void;
+  onOpenPricesSheet: () => void;
+  onOpenOrdersSumSheet: () => void;
+  onOpenRevenueSheet: () => void;
   onCostSaved: (nmId: number, value: number) => Promise<void>;
   onCostCleared: (nmIds: number[]) => Promise<void>;
 };
+
+// ─── Local sort key (for columns backed by external Maps) ────────────────────
+type LocalSortKey = "cost" | "price" | "orders" | "buyout" | "stock" | "ordersSum" | "revenue";
+
+// Потенциальная выручка за день = сумма заказов × % выкупа (доля бьётся на 100).
+// «Нет данных» (—) когда нет суммы заказов ИЛИ нет выкупа — ровно те же товары,
+// что выпадают в колонках «Сумма заказов» и «% выкупа» (0 выкупов = данных ещё нет,
+// WB отдаёт выкупы с лагом). Возвращаем null, чтобы ячейка/тоталы это учитывали.
+function computeRevenue(
+  ordersSum: number | undefined,
+  buyout: { ordersCount: number; buyoutsCount: number } | undefined,
+): number | null {
+  if (ordersSum === undefined || ordersSum <= 0) return null;
+  if (!buyout || buyout.ordersCount === 0 || buyout.buyoutsCount === 0) return null;
+  const buyoutPercent = (buyout.buyoutsCount / buyout.ordersCount) * 100;
+  return (ordersSum * buyoutPercent) / 100;
+}
 
 function SortArrow({
   active,
@@ -54,6 +86,10 @@ type CostInputCellProps = {
   isEditing: boolean;
   onSaved: (nmId: number, value: number) => Promise<void>;
   onCommitEdit: () => void;
+  /** Enter edit mode — вызывается кликом по карандашу слева от значения.
+   *  Принимает nmId, чтобы родитель мог передать ОДИН стабильный колбэк на все
+   *  ячейки и не ломать memo (инлайн-стрелка пересоздавалась бы каждый рендер). */
+  onStartEdit: (nmId: number) => void;
 };
 
 const CostInputCell = memo(function CostInputCell({
@@ -63,6 +99,7 @@ const CostInputCell = memo(function CostInputCell({
   isEditing,
   onSaved,
   onCommitEdit,
+  onStartEdit,
 }: CostInputCellProps) {
   const [draft, setDraft] = useState<string>("");
   const [saving, setSaving] = useState(false);
@@ -138,7 +175,6 @@ const CostInputCell = memo(function CostInputCell({
           }
           e.stopPropagation();
         }}
-        // Prevent click inside input from bubbling up to cell selection logic
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
         aria-label="Себестоимость"
@@ -150,12 +186,68 @@ const CostInputCell = memo(function CostInputCell({
     <span
       className={`wb-cost-price-display${isSelected ? " wb-cost-price-display--selected" : ""}`}
     >
-      {savedValue !== null
-        ? `${savedValue.toLocaleString("ru-RU")} ₽`
-        : <span className="wb-cost-price-empty">—</span>}
+      <button
+        type="button"
+        className="wb-cost-price-edit-icon"
+        title="Изменить себестоимость"
+        aria-label="Изменить себестоимость"
+        tabIndex={-1}
+        onMouseDown={(e) => { e.stopPropagation(); }}
+        onClick={(e) => { e.stopPropagation(); onStartEdit(nmId); }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+        </svg>
+      </button>
+      <span className="wb-cost-price-value">
+        {savedValue !== null
+          ? `${savedValue.toLocaleString("ru-RU")} ₽`
+          : <span className="wb-cost-price-empty">—</span>}
+      </span>
     </span>
   );
 });
+
+// ─── Column width helper ──────────────────────────────────────────────────────
+
+function getColWidth(col: ProductColumnDefinition, nameColWidth: number): number {
+  return col.key === "vendorCode" ? nameColWidth : col.defaultWidth;
+}
+
+// ─── Column label ─────────────────────────────────────────────────────────────
+
+function getColLabel(key: ProductsColumnKey): string {
+  switch (key) {
+    case "index":     return ui.rowNumber;
+    case "nmId":      return ui.productIdColumn;
+    case "vendorCode": return ui.productNameColumn;
+    case "category":  return ui.category;
+    case "subject":   return ui.subject;
+    case "cost":      return "Себестоимость";
+    case "price":     return "Цена";
+    case "orders":    return "Заказы";
+    case "buyout":    return "% выкупа";
+    case "stock":     return "Остатки";
+    case "ordersSum": return "Сумма заказов";
+    case "revenue":   return "Выручка";
+  }
+}
+
+// ─── Parent sort key mapping ──────────────────────────────────────────────────
+
+function getParentSortKey(key: ProductsColumnKey): ProductListSortKey | null {
+  switch (key) {
+    case "index":     return "id";
+    case "nmId":      return "id";
+    case "vendorCode": return "name";
+    case "category":  return "category";
+    case "subject":   return "subject";
+    default:          return null;
+  }
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export const DashboardCatalogProductsSection = memo(
   function DashboardCatalogProductsSection(props: DashboardCatalogProductsSectionProps) {
@@ -163,22 +255,108 @@ export const DashboardCatalogProductsSection = memo(
     const tableRef = useRef<HTMLTableElement | null>(null);
     const resizingColRef = useRef<number | null>(null);
 
-    // ── Multi-select state ──────────────────────────────────────────────────
+    // ── Column ordering (drag-and-drop) ────────────────────────────────────────
+    const { draggedColumn, orderedColumns, setDraggedColumn, handleDrop } =
+      useProductsColumnOrderState();
+
+    // ── Multi-select state ──────────────────────────────────────────────────────
     const [selectedNmIds, setSelectedNmIds] = useState<Set<number>>(new Set());
     const [editingNmId, setEditingNmId] = useState<number | null>(null);
     const lastClickedIndexRef = useRef<number>(-1);
+
+    // ── Local sort (for cost/orders/stock columns) ──────────────────────────────
+    const [localSortKey, setLocalSortKey] = useState<LocalSortKey | null>(null);
+    const [localSortDir, setLocalSortDir] = useState<"asc" | "desc">("desc");
+
+    // Reset local sort when parent sort changes
+    const prevParentSortKey = useRef(props.productsSortKey);
+    useEffect(() => {
+      if (props.productsSortKey !== prevParentSortKey.current) {
+        prevParentSortKey.current = props.productsSortKey;
+        setLocalSortKey(null);
+      }
+    }, [props.productsSortKey]);
+
+    const handleLocalSortToggle = useCallback((key: LocalSortKey) => {
+      setLocalSortKey((prev) => {
+        if (prev === key) {
+          setLocalSortDir((d) => (d === "asc" ? "desc" : "asc"));
+          return key;
+        }
+        setLocalSortDir("desc");
+        return key;
+      });
+    }, []);
+
+    const handleParentSortToggle = useCallback(
+      (key: ProductListSortKey) => {
+        setLocalSortKey(null);
+        props.onProductsSortToggle(key);
+      },
+      [props],
+    );
+
+    // Products sorted by local sort (if active), otherwise use parent-sorted list
+    const displayProducts = useMemo(() => {
+      if (!localSortKey) return props.filteredProducts;
+      return [...props.filteredProducts].sort((a, b) => {
+        let av = 0;
+        let bv = 0;
+        if (localSortKey === "orders") {
+          av = a.nmId !== null ? (props.orderCounts.get(a.nmId)?.ordersCount ?? 0) : 0;
+          bv = b.nmId !== null ? (props.orderCounts.get(b.nmId)?.ordersCount ?? 0) : 0;
+        } else if (localSortKey === "buyout") {
+          const buyoutPercent = (nmId: number | null): number => {
+            if (nmId === null) return -1;
+            const entry = props.rollingBuyoutCounts.get(nmId);
+            // 0 выкупов при наличии заказов = данных ещё нет (WB отдаёт выкупы с
+            // лагом), а не реальный 0 % — сортируем как «нет данных», см. ретроспективу.
+            if (!entry || entry.ordersCount === 0 || entry.buyoutsCount === 0) return -1;
+            return (entry.buyoutsCount / entry.ordersCount) * 100;
+          };
+          av = buyoutPercent(a.nmId);
+          bv = buyoutPercent(b.nmId);
+        } else if (localSortKey === "stock") {
+          av = a.nmId !== null ? (props.stockCounts.get(a.nmId) ?? 0) : 0;
+          bv = b.nmId !== null ? (props.stockCounts.get(b.nmId) ?? 0) : 0;
+        } else if (localSortKey === "ordersSum") {
+          av = a.nmId !== null ? (props.ordersSumValues.get(a.nmId) ?? 0) : 0;
+          bv = b.nmId !== null ? (props.ordersSumValues.get(b.nmId) ?? 0) : 0;
+        } else if (localSortKey === "revenue") {
+          const revenueOf = (nmId: number | null): number =>
+            nmId !== null
+              ? (computeRevenue(props.ordersSumValues.get(nmId), props.rollingBuyoutCounts.get(nmId)) ?? -1)
+              : -1;
+          av = revenueOf(a.nmId);
+          bv = revenueOf(b.nmId);
+        } else if (localSortKey === "price") {
+          av = a.nmId !== null ? (props.priceCounts.get(a.nmId)?.priceWithDiscount ?? 0) : 0;
+          bv = b.nmId !== null ? (props.priceCounts.get(b.nmId)?.priceWithDiscount ?? 0) : 0;
+        } else {
+          // cost
+          av = a.nmId !== null ? (props.costPrices.get(a.nmId)?.costValue ?? 0) : 0;
+          bv = b.nmId !== null ? (props.costPrices.get(b.nmId)?.costValue ?? 0) : 0;
+        }
+        return localSortDir === "asc" ? av - bv : bv - av;
+      });
+    }, [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.costPrices, props.priceCounts]);
 
     const handleCommitEdit = useCallback(() => {
       setEditingNmId(null);
     }, []);
 
+    // Стабильный колбэк для карандаша: сбрасываем выделение и входим в редактирование
+    // конкретной строки. Один и тот же reference на все ячейки — memo не ломается.
+    const handleStartEdit = useCallback((nmId: number) => {
+      setSelectedNmIds(new Set());
+      setEditingNmId(nmId);
+    }, []);
+
     const handleCellClick = useCallback(
       (nmId: number, index: number, event: React.MouseEvent) => {
-        // Don't interfere if we're in the input
         if ((event.target as HTMLElement).tagName === "INPUT") return;
 
         if (event.ctrlKey || event.metaKey) {
-          // Toggle selection, no edit
           setSelectedNmIds((prev) => {
             const next = new Set(prev);
             if (next.has(nmId)) next.delete(nmId);
@@ -188,31 +366,28 @@ export const DashboardCatalogProductsSection = memo(
           lastClickedIndexRef.current = index;
           setEditingNmId(null);
         } else if (event.shiftKey && lastClickedIndexRef.current >= 0) {
-          // Range select
           const from = Math.min(lastClickedIndexRef.current, index);
           const to = Math.max(lastClickedIndexRef.current, index);
           setSelectedNmIds(() => {
             const next = new Set<number>();
             for (let i = from; i <= to; i++) {
-              const p = props.filteredProducts[i];
+              const p = displayProducts[i];
               if (p?.nmId !== null && p?.nmId !== undefined) next.add(p.nmId);
             }
             return next;
           });
           setEditingNmId(null);
         } else if (selectedNmIds.size > 0) {
-          // Had selection — single-click clears selection, selects this cell only
           setSelectedNmIds(new Set([nmId]));
           lastClickedIndexRef.current = index;
           setEditingNmId(null);
         } else {
-          // No prior selection — single click enters edit mode
           setSelectedNmIds(new Set());
           lastClickedIndexRef.current = index;
           setEditingNmId(nmId);
         }
       },
-      [selectedNmIds, props.filteredProducts],
+      [selectedNmIds, displayProducts],
     );
 
     const handleCellDoubleClick = useCallback((nmId: number, index: number) => {
@@ -221,10 +396,9 @@ export const DashboardCatalogProductsSection = memo(
       setEditingNmId(nmId);
     }, []);
 
-    // ── Keyboard handler for Delete/Backspace/Enter/Escape ─────────────────
+    // ── Keyboard handler ────────────────────────────────────────────────────────
     useEffect(() => {
       const handler = (e: KeyboardEvent) => {
-        // Skip if an input is focused (we don't want to intercept while editing)
         if (
           document.activeElement instanceof HTMLInputElement ||
           document.activeElement instanceof HTMLTextAreaElement
@@ -251,7 +425,7 @@ export const DashboardCatalogProductsSection = memo(
       return () => document.removeEventListener("keydown", handler);
     }, [selectedNmIds, props.onCostCleared]);
 
-    // Click outside the table clears selection
+    // Click outside clears selection
     useEffect(() => {
       const handler = (e: MouseEvent) => {
         if (tableRef.current && !tableRef.current.contains(e.target as Node)) {
@@ -289,23 +463,12 @@ export const DashboardCatalogProductsSection = memo(
       }
     }, [widestVendorCode]);
 
-    const CATEGORY_COL_WIDTH = 160;
-    const SUBJECT_COL_WIDTH = 120;
-    const COST_COL_WIDTH = 140;
-    const ORDERS_COL_WIDTH = 110;
-    const STOCKS_COL_WIDTH = 100;
-    const totalW = 48 + 110 + nameColWidth + CATEGORY_COL_WIDTH + SUBJECT_COL_WIDTH + COST_COL_WIDTH + ORDERS_COL_WIDTH + STOCKS_COL_WIDTH;
-
-    const minResizableWidthByColumn = useMemo(
-      () =>
-        new Map<number, number>([
-          [2, 90],
-          [3, 90],
-          [4, 80],
-        ]),
-      [],
+    const totalW = useMemo(
+      () => orderedColumns.reduce((sum, col) => sum + getColWidth(col, nameColWidth), 0),
+      [orderedColumns, nameColWidth],
     );
 
+    // ── Column resizing ─────────────────────────────────────────────────────────
     const handleResizeMouseDown = useCallback(
       (event: React.MouseEvent<HTMLDivElement>) => {
         event.preventDefault();
@@ -330,16 +493,10 @@ export const DashboardCatalogProductsSection = memo(
 
         const onMouseMove = (moveEvent: MouseEvent) => {
           if (resizingColRef.current === null || !tableRef.current) return;
-          const ths = tableEl.querySelectorAll<HTMLTableCellElement>("thead th");
-          const th = ths[resizingColRef.current];
-          if (!th) return;
-          const minWidth = minResizableWidthByColumn.get(resizingColRef.current) ?? 48;
+          const minWidth = 60;
           const delta = moveEvent.clientX - startX;
           const newWidth = Math.max(minWidth, initialSelectedWidth + delta);
-          th.style.width = `${newWidth}px`;
-          const col = tableEl.querySelector<HTMLTableColElement>(
-            `colgroup col:nth-child(${String(resizingColRef.current + 1)})`,
-          );
+          const col = cols[resizingColRef.current];
           if (col) col.style.width = `${newWidth}px`;
           const totalTableWidth = measuredColWidths.reduce(
             (sum, w, i) => sum + (i === resizingColRef.current ? newWidth : w),
@@ -358,7 +515,7 @@ export const DashboardCatalogProductsSection = memo(
         document.addEventListener("mousemove", onMouseMove);
         document.addEventListener("mouseup", onMouseUp, { once: true });
       },
-      [minResizableWidthByColumn],
+      [],
     );
 
     useLayoutEffect(() => {
@@ -367,6 +524,26 @@ export const DashboardCatalogProductsSection = memo(
       const target = loadScrollPosition(CATALOG_PRODUCTS_SCROLL_KEY);
       if (target > 0) el.scrollTop = target;
     }, [props.hasCatalogItems]);
+
+    // ── Виртуализация строк ──────────────────────────────────────────────────────
+    // Рендерим только видимые строки (тот же приём, что в ретроспективах), НЕ трогая
+    // разметку ячеек, редактирование себестоимости, drag-reorder, выделение и
+    // сортировки — поэтому регрессий нет, а скролл/сортировка/поиск становятся
+    // мгновенными при сотнях товаров. Высоту строк измеряем динамически
+    // (measureElement), чтобы скролл не «уплывал».
+    const rowVirtualizer = useVirtualizer({
+      count: displayProducts.length,
+      getScrollElement: () => tableWrapRef.current,
+      estimateSize: () => 26,
+      overscan: 14,
+    });
+    const virtualRows = rowVirtualizer.getVirtualItems();
+    const virtualTotalSize = rowVirtualizer.getTotalSize();
+    const padTop = virtualRows.length > 0 ? (virtualRows[0]?.start ?? 0) : 0;
+    const padBottom =
+      virtualRows.length > 0
+        ? virtualTotalSize - (virtualRows[virtualRows.length - 1]?.end ?? 0)
+        : 0;
 
     const { productsSortKey: sortKey, productsSortDirection: sortDir } = props;
 
@@ -378,6 +555,377 @@ export const DashboardCatalogProductsSection = memo(
         }, 0),
       [props.filteredProducts, props.orderCounts],
     );
+
+    const totalStocks = useMemo(() => {
+      let sum = 0;
+      let hasAny = false;
+      for (const p of props.filteredProducts) {
+        if (p.nmId === null) continue;
+        const s = props.stockCounts.get(p.nmId);
+        if (s !== undefined) { sum += s; hasAny = true; }
+      }
+      return hasAny ? sum : null;
+    }, [props.filteredProducts, props.stockCounts]);
+
+    const totalOrdersSum = useMemo(() => {
+      let sum = 0;
+      let hasAny = false;
+      for (const p of props.filteredProducts) {
+        if (p.nmId === null) continue;
+        const v = props.ordersSumValues.get(p.nmId);
+        if (v !== undefined && v > 0) { sum += v; hasAny = true; }
+      }
+      return hasAny ? sum : null;
+    }, [props.filteredProducts, props.ordersSumValues]);
+
+    const totalBuyoutPercent = useMemo(() => {
+      let orders  = 0;
+      let buyouts = 0;
+      for (const p of props.filteredProducts) {
+        if (p.nmId === null) continue;
+        const e = props.rollingBuyoutCounts.get(p.nmId);
+        // Те же товары, что и в отображении: 0 выкупов = «нет данных» (—) и в
+        // «Итого» не участвуют. Иначе их заказы тянули бы знаменатель вниз и
+        // итог расходился бы с ретроспективой за «сегодня».
+        if (!e || e.ordersCount === 0 || e.buyoutsCount === 0) continue;
+        orders  += e.ordersCount;
+        buyouts += e.buyoutsCount;
+      }
+      return orders > 0 ? (buyouts / orders) * 100 : null;
+    }, [props.filteredProducts, props.rollingBuyoutCounts]);
+
+    const totalRevenue = useMemo(() => {
+      let sum = 0;
+      let hasAny = false;
+      for (const p of props.filteredProducts) {
+        if (p.nmId === null) continue;
+        const v = computeRevenue(
+          props.ordersSumValues.get(p.nmId),
+          props.rollingBuyoutCounts.get(p.nmId),
+        );
+        if (v !== null) { sum += v; hasAny = true; }
+      }
+      return hasAny ? sum : null;
+    }, [props.filteredProducts, props.ordersSumValues, props.rollingBuyoutCounts]);
+
+    // ── Header cell renderer ───────────────────────────────────────────────────
+
+    const renderHeaderCell = (col: ProductColumnDefinition, colIdx: number) => {
+      const key = col.key;
+      const parentSortKey = getParentSortKey(key);
+      const isParentActive = localSortKey === null && parentSortKey !== null && sortKey === parentSortKey;
+      const isLocalActive = localSortKey === key;
+      const isResizable = key === "vendorCode" || key === "category" || key === "subject";
+      const isNumeric = key === "index" || key === "nmId" || key === "cost" || key === "price" || key === "orders" || key === "buyout" || key === "stock" || key === "ordersSum" || key === "revenue";
+      const isDragging = draggedColumn === key;
+
+      const dragHandlers = {
+        draggable: true as const,
+        onDragStart: (e: React.DragEvent<HTMLTableCellElement>) => {
+          if ((e.target as HTMLElement).closest(".wb-col-resize-handle")) {
+            e.preventDefault();
+            return;
+          }
+          setDraggedColumn(key);
+        },
+        onDragEnd: () => setDraggedColumn(null),
+        onDragOver: (e: React.DragEvent<HTMLTableCellElement>) => e.preventDefault(),
+        onDrop: (e: React.DragEvent<HTMLTableCellElement>) => handleDrop(e, key),
+      };
+
+      const thStyle: React.CSSProperties = {};
+      if (isNumeric) thStyle.textAlign = "right";
+
+      // Заголовок столбца с ретроспективой: клик по НАЗВАНИЮ открывает лист
+      // ретроспективы, клик по СТРЕЛКЕ справа — сортирует. (Раньше было наоборот:
+      // название сортировало, а отдельная «↗» открывала лист.)
+      const renderSheetHeader = (
+        label: string,
+        localKey: LocalSortKey,
+        onOpenSheet: () => void,
+        sheetTitle: string,
+      ) => (
+        <div className="wb-products-col-header-split">
+          <button
+            className="wb-products-header-sheet-btn"
+            type="button"
+            title={sheetTitle}
+            onClick={onOpenSheet}
+          >
+            <span>{label}</span>
+          </button>
+          <button
+            className="wb-products-header-sort-btn"
+            type="button"
+            title="Сортировать"
+            onClick={() => handleLocalSortToggle(localKey)}
+          >
+            <SortArrow active={isLocalActive} direction={localSortDir} />
+          </button>
+        </div>
+      );
+
+      const content = (() => {
+        switch (key) {
+          case "index":
+          case "nmId":
+            return (
+              <button
+                className="wb-products-sort-button"
+                type="button"
+                onClick={() => handleParentSortToggle("id")}
+              >
+                <span>{getColLabel(key)}</span>
+                <SortArrow active={isParentActive} direction={sortDir} />
+              </button>
+            );
+          case "vendorCode":
+            return (
+              <>
+                <button
+                  className="wb-products-sort-button"
+                  type="button"
+                  onClick={() => handleParentSortToggle("name")}
+                >
+                  <span>{getColLabel(key)}</span>
+                  <SortArrow active={isParentActive} direction={sortDir} />
+                </button>
+                <div className="wb-col-resize-handle" data-col-idx={String(colIdx)} onMouseDown={handleResizeMouseDown} />
+              </>
+            );
+          case "category":
+            return (
+              <>
+                <button
+                  className="wb-products-sort-button"
+                  type="button"
+                  onClick={() => handleParentSortToggle("category")}
+                >
+                  <span>{getColLabel(key)}</span>
+                  <SortArrow active={isParentActive} direction={sortDir} />
+                </button>
+                <div className="wb-col-resize-handle" data-col-idx={String(colIdx)} onMouseDown={handleResizeMouseDown} />
+              </>
+            );
+          case "subject":
+            return (
+              <>
+                <button
+                  className="wb-products-sort-button"
+                  type="button"
+                  onClick={() => handleParentSortToggle("subject")}
+                >
+                  <span>{getColLabel(key)}</span>
+                  <SortArrow active={isParentActive} direction={sortDir} />
+                </button>
+                <div className="wb-col-resize-handle" data-col-idx={String(colIdx)} onMouseDown={handleResizeMouseDown} />
+              </>
+            );
+          case "cost":
+            return renderSheetHeader("Себестоимость", "cost", props.onOpenCostPriceSheet, "Открыть лист себестоимости");
+          case "price":
+            return renderSheetHeader("Цена", "price", props.onOpenPricesSheet, "Открыть ретроспективу цен");
+          case "orders":
+            return renderSheetHeader("Заказы", "orders", props.onOpenOrdersSheet, "Открыть ретроспективу заказов");
+          case "buyout":
+            return renderSheetHeader("% выкупа", "buyout", props.onOpenBuyoutSheet, "Открыть ретроспективу % выкупа");
+          case "stock":
+            return renderSheetHeader("Остатки", "stock", props.onOpenStocksSheet, "Открыть ретроспективу остатков");
+          case "ordersSum":
+            return renderSheetHeader("Сумма заказов", "ordersSum", props.onOpenOrdersSumSheet, "Открыть ретроспективу суммы заказов");
+          case "revenue":
+            return renderSheetHeader("Выручка", "revenue", props.onOpenRevenueSheet, "Открыть ретроспективу выручки");
+        }
+      })();
+
+      return (
+        <th
+          key={key}
+          className={isDragging ? "wb-products-column--dragging" : undefined}
+          style={thStyle}
+          {...dragHandlers}
+        >
+          {content}
+        </th>
+      );
+    };
+
+    // ── Totals row cell renderer ──────────────────────────────────────────────
+
+    const renderTotalsCell = (col: ProductColumnDefinition) => {
+      const key = col.key;
+      switch (key) {
+        case "vendorCode":
+          return (
+            <th
+              key={key}
+              style={{ textAlign: "left", fontWeight: 700, color: "rgba(15,23,42,0.45)" }}
+            >
+              Итого
+            </th>
+          );
+        case "orders":
+          return (
+            <th key={key} className="wb-table-cell--numeric">
+              {totalOrders > 0 ? String(totalOrders) : "—"}
+            </th>
+          );
+        case "buyout":
+          return (
+            <th key={key} className="wb-table-cell--numeric">
+              {formatPercent(totalBuyoutPercent)}
+            </th>
+          );
+        case "stock":
+          return (
+            <th key={key} className="wb-table-cell--numeric">
+              {totalStocks !== null ? String(totalStocks) : "—"}
+            </th>
+          );
+        case "ordersSum":
+          return (
+            <th key={key} className="wb-table-cell--numeric">
+              {totalOrdersSum !== null ? formatMoney(totalOrdersSum) : "—"}
+            </th>
+          );
+        case "revenue":
+          return (
+            <th key={key} className="wb-table-cell--numeric">
+              {totalRevenue !== null ? formatMoney(totalRevenue) : "—"}
+            </th>
+          );
+        default:
+          return <th key={key} />;
+      }
+    };
+
+    // ── Body cell renderer ────────────────────────────────────────────────────
+
+    const renderBodyCell = (
+      col: ProductColumnDefinition,
+      product: ProductListItem,
+      index: number,
+    ) => {
+      const key = col.key;
+      const nmId = product.nmId;
+      const cost = nmId !== null ? props.costPrices.get(nmId) : undefined;
+      const orders = nmId !== null ? props.orderCounts.get(nmId) : undefined;
+      const buyout = nmId !== null ? props.rollingBuyoutCounts.get(nmId) : undefined;
+      const stock = nmId !== null ? props.stockCounts.get(nmId) : undefined;
+      const priceEntry = nmId !== null ? props.priceCounts.get(nmId) : undefined;
+      const ordersSum = nmId !== null ? props.ordersSumValues.get(nmId) : undefined;
+      const isSelected = nmId !== null && selectedNmIds.has(nmId);
+      const isEditing = nmId !== null && editingNmId === nmId;
+
+      switch (key) {
+        case "index":
+          return (
+            <td key={key} className="wb-table-cell--numeric">
+              {String(index + 1)}
+            </td>
+          );
+        case "nmId":
+          return (
+            <td key={key} className="wb-table-cell--numeric">
+              {nmId === null ? "—" : String(nmId)}
+            </td>
+          );
+        case "vendorCode":
+          return (
+            <td key={key}>
+              <span
+                title={getDisplayVendorCode(product)}
+                style={{
+                  display: "block",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {getDisplayVendorCode(product)}
+              </span>
+            </td>
+          );
+        case "category":
+          return <td key={key}>{product.categoryName ?? "—"}</td>;
+        case "subject":
+          return <td key={key}>{product.subjectName ?? "—"}</td>;
+        case "cost":
+          return (
+            <td
+              key={key}
+              className={`wb-table-cell--cost${isSelected ? " wb-table-cell--cost-selected" : ""}`}
+              onClick={nmId !== null ? (e) => handleCellClick(nmId, index, e) : undefined}
+              onDoubleClick={nmId !== null ? () => handleCellDoubleClick(nmId, index) : undefined}
+            >
+              {nmId !== null ? (
+                <CostInputCell
+                  nmId={nmId}
+                  savedValue={cost?.costValue ?? null}
+                  isSelected={isSelected}
+                  isEditing={isEditing}
+                  onSaved={props.onCostSaved}
+                  onCommitEdit={handleCommitEdit}
+                  onStartEdit={handleStartEdit}
+                />
+              ) : "—"}
+            </td>
+          );
+        case "price":
+          return (
+            <td key={key} className="wb-table-cell--numeric">
+              {priceEntry !== undefined
+                ? formatMoney(priceEntry.priceWithDiscount)
+                : <span style={{ opacity: 0.3 }}>—</span>}
+            </td>
+          );
+        case "orders":
+          return (
+            <td key={key} className="wb-table-cell--numeric wb-table-cell--orders">
+              {orders && orders.ordersCount > 0 ? String(orders.ordersCount) : "—"}
+            </td>
+          );
+        case "buyout": {
+          // 0 выкупов при наличии заказов = данных ещё нет → «—», как в ретроспективе
+          // (не фантомные 0,00 %). Процент показываем только когда есть и заказы, и выкупы.
+          const hasData = !!buyout && buyout.ordersCount > 0 && buyout.buyoutsCount > 0;
+          const percent = hasData ? (buyout.buyoutsCount / buyout.ordersCount) * 100 : null;
+          return (
+            <td key={key} className="wb-table-cell--numeric">
+              {percent !== null
+                ? formatPercent(percent)
+                : <span style={{ opacity: 0.3 }}>—</span>}
+            </td>
+          );
+        }
+        case "stock":
+          return (
+            <td key={key} className="wb-table-cell--numeric">
+              {stock !== undefined ? String(stock) : "—"}
+            </td>
+          );
+        case "ordersSum":
+          return (
+            <td key={key} className="wb-table-cell--numeric">
+              {ordersSum !== undefined && ordersSum > 0
+                ? formatMoney(ordersSum)
+                : <span style={{ opacity: 0.3 }}>—</span>}
+            </td>
+          );
+        case "revenue": {
+          const revenue = computeRevenue(ordersSum, buyout);
+          return (
+            <td key={key} className="wb-table-cell--numeric">
+              {revenue !== null
+                ? formatMoney(revenue)
+                : <span style={{ opacity: 0.3 }}>—</span>}
+            </td>
+          );
+        }
+      }
+    };
+
+    // ── Render ─────────────────────────────────────────────────────────────────
 
     return (
       <section className="wb-card wb-card--wide">
@@ -410,158 +958,53 @@ export const DashboardCatalogProductsSection = memo(
                   style={{ tableLayout: "fixed", width: `${String(totalW)}px` }}
                 >
                   <colgroup>
-                    <col style={{ width: "48px" }} />
-                    <col style={{ width: "110px" }} />
-                    <col style={{ width: `${String(nameColWidth)}px` }} />
-                    <col style={{ width: `${String(CATEGORY_COL_WIDTH)}px` }} />
-                    <col style={{ width: `${String(SUBJECT_COL_WIDTH)}px` }} />
-                    <col style={{ width: `${String(COST_COL_WIDTH)}px` }} />
-                    <col style={{ width: `${String(ORDERS_COL_WIDTH)}px` }} />
-                    <col style={{ width: `${String(STOCKS_COL_WIDTH)}px` }} />
+                    {orderedColumns.map((col) => (
+                      <col
+                        key={col.key}
+                        style={{ width: `${String(getColWidth(col, nameColWidth))}px` }}
+                      />
+                    ))}
                   </colgroup>
                   <thead>
                     <tr>
-                      <th style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
-                        <button className="wb-products-sort-button" type="button" onClick={() => props.onProductsSortToggle("id")}>
-                          <span>{ui.rowNumber}</span>
-                          <SortArrow active={sortKey === "id"} direction={sortDir} />
-                        </button>
-                      </th>
-                      <th style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
-                        <button className="wb-products-sort-button" type="button" onClick={() => props.onProductsSortToggle("id")}>
-                          <span>{ui.productIdColumn}</span>
-                          <SortArrow active={sortKey === "id"} direction={sortDir} />
-                        </button>
-                      </th>
-                      <th style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
-                        <button className="wb-products-sort-button" type="button" onClick={() => props.onProductsSortToggle("name")}>
-                          <span>{ui.productNameColumn}</span>
-                          <SortArrow active={sortKey === "name"} direction={sortDir} />
-                        </button>
-                        <div className="wb-col-resize-handle" data-col-idx="2" onMouseDown={handleResizeMouseDown} />
-                      </th>
-                      <th style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
-                        <button className="wb-products-sort-button" type="button" onClick={() => props.onProductsSortToggle("category")}>
-                          <span>{ui.category}</span>
-                          <SortArrow active={sortKey === "category"} direction={sortDir} />
-                        </button>
-                        <div className="wb-col-resize-handle" data-col-idx="3" onMouseDown={handleResizeMouseDown} />
-                      </th>
-                      <th style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
-                        <button className="wb-products-sort-button" type="button" onClick={() => props.onProductsSortToggle("subject")}>
-                          <span>{ui.subject}</span>
-                          <SortArrow active={sortKey === "subject"} direction={sortDir} />
-                        </button>
-                        <div className="wb-col-resize-handle" data-col-idx="4" onMouseDown={handleResizeMouseDown} />
-                      </th>
-                      <th className="wb-table-cell--numeric" style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
-                        <button
-                          className="wb-products-sort-button wb-cost-header-link"
-                          type="button"
-                          title="Открыть лист себестоимости на текущий день"
-                          onClick={props.onOpenCostPriceSheet}
-                        >
-                          Себестоимость ↗
-                        </button>
-                      </th>
-                      <th className="wb-table-cell--numeric" style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
-                        <button
-                          className="wb-products-sort-button wb-cost-header-link"
-                          type="button"
-                          title="Открыть ретроспективу заказов"
-                          onClick={props.onOpenOrdersSheet}
-                        >
-                          Заказы ↗
-                        </button>
-                      </th>
-                      <th className="wb-table-cell--numeric" style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
-                        <button
-                          className="wb-products-sort-button wb-cost-header-link"
-                          type="button"
-                          title="Открыть ретроспективу остатков"
-                          onClick={props.onOpenStocksSheet}
-                        >
-                          Остатки ↗
-                        </button>
-                      </th>
+                      {orderedColumns.map((col, colIdx) => renderHeaderCell(col, colIdx))}
                     </tr>
-                    {props.filteredProducts.length > 0 && (
+                    {displayProducts.length > 0 && (
                       <tr className="wb-products-totals-row wb-thead-row--second">
-                        <th style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }} />
-                        <th style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }} />
-                        <th style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3, textAlign: "left", fontWeight: 700, color: "rgba(15,23,42,0.45)" }}>
-                          Итого
-                        </th>
-                        <th style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }} />{/* Категория */}
-                        <th style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }} />{/* Предмет */}
-                        <th style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }} />{/* Себестоимость */}
-                        <th className="wb-table-cell--numeric" style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }}>
-                          {totalOrders > 0 ? String(totalOrders) : "—"}
-                        </th>
-                        <th style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }} />{/* Остатки */}
+                        {orderedColumns.map((col) => renderTotalsCell(col))}
                       </tr>
                     )}
                   </thead>
                   <tbody>
-                    {props.filteredProducts.length > 0 ? (
-                      props.filteredProducts.map((product, index) => {
-                        const cost = product.nmId !== null ? props.costPrices.get(product.nmId) : undefined;
-                        const orders = product.nmId !== null ? props.orderCounts.get(product.nmId) : undefined;
-                        const stock = product.nmId !== null ? props.stockCounts.get(product.nmId) : undefined;
-                        const nmId = product.nmId;
-                        const isSelected = nmId !== null && selectedNmIds.has(nmId);
-                        const isEditing = nmId !== null && editingNmId === nmId;
-                        return (
-                          <tr key={`${product.vendorCode}-${nmId ?? "none"}`}>
-                            <td className="wb-table-cell--numeric">{String(index + 1)}</td>
-                            <td className="wb-table-cell--numeric">
-                              {nmId === null ? "—" : String(nmId)}
-                            </td>
-                            <td>
-                              <span
-                                title={getDisplayVendorCode(product)}
-                                style={{
-                                  display: "block",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {getDisplayVendorCode(product)}
-                              </span>
-                            </td>
-                            <td>{product.categoryName ?? "—"}</td>
-                            <td>{product.subjectName ?? "—"}</td>
-                            <td
-                              className={`wb-table-cell--cost${isSelected ? " wb-table-cell--cost-selected" : ""}`}
-                              onClick={nmId !== null ? (e) => handleCellClick(nmId, index, e) : undefined}
-                              onDoubleClick={nmId !== null ? () => handleCellDoubleClick(nmId, index) : undefined}
-                            >
-                              {nmId !== null ? (
-                                <CostInputCell
-                                  nmId={nmId}
-                                  savedValue={cost?.costValue ?? null}
-                                  isSelected={isSelected}
-                                  isEditing={isEditing}
-                                  onSaved={props.onCostSaved}
-                                  onCommitEdit={handleCommitEdit}
-                                />
-                              ) : "—"}
-                            </td>
-                            <td className="wb-table-cell--numeric wb-table-cell--orders">
-                              {orders && orders.ordersCount > 0
-                                ? String(orders.ordersCount)
-                                : "—"}
-                            </td>
-                            <td className="wb-table-cell--numeric">
-                              {stock !== undefined ? String(stock) : "—"}
-                            </td>
+                    {displayProducts.length > 0 ? (
+                      <>
+                        {padTop > 0 && (
+                          <tr aria-hidden>
+                            <td colSpan={orderedColumns.length} style={{ height: padTop, padding: 0, border: 0 }} />
                           </tr>
-                        );
-                      })
+                        )}
+                        {virtualRows.map((vRow) => {
+                          const product = displayProducts[vRow.index];
+                          if (!product) return null;
+                          return (
+                            <tr
+                              key={`${product.vendorCode}-${product.nmId ?? "none"}`}
+                              data-index={vRow.index}
+                              ref={rowVirtualizer.measureElement}
+                            >
+                              {orderedColumns.map((col) => renderBodyCell(col, product, vRow.index))}
+                            </tr>
+                          );
+                        })}
+                        {padBottom > 0 && (
+                          <tr aria-hidden>
+                            <td colSpan={orderedColumns.length} style={{ height: padBottom, padding: 0, border: 0 }} />
+                          </tr>
+                        )}
+                      </>
                     ) : (
                       <tr>
-                        <td colSpan={8}>{ui.noProductsFound}</td>
+                        <td colSpan={orderedColumns.length}>{ui.noProductsFound}</td>
                       </tr>
                     )}
                   </tbody>

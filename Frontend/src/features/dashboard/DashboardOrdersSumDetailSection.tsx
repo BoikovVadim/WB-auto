@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 
-import type { TodayOrderCount } from "../../api/syncClientOrders";
-import type { OrdersMatrix } from "./useOrdersMatrix";
+import { formatMoney } from "../../formatters";
+import type { OrdersSumMatrix } from "./useOrdersSumMatrix";
 import type { ProductListItem } from "./useDashboardProductsWorkspace";
 import {
   VirtualMatrixTable,
@@ -11,10 +11,10 @@ import {
 
 type Props = {
   products: ProductListItem[];
-  /** Today's order counts — same data shown in the Products tab */
-  orderCounts: Map<number, TodayOrderCount>;
-  /** Historical orders matrix — preloaded at dashboard bootstrap */
-  ordersMatrix: OrdersMatrix;
+  /** Today's orders sum (priceWithDisc) per product — same data shown in Products tab. */
+  ordersSumValues: Map<number, number>;
+  /** Historical orders-sum matrix — preloaded at dashboard bootstrap. */
+  ordersSumMatrix: OrdersSumMatrix;
   onBack: () => void;
 };
 
@@ -32,15 +32,15 @@ const EMPTY_CELL: CellContent = {
   copy: "",
 };
 
-function numCell(value: number | null): CellContent {
-  if (value == null) return EMPTY_CELL;
-  return { display: String(value), copy: String(value) };
+function moneyCell(value: number | null): CellContent {
+  if (value == null || value === 0) return EMPTY_CELL;
+  return { display: formatMoney(value), copy: value.toFixed(2) };
 }
 
-export function DashboardOrdersDetailSection({
+export function DashboardOrdersSumDetailSection({
   products,
-  orderCounts,
-  ordersMatrix,
+  ordersSumValues,
+  ordersSumMatrix,
   onBack,
 }: Props) {
   const today = todayIso();
@@ -48,59 +48,55 @@ export function DashboardOrdersDetailSection({
   const [colNo, setColNo] = useState(48);
   const [colId, setColId] = useState(110);
   const [colName, setColName] = useState(220);
-  const [colDate, setColDate] = useState(130);
+  const [colDate, setColDate] = useState(140);
 
   const matrixByNmId = useMemo(
-    () => new Map(ordersMatrix.products.map((p) => [p.nmId, p.values])),
-    [ordersMatrix.products],
+    () => new Map(ordersSumMatrix.products.map((p) => [p.nmId, p.values])),
+    [ordersSumMatrix.products],
   );
 
-  // Past dates only — "сегодня" is the pinned column, rendered separately
   const pastDates = useMemo(() => {
     const result: string[] = [];
-    for (const d of ordersMatrix.dates) {
+    for (const d of ordersSumMatrix.dates) {
       if (d !== today) result.push(d);
     }
     return result;
-  }, [ordersMatrix.dates, today]);
+  }, [ordersSumMatrix.dates, today]);
 
   // Totals: index 0 = today, index 1+ = pastDates[i-1]
   const dateTotals = useMemo(() => {
     const totals = new Array<number>(1 + pastDates.length).fill(0);
     for (const product of products) {
       if (product.nmId === null) continue;
-      const oc = orderCounts.get(product.nmId);
-      if (oc) totals[0] += oc.ordersCount;
+      const v = ordersSumValues.get(product.nmId);
+      if (v !== undefined) totals[0] += v;
     }
-    // Matrix values are aligned to ordersMatrix.dates — same order as pastDates
-    // (today excluded, since we filtered it).
     const dateToTotalIdx = new Map<string, number>();
     pastDates.forEach((d, i) => dateToTotalIdx.set(d, i + 1));
-    for (const row of ordersMatrix.products) {
+    for (const row of ordersSumMatrix.products) {
       for (let i = 0; i < row.values.length; i++) {
         const v = row.values[i];
         if (v == null) continue;
-        const d = ordersMatrix.dates[i];
+        const d = ordersSumMatrix.dates[i];
         if (d == null || d === today) continue;
         const totalIdx = dateToTotalIdx.get(d);
         if (totalIdx != null) totals[totalIdx] += v;
       }
     }
     return totals;
-  }, [pastDates, products, orderCounts, ordersMatrix.products, ordersMatrix.dates, today]);
+  }, [pastDates, products, ordersSumValues, ordersSumMatrix.products, ordersSumMatrix.dates, today]);
 
-  // For each past date, find the index in ordersMatrix.dates so we can fetch values
   const matrixIdxByDate = useMemo(() => {
     const m = new Map<string, number>();
-    ordersMatrix.dates.forEach((d, i) => m.set(d, i));
+    ordersSumMatrix.dates.forEach((d, i) => m.set(d, i));
     return m;
-  }, [ordersMatrix.dates]);
+  }, [ordersSumMatrix.dates]);
 
   const pinnedCol: DateColumn = useMemo(
     () => ({
       key: today,
       headerLabel: formatDate(today),
-      totalDisplay: dateTotals[0] > 0 ? String(dateTotals[0]) : "—",
+      totalDisplay: dateTotals[0] > 0 ? formatMoney(dateTotals[0]) : "—",
       accent: true,
     }),
     [today, dateTotals],
@@ -111,7 +107,7 @@ export function DashboardOrdersDetailSection({
       pastDates.map((d, i) => ({
         key: d,
         headerLabel: formatDate(d),
-        totalDisplay: (dateTotals[i + 1] ?? 0) > 0 ? String(dateTotals[i + 1]) : "—",
+        totalDisplay: (dateTotals[i + 1] ?? 0) > 0 ? formatMoney(dateTotals[i + 1]!) : "—",
       })),
     [pastDates, dateTotals],
   );
@@ -159,10 +155,10 @@ export function DashboardOrdersDetailSection({
     (rowIdx: number): CellContent => {
       const p = products[rowIdx];
       if (!p || p.nmId === null) return EMPTY_CELL;
-      const oc = orderCounts.get(p.nmId);
-      return numCell(oc ? oc.ordersCount : null);
+      const v = ordersSumValues.get(p.nmId);
+      return moneyCell(v ?? null);
     },
-    [products, orderCounts],
+    [products, ordersSumValues],
   );
 
   const getCell = useCallback(
@@ -175,14 +171,14 @@ export function DashboardOrdersDetailSection({
       if (matrixIdx == null) return EMPTY_CELL;
       const values = matrixByNmId.get(p.nmId);
       const v = values ? (values[matrixIdx] ?? null) : null;
-      return numCell(v);
+      return moneyCell(v);
     },
     [products, pastDates, matrixIdxByDate, matrixByNmId],
   );
 
   return (
     <VirtualMatrixTable
-      title="Заказы"
+      title="Сумма заказов"
       onBack={onBack}
       empty={
         products.length === 0 ? (
@@ -212,7 +208,7 @@ export function DashboardOrdersDetailSection({
       dataCols={dataCols}
       dataColWidth={colDate}
       setDataColWidth={setColDate}
-      dataColMinWidth={60}
+      dataColMinWidth={70}
       getCell={getCell}
       hasTotalsRow
     />
