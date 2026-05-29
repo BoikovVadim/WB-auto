@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { fetchTodayOrdersSum } from "../../api/syncClientOrdersSum";
 
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+// 10 мин совпадает с каденцией синка «сегодня» из Воронки на бэкенде.
+const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 
 export type UseOrdersSumResult = {
   /** Today's orders sum (CSV ordersSumRub) per nmId. */
@@ -34,7 +35,9 @@ export function useOrdersSum(): UseOrdersSumResult {
   useEffect(() => {
     isMountedRef.current = true;
     load();
-    const interval = setInterval(load, REFRESH_INTERVAL_MS);
+    const interval = setInterval(() => {
+      if (!document.hidden) load();
+    }, REFRESH_INTERVAL_MS);
     return () => {
       isMountedRef.current = false;
       clearInterval(interval);

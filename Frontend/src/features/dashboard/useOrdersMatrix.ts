@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 
 import { fetchOrdersMatrixCompact, type OrdersMatrixCompact } from "../../api/syncClientOrders";
 
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+// История по дням меняется раз в сутки (после ночной сверки), поэтому 30 мин
+// с запасом — лист всё равно грузится мгновенно из localStorage-кэша.
+const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 
 const CACHE_KEY = "wb_orders_matrix_v2";
 const CACHE_DATE_KEY = "wb_orders_matrix_v2_date";
@@ -64,12 +66,16 @@ const EMPTY_MATRIX: OrdersMatrix = { dates: [], products: [] };
  * Preloads the full orders matrix (history by days) at dashboard bootstrap, so
  * the "Заказы" sheet opens instantly from memory. Mirrors useOrders shape.
  */
-export function useOrdersMatrix(): UseOrdersMatrixResult {
+export function useOrdersMatrix(enabled = true): UseOrdersMatrixResult {
   const [ordersMatrix, setOrdersMatrix] = useState<OrdersMatrix>(() => readCache() ?? EMPTY_MATRIX);
   const [isOrdersMatrixLoading, setIsOrdersMatrixLoading] = useState(false);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
+    // Грузим/поллим только когда лист «Заказы» открыт (enabled). Пока закрыт —
+    // ни одного запроса; кэш из localStorage уже в стейте (useState-инициализатор),
+    // поэтому при открытии лист показывается мгновенно и затем освежается.
+    if (!enabled) return;
     isMountedRef.current = true;
     const load = () => {
       setIsOrdersMatrixLoading(true);
@@ -88,12 +94,15 @@ export function useOrdersMatrix(): UseOrdersMatrixResult {
         });
     };
     load();
-    const interval = setInterval(load, REFRESH_INTERVAL_MS);
+    // Не поллим, пока вкладка скрыта.
+    const interval = setInterval(() => {
+      if (!document.hidden) load();
+    }, REFRESH_INTERVAL_MS);
     return () => {
       isMountedRef.current = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [enabled]);
 
   return { ordersMatrix, isOrdersMatrixLoading };
 }

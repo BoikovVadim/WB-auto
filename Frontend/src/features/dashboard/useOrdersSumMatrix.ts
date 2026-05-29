@@ -5,7 +5,8 @@ import {
   type OrdersSumMatrixCompact,
 } from "../../api/syncClientOrdersSum";
 
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+// История по дням меняется раз в сутки — 30 мин с запасом (лист грузится из кэша).
+const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 
 const CACHE_KEY = "wb_orders_sum_matrix_v2";
 const CACHE_DATE_KEY = "wb_orders_sum_matrix_v2_date";
@@ -63,7 +64,7 @@ function fromCompact(c: OrdersSumMatrixCompact): OrdersSumMatrix {
 
 const EMPTY_MATRIX: OrdersSumMatrix = { dates: [], products: [] };
 
-export function useOrdersSumMatrix(): UseOrdersSumMatrixResult {
+export function useOrdersSumMatrix(enabled = true): UseOrdersSumMatrixResult {
   const [ordersSumMatrix, setOrdersSumMatrix] = useState<OrdersSumMatrix>(
     () => readCache() ?? EMPTY_MATRIX,
   );
@@ -71,6 +72,8 @@ export function useOrdersSumMatrix(): UseOrdersSumMatrixResult {
   const isMountedRef = useRef(true);
 
   useEffect(() => {
+    // Грузим/поллим только при открытом листе «Сумма заказов» (enabled); кэш уже в стейте.
+    if (!enabled) return;
     isMountedRef.current = true;
     const load = () => {
       setIsOrdersSumMatrixLoading(true);
@@ -89,12 +92,14 @@ export function useOrdersSumMatrix(): UseOrdersSumMatrixResult {
         });
     };
     load();
-    const interval = setInterval(load, REFRESH_INTERVAL_MS);
+    const interval = setInterval(() => {
+      if (!document.hidden) load();
+    }, REFRESH_INTERVAL_MS);
     return () => {
       isMountedRef.current = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [enabled]);
 
   return { ordersSumMatrix, isOrdersSumMatrixLoading };
 }

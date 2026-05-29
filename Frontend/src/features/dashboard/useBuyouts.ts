@@ -6,7 +6,8 @@ import {
   type TodayBuyoutCount,
 } from "../../api/syncClientBuyouts";
 
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+// 10 мин совпадает с каденцией синка «сегодня» из Воронки на бэкенде.
+const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 
 export type UseBuyoutsResult = {
   /** Today's orders + buyouts per product. Used by the retrospective sheet. */
@@ -49,7 +50,9 @@ export function useBuyouts(): UseBuyoutsResult {
   useEffect(() => {
     isMountedRef.current = true;
     loadBuyouts();
-    const interval = setInterval(loadBuyouts, REFRESH_INTERVAL_MS);
+    const interval = setInterval(() => {
+      if (!document.hidden) loadBuyouts();
+    }, REFRESH_INTERVAL_MS);
     return () => {
       isMountedRef.current = false;
       clearInterval(interval);

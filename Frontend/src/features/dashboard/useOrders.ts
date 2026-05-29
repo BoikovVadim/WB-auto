@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { fetchTodayOrderCounts, type TodayOrderCount } from "../../api/syncClientOrders";
 
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+// 10 мин совпадает с каденцией синка «сегодня» из Воронки на бэкенде (чаще нет смысла).
+const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 
 export type UseOrdersResult = {
   orderCounts: Map<number, TodayOrderCount>;
@@ -38,7 +39,10 @@ export function useOrders(): UseOrdersResult {
   useEffect(() => {
     isMountedRef.current = true;
     loadOrders();
-    const interval = setInterval(loadOrders, REFRESH_INTERVAL_MS);
+    // Не поллим, пока вкладка скрыта (на возврате следующий тик догонит).
+    const interval = setInterval(() => {
+      if (!document.hidden) loadOrders();
+    }, REFRESH_INTERVAL_MS);
     return () => {
       isMountedRef.current = false;
       clearInterval(interval);

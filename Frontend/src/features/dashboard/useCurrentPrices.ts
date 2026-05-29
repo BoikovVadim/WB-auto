@@ -13,7 +13,8 @@ export type UseCurrentPricesResult = {
   isPricesLoading: boolean;
 };
 
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+// Цены — суточный снапшот (01:05 МСК); 10 мин поллинга с большим запасом.
+const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 
 export function useCurrentPrices(): UseCurrentPricesResult {
   const [priceCounts, setPriceCounts] = useState<Map<number, CurrentPriceEntry>>(new Map());
@@ -47,7 +48,9 @@ export function useCurrentPrices(): UseCurrentPricesResult {
   useEffect(() => {
     isMountedRef.current = true;
     load();
-    const interval = setInterval(load, REFRESH_INTERVAL_MS);
+    const interval = setInterval(() => {
+      if (!document.hidden) load();
+    }, REFRESH_INTERVAL_MS);
     return () => {
       isMountedRef.current = false;
       clearInterval(interval);

@@ -147,16 +147,19 @@ export function WbDashboard() {
   const isCostSumSheetOpen   = activeSection === "catalog-products" && activeSheet === "cost-sum";
   const { costPrices, isCostPricesLoading, prefetchCostPrices, handleCostSaved, handleCostCleared } = useCostPrices();
   const { orderCounts } = useOrders();
-  const { ordersMatrix } = useOrdersMatrix();
+  const { ordersMatrix } = useOrdersMatrix(isOrdersSheetOpen);
   const { buyoutCounts, rollingBuyoutCounts } = useBuyouts();
   const { stockCounts } = useCurrentStocks();
   const { priceCounts } = useCurrentPrices();
   const { ordersSumValues } = useOrdersSum();
-  const { ordersSumMatrix } = useOrdersSumMatrix();
+  // Тяжёлые матрицы грузятся ТОЛЬКО когда открыт соответствующий лист ретроспективы —
+  // не висят на маунте и не поллятся в фоне. Кэш в localStorage отдаёт их мгновенно при
+  // открытии. Снимает 4 самых тяжёлых запроса с первичной загрузки дашборда.
+  const { ordersSumMatrix } = useOrdersSumMatrix(isOrdersSumSheetOpen);
   const { revenueValues } = useRevenue();
-  const { revenueMatrix } = useRevenueMatrix();
+  const { revenueMatrix } = useRevenueMatrix(isRevenueSheetOpen);
   const { costSumValues } = useCostSum();
-  const { costSumMatrix } = useCostSumMatrix();
+  const { costSumMatrix } = useCostSumMatrix(isCostSumSheetOpen);
   const { priceChangeStatuses, refreshPriceChangeStatuses, upsertPriceChangeStatus } =
     usePriceChangeStatuses();
   const handlePriceSaved = useCallback(

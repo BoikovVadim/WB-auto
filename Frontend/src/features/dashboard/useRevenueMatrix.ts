@@ -5,7 +5,8 @@ import {
   type RevenueMatrixCompact,
 } from "../../api/syncClientRevenue";
 
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+// История по дням меняется раз в сутки — 30 мин с запасом (лист грузится из кэша).
+const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 
 const CACHE_KEY = "wb_revenue_matrix_v1";
 const CACHE_DATE_KEY = "wb_revenue_matrix_v1_date";
@@ -63,7 +64,7 @@ function fromCompact(c: RevenueMatrixCompact): RevenueMatrix {
 
 const EMPTY_MATRIX: RevenueMatrix = { dates: [], products: [] };
 
-export function useRevenueMatrix(): UseRevenueMatrixResult {
+export function useRevenueMatrix(enabled = true): UseRevenueMatrixResult {
   const [revenueMatrix, setRevenueMatrix] = useState<RevenueMatrix>(
     () => readCache() ?? EMPTY_MATRIX,
   );
@@ -71,6 +72,8 @@ export function useRevenueMatrix(): UseRevenueMatrixResult {
   const isMountedRef = useRef(true);
 
   useEffect(() => {
+    // Грузим/поллим только при открытом листе «Выручка» (enabled); кэш уже в стейте.
+    if (!enabled) return;
     isMountedRef.current = true;
     const load = () => {
       setIsRevenueMatrixLoading(true);
@@ -89,12 +92,14 @@ export function useRevenueMatrix(): UseRevenueMatrixResult {
         });
     };
     load();
-    const interval = setInterval(load, REFRESH_INTERVAL_MS);
+    const interval = setInterval(() => {
+      if (!document.hidden) load();
+    }, REFRESH_INTERVAL_MS);
     return () => {
       isMountedRef.current = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [enabled]);
 
   return { revenueMatrix, isRevenueMatrixLoading };
 }

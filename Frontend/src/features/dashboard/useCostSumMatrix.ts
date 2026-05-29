@@ -5,7 +5,8 @@ import {
   type CostSumMatrixCompact,
 } from "../../api/syncClientCostSum";
 
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+// История по дням меняется раз в сутки — 30 мин с запасом (лист грузится из кэша).
+const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 
 const CACHE_KEY = "wb_cost_sum_matrix_v1";
 const CACHE_DATE_KEY = "wb_cost_sum_matrix_v1_date";
@@ -63,7 +64,7 @@ function fromCompact(c: CostSumMatrixCompact): CostSumMatrix {
 
 const EMPTY_MATRIX: CostSumMatrix = { dates: [], products: [] };
 
-export function useCostSumMatrix(): UseCostSumMatrixResult {
+export function useCostSumMatrix(enabled = true): UseCostSumMatrixResult {
   const [costSumMatrix, setCostSumMatrix] = useState<CostSumMatrix>(
     () => readCache() ?? EMPTY_MATRIX,
   );
@@ -71,6 +72,8 @@ export function useCostSumMatrix(): UseCostSumMatrixResult {
   const isMountedRef = useRef(true);
 
   useEffect(() => {
+    // Грузим/поллим только при открытом листе «С/с продаж» (enabled); кэш уже в стейте.
+    if (!enabled) return;
     isMountedRef.current = true;
     const load = () => {
       setIsCostSumMatrixLoading(true);
@@ -89,12 +92,14 @@ export function useCostSumMatrix(): UseCostSumMatrixResult {
         });
     };
     load();
-    const interval = setInterval(load, REFRESH_INTERVAL_MS);
+    const interval = setInterval(() => {
+      if (!document.hidden) load();
+    }, REFRESH_INTERVAL_MS);
     return () => {
       isMountedRef.current = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [enabled]);
 
   return { costSumMatrix, isCostSumMatrixLoading };
 }

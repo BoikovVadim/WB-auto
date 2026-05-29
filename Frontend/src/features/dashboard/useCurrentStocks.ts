@@ -7,7 +7,8 @@ export type UseCurrentStocksResult = {
   isStocksLoading: boolean;
 };
 
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+// Остатки — суточный снапшот (01:00 МСК); 10 мин поллинга с большим запасом.
+const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 
 export function useCurrentStocks(): UseCurrentStocksResult {
   const [stockCounts, setStockCounts] = useState<Map<number, number>>(new Map());
@@ -30,7 +31,9 @@ export function useCurrentStocks(): UseCurrentStocksResult {
   useEffect(() => {
     isMountedRef.current = true;
     load();
-    const interval = setInterval(load, REFRESH_INTERVAL_MS);
+    const interval = setInterval(() => {
+      if (!document.hidden) load();
+    }, REFRESH_INTERVAL_MS);
     return () => {
       isMountedRef.current = false;
       clearInterval(interval);
