@@ -855,6 +855,52 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     return this.wbClustersRepository.getCostSumSnapshotMatrix();
   }
 
+  // ─── Расходы на рекламу (агрегат wb_cluster_daily_stats по товару) ────────────
+  //
+  // «Общий расход на товар» = SUM(spend) по всем кампаниям/кластерам за день.
+  // Дневная статистика синкается для всех кампаний (cpm + cpc), backfill истории
+  // уже есть → считаем на лету, отдельная таблица/крон не нужны (как «Выручка»).
+
+  /** Сегодняшний (МСК) расход на рекламу по товарам. */
+  async getTodayAdSpend(): Promise<{ items: { nmId: number; spend: number }[] }> {
+    if (!this.wbClustersRepository.isConfigured()) return { items: [] };
+    await this.wbClustersRepository.ensureSchema();
+    const today = this.getMoscowDateStr(0);
+    const items = await this.wbClustersRepository.getAdSpendForDate(today);
+    return { items };
+  }
+
+  /** Compact-матрица «товары × даты» расхода на рекламу. */
+  async getAdSpendMatrixCompact(): Promise<{
+    dates: string[];
+    products: { nmId: number; vals: (number | null)[] }[];
+  }> {
+    if (!this.wbClustersRepository.isConfigured()) return { dates: [], products: [] };
+    await this.wbClustersRepository.ensureSchema();
+    const rows = await this.wbClustersRepository.getAdSpendMatrix();
+    if (rows.length === 0) return { dates: [], products: [] };
+
+    const datesSet = new Set<string>();
+    for (const r of rows) datesSet.add(r.spendDate);
+    const dates = Array.from(datesSet).sort((a, b) => (a < b ? 1 : -1));
+    const dateIdx = new Map<string, number>();
+    for (let i = 0; i < dates.length; i++) dateIdx.set(dates[i]!, i);
+
+    const productMap = new Map<number, (number | null)[]>();
+    for (const r of rows) {
+      const idx = dateIdx.get(r.spendDate);
+      if (idx === undefined) continue;
+      let vals = productMap.get(r.nmId);
+      if (!vals) {
+        vals = new Array<number | null>(dates.length).fill(null);
+        productMap.set(r.nmId, vals);
+      }
+      vals[idx] = r.spend;
+    }
+    const products = Array.from(productMap.entries()).map(([nmId, vals]) => ({ nmId, vals }));
+    return { dates, products };
+  }
+
   /**
    * Фиксирует «С/с продаж» за вчера (Москва) в снапшот-таблицу. Запускается cron-ом
    * раз в сутки ПОСЛЕ снапшота % выкупа (тот же %, что и у «Выручки»). Строка за

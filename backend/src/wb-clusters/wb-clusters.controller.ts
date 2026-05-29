@@ -470,6 +470,18 @@ export class WbClustersController {
     return this.wbClustersService.getCostSumMatrixCompact();
   }
 
+  /** Сегодняшний расход на рекламу по товарам (SUM(spend) за сегодня, МСК). */
+  @Get("products/ad-spend-today")
+  getTodayAdSpend() {
+    return this.wbClustersService.getTodayAdSpend();
+  }
+
+  /** Матрица "товары × даты" расхода на рекламу (SUM(spend) из дневной статистики). */
+  @Get("products/ad-spend-matrix-compact")
+  getAdSpendMatrixCompact() {
+    return this.wbClustersService.getAdSpendMatrixCompact();
+  }
+
   /** Сегодняшняя средняя СПП (скидка постоянного покупателя) по товарам. */
   @Get("products/spp-today")
   getTodaySpp() {

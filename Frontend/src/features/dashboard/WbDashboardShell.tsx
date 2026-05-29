@@ -27,6 +27,7 @@ import { DashboardOrdersDetailSection } from "./DashboardOrdersDetailSection";
 import { DashboardOrdersSumDetailSection } from "./DashboardOrdersSumDetailSection";
 import { DashboardRevenueDetailSection } from "./DashboardRevenueDetailSection";
 import { DashboardCostSumDetailSection } from "./DashboardCostSumDetailSection";
+import { DashboardAdSpendDetailSection } from "./DashboardAdSpendDetailSection";
 import { DashboardSppDetailSection } from "./DashboardSppDetailSection";
 import { DashboardPricesDetailSection } from "./DashboardPricesDetailSection";
 import { DashboardStocksDetailSection } from "./DashboardStocksDetailSection";
@@ -107,6 +108,8 @@ type WbDashboardShellProps = {
   revenueMatrix: import("./useRevenueMatrix").RevenueMatrix;
   costSumValues: Map<number, number>;
   costSumMatrix: import("./useCostSumMatrix").CostSumMatrix;
+  adSpendValues: Map<number, number>;
+  adSpendMatrix: import("./useAdSpendMatrix").AdSpendMatrix;
   sppValues: Map<number, number>;
   sppMatrix: import("./useSppMatrix").SppMatrix;
   priceChangeStatuses: Map<number, import("../../api/syncClientPrices").PriceChangeStatus>;
@@ -117,6 +120,7 @@ type WbDashboardShellProps = {
   isOrdersSumSheetOpen: boolean;
   isRevenueSheetOpen: boolean;
   isCostSumSheetOpen: boolean;
+  isAdSpendSheetOpen: boolean;
   isSppSheetOpen: boolean;
   onOpenCostPriceSheet: () => void;
   onCloseCostPriceSheet: () => void;
@@ -134,6 +138,8 @@ type WbDashboardShellProps = {
   onCloseRevenueSheet: () => void;
   onOpenCostSumSheet: () => void;
   onCloseCostSumSheet: () => void;
+  onOpenAdSpendSheet: () => void;
+  onCloseAdSpendSheet: () => void;
   onOpenSppSheet: () => void;
   onCloseSppSheet: () => void;
   onCostSaved: (nmId: number, value: number) => Promise<void>;
@@ -222,6 +228,8 @@ export function WbDashboardShell({
   revenueMatrix,
   costSumValues,
   costSumMatrix,
+  adSpendValues,
+  adSpendMatrix,
   sppValues,
   sppMatrix,
   priceChangeStatuses,
@@ -232,6 +240,7 @@ export function WbDashboardShell({
   isOrdersSumSheetOpen,
   isRevenueSheetOpen,
   isCostSumSheetOpen,
+  isAdSpendSheetOpen,
   isSppSheetOpen,
   onOpenCostPriceSheet,
   onCloseCostPriceSheet,
@@ -249,6 +258,8 @@ export function WbDashboardShell({
   onCloseRevenueSheet,
   onOpenCostSumSheet,
   onCloseCostSumSheet,
+  onOpenAdSpendSheet,
+  onCloseAdSpendSheet,
   onOpenSppSheet,
   onCloseSppSheet,
   onCostSaved,
@@ -417,6 +428,13 @@ export function WbDashboardShell({
                 costSumMatrix={costSumMatrix}
                 onBack={onCloseCostSumSheet}
               />
+            ) : isAdSpendSheetOpen ? (
+              <DashboardAdSpendDetailSection
+                products={filteredProducts}
+                adSpendValues={adSpendValues}
+                adSpendMatrix={adSpendMatrix}
+                onBack={onCloseAdSpendSheet}
+              />
             ) : isSppSheetOpen ? (
               <DashboardSppDetailSection
                 products={filteredProducts}
@@ -442,6 +460,7 @@ export function WbDashboardShell({
                 ordersSumValues={ordersSumValues}
                 revenueValues={revenueValues}
                 costSumValues={costSumValues}
+                adSpendValues={adSpendValues}
                 sppValues={sppValues}
                 priceChangeStatuses={priceChangeStatuses}
                 onProductsSearchChange={onProductsSearchChange}
@@ -454,6 +473,7 @@ export function WbDashboardShell({
                 onOpenOrdersSumSheet={onOpenOrdersSumSheet}
                 onOpenRevenueSheet={onOpenRevenueSheet}
                 onOpenCostSumSheet={onOpenCostSumSheet}
+                onOpenAdSpendSheet={onOpenAdSpendSheet}
                 onOpenSppSheet={onOpenSppSheet}
                 onCostSaved={onCostSaved}
                 onCostCleared={onCostCleared}

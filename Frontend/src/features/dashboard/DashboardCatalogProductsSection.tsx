@@ -38,6 +38,7 @@ type DashboardCatalogProductsSectionProps = {
   ordersSumValues: Map<number, number>;
   revenueValues: Map<number, number>;
   costSumValues: Map<number, number>;
+  adSpendValues: Map<number, number>;
   sppValues: Map<number, number>;
   priceChangeStatuses: Map<number, PriceChangeStatus>;
   onProductsSearchChange: (value: string) => void;
@@ -50,6 +51,7 @@ type DashboardCatalogProductsSectionProps = {
   onOpenOrdersSumSheet: () => void;
   onOpenRevenueSheet: () => void;
   onOpenCostSumSheet: () => void;
+  onOpenAdSpendSheet: () => void;
   onOpenSppSheet: () => void;
   onCostSaved: (nmId: number, value: number) => Promise<void>;
   onCostCleared: (nmIds: number[]) => Promise<void>;
@@ -58,7 +60,7 @@ type DashboardCatalogProductsSectionProps = {
 };
 
 // ─── Local sort key (for columns backed by external Maps) ────────────────────
-type LocalSortKey = "cost" | "price" | "orders" | "buyout" | "spp" | "stock" | "ordersSum" | "revenue" | "costSum";
+type LocalSortKey = "cost" | "price" | "orders" | "buyout" | "spp" | "stock" | "ordersSum" | "revenue" | "costSum" | "adSpend";
 
 function SortArrow({
   active,
@@ -398,6 +400,7 @@ function getColLabel(key: ProductsColumnKey): string {
     case "ordersSum": return "Сумма заказов";
     case "revenue":   return "Выручка";
     case "costSum":   return "С/с продаж";
+    case "adSpend":   return "Реклама";
   }
 }
 
@@ -496,6 +499,9 @@ export const DashboardCatalogProductsSection = memo(
         } else if (localSortKey === "costSum") {
           av = a.nmId !== null ? (props.costSumValues.get(a.nmId) ?? 0) : 0;
           bv = b.nmId !== null ? (props.costSumValues.get(b.nmId) ?? 0) : 0;
+        } else if (localSortKey === "adSpend") {
+          av = a.nmId !== null ? (props.adSpendValues.get(a.nmId) ?? 0) : 0;
+          bv = b.nmId !== null ? (props.adSpendValues.get(b.nmId) ?? 0) : 0;
         } else if (localSortKey === "spp") {
           av = a.nmId !== null ? (props.sppValues.get(a.nmId) ?? -1) : -1;
           bv = b.nmId !== null ? (props.sppValues.get(b.nmId) ?? -1) : -1;
@@ -509,7 +515,7 @@ export const DashboardCatalogProductsSection = memo(
         }
         return localSortDir === "asc" ? av - bv : bv - av;
       });
-    }, [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costSumValues, props.sppValues, props.costPrices, props.priceCounts]);
+    }, [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costSumValues, props.adSpendValues, props.sppValues, props.costPrices, props.priceCounts]);
 
     const handleCommitEdit = useCallback(() => {
       setEditingNmId(null);
@@ -813,6 +819,17 @@ export const DashboardCatalogProductsSection = memo(
       return hasAny ? sum : null;
     }, [props.filteredProducts, props.costSumValues]);
 
+    const totalAdSpend = useMemo(() => {
+      let sum = 0;
+      let hasAny = false;
+      for (const p of props.filteredProducts) {
+        if (p.nmId === null) continue;
+        const v = props.adSpendValues.get(p.nmId);
+        if (v !== undefined && v > 0) { sum += v; hasAny = true; }
+      }
+      return hasAny ? sum : null;
+    }, [props.filteredProducts, props.adSpendValues]);
+
     // СПП «Итого» — простое среднее по товарам с данными (то же усреднение, что у
     // самой метрики). spp=0 — валидное значение, учитывается; «—» только без данных.
     const totalSpp = useMemo(() => {
@@ -834,7 +851,7 @@ export const DashboardCatalogProductsSection = memo(
       const isParentActive = localSortKey === null && parentSortKey !== null && sortKey === parentSortKey;
       const isLocalActive = localSortKey === key;
       const isResizable = key === "vendorCode" || key === "category" || key === "subject";
-      const isNumeric = key === "index" || key === "nmId" || key === "cost" || key === "price" || key === "orders" || key === "buyout" || key === "spp" || key === "stock" || key === "ordersSum" || key === "revenue" || key === "costSum";
+      const isNumeric = key === "index" || key === "nmId" || key === "cost" || key === "price" || key === "orders" || key === "buyout" || key === "spp" || key === "stock" || key === "ordersSum" || key === "revenue" || key === "costSum" || key === "adSpend";
       const isDragging = draggedColumn === key;
 
       const dragHandlers = {
@@ -957,6 +974,8 @@ export const DashboardCatalogProductsSection = memo(
             return renderSheetHeader("Выручка", "revenue", props.onOpenRevenueSheet, "Открыть ретроспективу выручки");
           case "costSum":
             return renderSheetHeader("С/с продаж", "costSum", props.onOpenCostSumSheet, "Открыть ретроспективу С/с продаж");
+          case "adSpend":
+            return renderSheetHeader("Реклама", "adSpend", props.onOpenAdSpendSheet, "Открыть ретроспективу расходов на рекламу");
         }
       })();
 
@@ -1026,6 +1045,12 @@ export const DashboardCatalogProductsSection = memo(
           return (
             <th key={key} className="wb-table-cell--numeric">
               {totalCostSum !== null ? formatMoney(totalCostSum) : "—"}
+            </th>
+          );
+        case "adSpend":
+          return (
+            <th key={key} className="wb-table-cell--numeric">
+              {totalAdSpend !== null ? formatMoney(totalAdSpend) : "—"}
             </th>
           );
         default:
@@ -1184,6 +1209,16 @@ export const DashboardCatalogProductsSection = memo(
             <td key={key} className="wb-table-cell--numeric">
               {costSum !== undefined && costSum > 0
                 ? formatMoney(costSum)
+                : <span style={{ opacity: 0.3 }}>—</span>}
+            </td>
+          );
+        }
+        case "adSpend": {
+          const adSpend = nmId !== null ? props.adSpendValues.get(nmId) : undefined;
+          return (
+            <td key={key} className="wb-table-cell--numeric">
+              {adSpend !== undefined && adSpend > 0
+                ? formatMoney(adSpend)
                 : <span style={{ opacity: 0.3 }}>—</span>}
             </td>
           );

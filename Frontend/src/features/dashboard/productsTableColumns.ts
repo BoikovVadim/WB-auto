@@ -19,16 +19,18 @@ export type ProductsColumnKey =
   | "stock"
   | "ordersSum"
   | "revenue"
-  | "costSum";
+  | "costSum"
+  | "adSpend";
 
 export type ProductColumnDefinition = {
   key: ProductsColumnKey;
   defaultWidth: number;
 };
 
-// v3: добавлена колонка «СПП» справа от «% выкупа» — бамп сбрасывает сохранённый
-// порядок к дефолту, чтобы новая колонка встала на нужное место (не уехала в конец).
-export const PRODUCTS_COLUMN_STORAGE_KEY = "wb-products-column-order-v3";
+// v4: добавлена колонка «Реклама, ₽» в конец (после «С/с продаж») — бамп сбрасывает
+// сохранённый порядок к дефолту, чтобы новая колонка встала на нужное место (не уехала
+// в конец у тех, кто уже двигал колонки). Ширины хранятся отдельно и не теряются.
+export const PRODUCTS_COLUMN_STORAGE_KEY = "wb-products-column-order-v4";
 
 export const productsTableColumnDefs: ProductColumnDefinition[] = [
   { key: "index",     defaultWidth: 48  },
@@ -45,6 +47,7 @@ export const productsTableColumnDefs: ProductColumnDefinition[] = [
   { key: "ordersSum", defaultWidth: 130 },
   { key: "revenue",   defaultWidth: 130 },
   { key: "costSum",   defaultWidth: 130 },
+  { key: "adSpend",   defaultWidth: 130 },
 ];
 
 const PRODUCTS_COLUMN_KEYS = productsTableColumnDefs.map((c) => c.key);
