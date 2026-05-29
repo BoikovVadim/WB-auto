@@ -215,4 +215,18 @@ export class WbClustersScheduler implements OnModuleInit {
       .syncPricesFromWb()
       .catch((err: Error) => this.logger.warn(`Prices snapshot error: ${err.message}`));
   }
+
+  // ─── Price-change reconcile ──────────────────────────────────────────────────
+  //
+  // Каждую минуту: readback цен с WB для строк, которые пользователь поставил в
+  // очередь явным изменением цены, и проставление статуса confirmed/pending/failed.
+  // ВАЖНО: это ТОЛЬКО подтверждение. Здесь нет и не должно быть записи цен в WB
+  // и заполнения очереди — иначе фон смог бы менять цены сам. Если активных
+  // изменений нет, метод даже не обращается к WB.
+  @Cron("30 * * * * *")
+  async handlePriceReconcile() {
+    await this.wbClustersService
+      .reconcilePriceChanges()
+      .catch((err: Error) => this.logger.warn(`Price reconcile error: ${err.message}`));
+  }
 }

@@ -651,3 +651,35 @@ export function getProductDailyPricesCreateStatements({
     `,
   ];
 }
+
+/**
+ * Очередь изменений цен, инициированных пользователем (запись на маркетплейс WB).
+ * Одна строка на товар = последнее запрошенное изменение и его статус синка.
+ * Заполняется ТОЛЬКО явным действием пользователя (PUT .../price) — ни один
+ * крон/синк сюда не пишет, поэтому фоновые задачи не могут изменить цену на WB.
+ */
+export function getProductPriceChangesCreateStatements({
+  tableName,
+}: WbClustersSchemaContext): string[] {
+  return [
+    `
+      CREATE TABLE IF NOT EXISTS ${tableName("wb_product_price_changes")} (
+        nm_id              BIGINT      PRIMARY KEY,
+        desired_base_price INT         NOT NULL,
+        desired_discount   INT         NOT NULL,
+        desired_final      NUMERIC(12,2) NOT NULL,
+        sync_status        TEXT        NOT NULL DEFAULT 'queued',
+        upload_id          BIGINT,
+        confirmed_at       TIMESTAMPTZ,
+        retry_at           TIMESTAMPTZ,
+        last_error         TEXT,
+        attempt_count      INT         NOT NULL DEFAULT 0,
+        updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `,
+    `
+      CREATE INDEX IF NOT EXISTS wb_product_price_changes_status_idx
+        ON ${tableName("wb_product_price_changes")} (sync_status)
+    `,
+  ];
+}

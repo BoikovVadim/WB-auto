@@ -49,6 +49,8 @@ import { useOrdersSum } from "./useOrdersSum";
 import { useOrdersSumMatrix } from "./useOrdersSumMatrix";
 import { useRevenue } from "./useRevenue";
 import { useRevenueMatrix } from "./useRevenueMatrix";
+import { usePriceChangeStatuses } from "./usePriceChangeStatuses";
+import { applyProductPrice } from "../../api/syncClientPrices";
 import { useDashboardBootstrap } from "./useDashboardBootstrap";
 import { useDashboardBrowserEffects } from "./useDashboardBrowserEffects";
 import { useDashboardExportView } from "./useDashboardExportView";
@@ -150,6 +152,15 @@ export function WbDashboard() {
   const { ordersSumMatrix } = useOrdersSumMatrix();
   const { revenueValues } = useRevenue();
   const { revenueMatrix } = useRevenueMatrix();
+  const { priceChangeStatuses, refreshPriceChangeStatuses } = usePriceChangeStatuses();
+  const handlePriceSaved = useCallback(
+    async (nmId: number, targetFinal: number) => {
+      // ⚠️ Реальная запись цены на маркетплейс WB. Дёргается только из ячейки «Цена».
+      await applyProductPrice(nmId, targetFinal);
+      refreshPriceChangeStatuses();
+    },
+    [refreshPriceChangeStatuses],
+  );
   const invalidateProductAdvertisingDetail = useCallback(
     (target: ProductAdvertisingDetailInvalidationTarget = "all") => {
       setProductAdvertisingDetailRevisions((currentValue) =>
@@ -493,6 +504,7 @@ export function WbDashboard() {
       ordersSumMatrix={ordersSumMatrix}
       revenueValues={revenueValues}
       revenueMatrix={revenueMatrix}
+      priceChangeStatuses={priceChangeStatuses}
       isCostPricesLoading={isCostPricesLoading}
       costPrices={costPrices}
       onOpenCostPriceSheet={() => { setActiveSheet("cost-price"); }}
@@ -511,6 +523,7 @@ export function WbDashboard() {
       onCloseRevenueSheet={() => { setActiveSheet("none"); }}
       onCostSaved={handleCostSaved}
       onCostCleared={handleCostCleared}
+      onPriceSaved={handlePriceSaved}
       onRefresh={() => void handleDashboardRefresh()}
       onTokenInputChange={setTokenInput}
       onSaveToken={handleSaveToken}

@@ -18,6 +18,7 @@ import { MaterializeProductAdvertisingSheetsDto } from "./dto/materialize-produc
 import { ProbeWbCabinetCmpDto } from "./dto/probe-wb-cabinet-cmp.dto";
 import { RunClusterSyncDto } from "./dto/run-cluster-sync.dto";
 import { SetProductCostPriceDto } from "./dto/set-product-cost-price.dto";
+import { SetProductPriceDto } from "./dto/set-product-price.dto";
 import { ProductCatalogService } from "./product-catalog.service";
 import { WbClustersCabinetService } from "./wb-clusters-cabinet.service";
 import { WbSellerPortalPlaywrightClient } from "./wb-seller-portal-playwright.client";
@@ -559,6 +560,26 @@ export class WbClustersController {
   @Get("products/prices-matrix")
   getPricesMatrix() {
     return this.wbClustersService.getPricesMatrix();
+  }
+
+  /**
+   * ⚠️ Запись цены на маркетплейс WB. Меняет реальную цену на витрине.
+   * Тело: { targetFinal } — желаемая цена «со скидкой». Базу считаем на сервере,
+   * скидку не трогаем. Guarded — только по явному действию из дашборда.
+   */
+  @Put("products/:nmId/price")
+  @UseGuards(WbClustersWriteGuard)
+  setProductPrice(
+    @Param("nmId", ParseIntPipe) nmId: number,
+    @Body() body: SetProductPriceDto,
+  ) {
+    return this.wbClustersService.setProductPrice(nmId, body.targetFinal);
+  }
+
+  /** Статусы изменений цен (queued/sending/pending/confirmed/failed) для галочек. */
+  @Get("products/price-change-statuses")
+  getPriceChangeStatuses() {
+    return this.wbClustersService.getProductPriceChangeStatuses();
   }
 
   @Post("products/sync-prices")

@@ -146,18 +146,16 @@ export function DashboardPricesDetailSection({ products, priceCounts, onBack }: 
     [matrix.products],
   );
 
-  // Pinned column: prefer live "today" if priceCounts has data, else latest snapshot
-  const hasLive = priceCounts.size > 0;
+  // Закреплённая колонка = последний РЕАЛЬНЫЙ снапшот цен, с его настоящей датой
+  // (а не синтетическое «Сегодня»: цены снапшотятся раз в сутки, и подпись «Сегодня»
+  // вводила в заблуждение, когда сегодняшнего снапшота ещё нет). Не дублируем её в истории.
   const latestSnapshotDate = matrix.dates[0] ?? null;
-  const pinnedKey = hasLive ? today : latestSnapshotDate;
-  const pinnedIsLive = hasLive;
+  const pinnedKey = latestSnapshotDate;
 
-  // History dates: all matrix dates excluding the one used as pinned (only if pinned is a snapshot date)
   const pastDates = useMemo(() => {
     if (!pinnedKey) return matrix.dates;
-    if (pinnedIsLive) return matrix.dates;
     return matrix.dates.filter((d) => d !== pinnedKey);
-  }, [matrix.dates, pinnedKey, pinnedIsLive]);
+  }, [matrix.dates, pinnedKey]);
 
   const matrixIdxByDate = useMemo(() => {
     const m = new Map<string, number>();
@@ -206,17 +204,16 @@ export function DashboardPricesDetailSection({ products, priceCounts, onBack }: 
 
   const pinnedCol: DateColumn | undefined = useMemo(() => {
     if (!pinnedKey) return undefined;
-    const label = pinnedIsLive ? "Сегодня" : formatDate(pinnedKey);
     return {
       key: pinnedKey,
-      headerLabel: label,
+      headerLabel: formatDate(pinnedKey),
       onHeaderClick: () => {
         handleSortToggle(pinnedKey);
       },
       sortIndicator: <SortArrow active={sortCol === pinnedKey} dir={sortDir} />,
       accent: true,
     };
-  }, [pinnedKey, pinnedIsLive, sortCol, sortDir, handleSortToggle]);
+  }, [pinnedKey, sortCol, sortDir, handleSortToggle]);
 
   const dataCols: DateColumn[] = useMemo(
     () =>

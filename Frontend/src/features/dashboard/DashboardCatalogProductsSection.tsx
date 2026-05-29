@@ -6,6 +6,7 @@ import type { TodayOrderCount } from "../../api/syncClientOrders";
 import type { TodayBuyoutCount } from "../../api/syncClientBuyouts";
 import { formatMoney, formatPercent } from "../../formatters";
 import type { CurrentPriceEntry } from "./useCurrentPrices";
+import type { PriceChangeStatus } from "../../api/syncClientPrices";
 import { ui } from "./copy";
 import {
   loadScrollPosition,
@@ -36,6 +37,7 @@ type DashboardCatalogProductsSectionProps = {
   priceCounts: Map<number, CurrentPriceEntry>;
   ordersSumValues: Map<number, number>;
   revenueValues: Map<number, number>;
+  priceChangeStatuses: Map<number, PriceChangeStatus>;
   onProductsSearchChange: (value: string) => void;
   onProductsSortToggle: (key: ProductListSortKey) => void;
   onOpenCostPriceSheet: () => void;
@@ -47,6 +49,8 @@ type DashboardCatalogProductsSectionProps = {
   onOpenRevenueSheet: () => void;
   onCostSaved: (nmId: number, value: number) => Promise<void>;
   onCostCleared: (nmIds: number[]) => Promise<void>;
+  /** ⚠️ Запись новой цены «со скидкой» на маркетплейс WB. */
+  onPriceSaved: (nmId: number, targetFinal: number) => Promise<void>;
 };
 
 // ─── Local sort key (for columns backed by external Maps) ────────────────────
@@ -196,6 +200,161 @@ const CostInputCell = memo(function CostInputCell({
   );
 });
 
+// ─── Price edit cell (запись на маркетплейс WB) ───────────────────────────────
+
+type PriceStatusPresentation = { symbol: string; color: string; title: string };
+
+function priceStatusPresentation(status: PriceChangeStatus): PriceStatusPresentation {
+  switch (status.syncStatus) {
+    case "confirmed":
+      return { symbol: "✓", color: "#16a34a", title: "Цена подтверждена на маркетплейсе WB" };
+    case "failed":
+      return { symbol: "!", color: "#dc2626", title: status.lastError ?? "WB не принял новую цену" };
+    default:
+      // queued | sending | pending | throttled
+      return { symbol: "•", color: "#d97706", title: "Отправляется на WB, ждём подтверждения…" };
+  }
+}
+
+const PriceInputCell = memo(function PriceInputCell({
+  nmId,
+  entry,
+  status,
+  isEditing,
+  onStartEdit,
+  onCommitEdit,
+  onSaved,
+}: {
+  nmId: number;
+  entry: CurrentPriceEntry | undefined;
+  status: PriceChangeStatus | undefined;
+  isEditing: boolean;
+  onStartEdit: (nmId: number) => void;
+  onCommitEdit: () => void;
+  onSaved: (nmId: number, targetFinal: number) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const currentFinal = entry?.priceWithDiscount ?? null;
+  const discount = entry?.discount ?? 0;
+  const currentFinalRef = useRef(currentFinal);
+  useEffect(() => { currentFinalRef.current = currentFinal; }, [currentFinal]);
+
+  useEffect(() => {
+    if (isEditing) setDraft(currentFinalRef.current !== null ? String(currentFinalRef.current) : "");
+  }, [isEditing]);
+  useEffect(() => {
+    if (isEditing && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
+  }, [isEditing]);
+
+  // Превью того, что реально уйдёт на WB: целая базовая цена и фактический итог
+  // после округления (скидка не меняется). Считаем ровно как сервер.
+  const preview = (() => {
+    const t = draft.trim().replace(",", ".");
+    const target = Number(t);
+    if (t === "" || !Number.isFinite(target) || target <= 0) return null;
+    if (!(discount >= 0 && discount < 100)) return null;
+    const base = Math.round(target / (1 - discount / 100));
+    const actual = Math.round(base * (1 - discount / 100) * 100) / 100;
+    return { base, actual };
+  })();
+
+  const commit = useCallback(async () => {
+    const t = draft.trim().replace(",", ".");
+    if (t === "") { onCommitEdit(); return; }
+    const target = Number(t);
+    if (!Number.isFinite(target) || target <= 0) { onCommitEdit(); return; }
+    // No-op: совпало с текущим итогом → на WB ничего не отправляем.
+    if (currentFinalRef.current !== null && Math.abs(target - currentFinalRef.current) < 0.005) {
+      onCommitEdit();
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSaved(nmId, target);
+      onCommitEdit();
+    } catch {
+      // оставляем режим редактирования, чтобы можно было повторить
+    } finally {
+      setSaving(false);
+    }
+  }, [draft, nmId, onSaved, onCommitEdit]);
+
+  if (isEditing) {
+    return (
+      <span style={{ position: "relative", display: "inline-block", width: "100%" }}>
+        <input
+          ref={inputRef}
+          className={`wb-cost-price-input${saving ? " wb-cost-price-input--saving" : ""}`}
+          type="text"
+          inputMode="decimal"
+          value={draft}
+          placeholder="0"
+          disabled={saving}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => { void commit(); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); void commit(); }
+            else if (e.key === "Escape") { onCommitEdit(); }
+            e.stopPropagation();
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          aria-label="Цена со скидкой продавца"
+        />
+        {preview && (
+          <span
+            style={{
+              position: "absolute", top: "100%", right: 0, zIndex: 20, marginTop: 2,
+              whiteSpace: "nowrap", background: "#fff", border: "1px solid #e5e7eb",
+              borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "#334155",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+            }}
+            title="Уйдёт на маркетплейс WB: базовая цена → фактический итог со скидкой"
+          >
+            → база {String(preview.base)} ₽ · итог {formatMoney(preview.actual)}
+          </span>
+        )}
+      </span>
+    );
+  }
+
+  const statusInfo = status ? priceStatusPresentation(status) : null;
+  return (
+    <span className="wb-cost-price-display">
+      <button
+        type="button"
+        className="wb-cost-price-edit-icon"
+        title="Изменить цену и отправить на маркетплейс WB"
+        aria-label="Изменить цену"
+        tabIndex={-1}
+        onMouseDown={(e) => { e.stopPropagation(); }}
+        onClick={(e) => { e.stopPropagation(); onStartEdit(nmId); }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+        </svg>
+      </button>
+      <span className="wb-cost-price-value">
+        {currentFinal !== null
+          ? formatMoney(currentFinal)
+          : <span className="wb-cost-price-empty">—</span>}
+      </span>
+      {statusInfo && (
+        <span
+          title={statusInfo.title}
+          style={{ marginLeft: 4, color: statusInfo.color, fontWeight: 700 }}
+        >
+          {statusInfo.symbol}
+        </span>
+      )}
+    </span>
+  );
+});
+
 // ─── Column width helper ──────────────────────────────────────────────────────
 
 function getColWidth(col: ProductColumnDefinition, nameColWidth: number): number {
@@ -249,6 +408,7 @@ export const DashboardCatalogProductsSection = memo(
     // ── Multi-select state ──────────────────────────────────────────────────────
     const [selectedNmIds, setSelectedNmIds] = useState<Set<number>>(new Set());
     const [editingNmId, setEditingNmId] = useState<number | null>(null);
+    const [editingPriceNmId, setEditingPriceNmId] = useState<number | null>(null);
     const lastClickedIndexRef = useRef<number>(-1);
 
     // ── Local sort (for cost/orders/stock columns) ──────────────────────────────
@@ -332,7 +492,18 @@ export const DashboardCatalogProductsSection = memo(
     // конкретной строки. Один и тот же reference на все ячейки — memo не ломается.
     const handleStartEdit = useCallback((nmId: number) => {
       setSelectedNmIds(new Set());
+      setEditingPriceNmId(null);
       setEditingNmId(nmId);
+    }, []);
+
+    // Редактирование цены (отправка на WB) — отдельно от себестоимости.
+    const handleStartPriceEdit = useCallback((nmId: number) => {
+      setSelectedNmIds(new Set());
+      setEditingNmId(null);
+      setEditingPriceNmId(nmId);
+    }, []);
+    const handleCommitPriceEdit = useCallback(() => {
+      setEditingPriceNmId(null);
     }, []);
 
     const handleCellClick = useCallback(
@@ -396,6 +567,7 @@ export const DashboardCatalogProductsSection = memo(
         } else if (e.key === "Escape") {
           setSelectedNmIds(new Set());
           setEditingNmId(null);
+          setEditingPriceNmId(null);
         } else if (e.key === "Enter" && selectedNmIds.size === 1) {
           const [id] = selectedNmIds;
           if (id !== undefined) {
@@ -414,6 +586,7 @@ export const DashboardCatalogProductsSection = memo(
         if (tableRef.current && !tableRef.current.contains(e.target as Node)) {
           setSelectedNmIds(new Set());
           setEditingNmId(null);
+          setEditingPriceNmId(null);
         }
       };
       document.addEventListener("mousedown", handler);
@@ -853,10 +1026,24 @@ export const DashboardCatalogProductsSection = memo(
           );
         case "price":
           return (
-            <td key={key} className="wb-table-cell--numeric">
-              {priceEntry !== undefined
-                ? formatMoney(priceEntry.priceWithDiscount)
-                : <span style={{ opacity: 0.3 }}>—</span>}
+            <td
+              key={key}
+              className="wb-table-cell--numeric wb-table-cell--cost"
+              onDoubleClick={nmId !== null ? () => handleStartPriceEdit(nmId) : undefined}
+            >
+              {nmId !== null ? (
+                <PriceInputCell
+                  nmId={nmId}
+                  entry={priceEntry}
+                  status={props.priceChangeStatuses.get(nmId)}
+                  isEditing={editingPriceNmId === nmId}
+                  onStartEdit={handleStartPriceEdit}
+                  onCommitEdit={handleCommitPriceEdit}
+                  onSaved={props.onPriceSaved}
+                />
+              ) : (
+                <span style={{ opacity: 0.3 }}>—</span>
+              )}
             </td>
           );
         case "orders":

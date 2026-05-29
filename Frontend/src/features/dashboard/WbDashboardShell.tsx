@@ -103,6 +103,7 @@ type WbDashboardShellProps = {
   ordersSumMatrix: import("./useOrdersSumMatrix").OrdersSumMatrix;
   revenueValues: Map<number, number>;
   revenueMatrix: import("./useRevenueMatrix").RevenueMatrix;
+  priceChangeStatuses: Map<number, import("../../api/syncClientPrices").PriceChangeStatus>;
   isOrdersSheetOpen: boolean;
   isBuyoutSheetOpen: boolean;
   isStocksSheetOpen: boolean;
@@ -125,6 +126,7 @@ type WbDashboardShellProps = {
   onCloseRevenueSheet: () => void;
   onCostSaved: (nmId: number, value: number) => Promise<void>;
   onCostCleared: (nmIds: number[]) => Promise<void>;
+  onPriceSaved: (nmId: number, targetFinal: number) => Promise<void>;
   onRefresh: () => void;
   onTokenInputChange: (value: string) => void;
   onSaveToken: () => void;
@@ -206,6 +208,7 @@ export function WbDashboardShell({
   ordersSumMatrix,
   revenueValues,
   revenueMatrix,
+  priceChangeStatuses,
   isOrdersSheetOpen,
   isBuyoutSheetOpen,
   isStocksSheetOpen,
@@ -228,6 +231,7 @@ export function WbDashboardShell({
   onCloseRevenueSheet,
   onCostSaved,
   onCostCleared,
+  onPriceSaved,
   onRefresh: _onRefresh,
   onTokenInputChange,
   onSaveToken,
@@ -401,6 +405,7 @@ export function WbDashboardShell({
                 priceCounts={priceCounts}
                 ordersSumValues={ordersSumValues}
                 revenueValues={revenueValues}
+                priceChangeStatuses={priceChangeStatuses}
                 onProductsSearchChange={onProductsSearchChange}
                 onProductsSortToggle={onProductsSortToggle}
                 onOpenCostPriceSheet={onOpenCostPriceSheet}
@@ -412,6 +417,7 @@ export function WbDashboardShell({
                 onOpenRevenueSheet={onOpenRevenueSheet}
                 onCostSaved={onCostSaved}
                 onCostCleared={onCostCleared}
+                onPriceSaved={onPriceSaved}
               />
             )
           ) : activeSection === "products" ? (
