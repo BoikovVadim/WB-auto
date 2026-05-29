@@ -16,7 +16,8 @@
 
 import { appEnv } from "../common/env";
 
-const NMIDS_PER_BATCH = 20;       // WB API hard limit
+const NMIDS_PER_BATCH = 20;       // WB API hard limit для /history
+const PRODUCTS_PAGE_LIMIT = 1000; // макс размер страницы /products (2000 → 400)
 const INTERVAL_MS     = 25_000;   // 3 req/min = 1 per 20s; +5s buffer (22s всё равно ловил 429)
 const RATE_LIMIT_WAIT_MS = 60_000; // пауза перед повтором после 429
 const MAX_429_RETRIES = 4;
@@ -32,6 +33,14 @@ export type SalesFunnelDayEntry = {
   openCount?: number;
   cartCount?: number;
   addToWishlistCount?: number;
+};
+
+/** Per-product aggregate over a period from POST /products (без nmIds, пагинация). */
+export type SalesFunnelProductSummary = {
+  nmId: number;
+  orderCount: number;
+  orderSum: number;
+  cancelCount: number;
 };
 
 export type SalesFunnelProductHistory = {
@@ -77,6 +86,93 @@ export class WbSellerAnalyticsApiClient {
       all.push(...results);
     }
     return all;
+  }
+
+  /**
+   * Сводка orderCount/orderSum/cancelCount по ВСЕМ товарам за период через
+   * POST /products. В отличие от /history (макс 20 nmId на запрос) этот эндпоинт
+   * НЕ требует списка nmId и пагинируется по `limit` (до 1000/страницу), поэтому
+   * для «сегодня» обычно укладывается в ОДИН запрос вместо десятков батчей.
+   * Возвращает только товары с активностью за период (нет показов → нет заказов).
+   *
+   * @param startDate "YYYY-MM-DD" Moscow
+   * @param endDate   "YYYY-MM-DD" Moscow
+   */
+  async fetchProductsSummary(startDate: string, endDate: string): Promise<SalesFunnelProductSummary[]> {
+    const all: SalesFunnelProductSummary[] = [];
+    const MAX_PAGES = 50; // backstop: 50 × 1000 = 50k товаров
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const rows = await this.fetchProductsPage(startDate, endDate, page);
+      all.push(...rows);
+      if (rows.length < PRODUCTS_PAGE_LIMIT) break; // последняя страница
+    }
+    return all;
+  }
+
+  private async fetchProductsPage(
+    startDate: string,
+    endDate: string,
+    page: number,
+  ): Promise<SalesFunnelProductSummary[]> {
+    for (let attempt = 0; ; attempt++) {
+      await this.throttle();
+
+      const token = this.getToken();
+      if (!token) throw new Error("Analytics API token not configured (WB_API_TOKEN)");
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => { controller.abort(); }, 60_000);
+
+      try {
+        const resp = await fetch(
+          `${appEnv.wbSellerAnalyticsApiBaseUrl}/api/analytics/v3/sales-funnel/products`,
+          {
+            method: "POST",
+            headers: { Authorization: token, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              selectedPeriod: { start: startDate, end: endDate },
+              brandNames: [],
+              tagIds: [],
+              subjectIds: [],
+              page,
+              limit: PRODUCTS_PAGE_LIMIT,
+            }),
+            signal: controller.signal,
+          },
+        );
+        clearTimeout(timer);
+
+        if (resp.status === 429) {
+          if (attempt >= MAX_429_RETRIES) {
+            const text = await resp.text().catch(() => "");
+            throw new Error(`Analytics API 429 (исчерпаны ${MAX_429_RETRIES} ретраев): ${text}`);
+          }
+          await new Promise<void>((r) => { setTimeout(r, RATE_LIMIT_WAIT_MS); });
+          continue;
+        }
+
+        if (!resp.ok) {
+          const text = await resp.text().catch(() => "");
+          throw new Error(`Analytics API ${resp.status}: ${text}`);
+        }
+
+        const data = await resp.json() as {
+          data?: { products?: { product?: { nmId?: number }; statistic?: { selected?: { orderCount?: number; orderSum?: number; cancelCount?: number } } }[] };
+        };
+        const products = data.data?.products ?? [];
+        return products
+          .map((p) => ({
+            nmId: Number(p.product?.nmId) || 0,
+            orderCount: Number(p.statistic?.selected?.orderCount) || 0,
+            orderSum: Number(p.statistic?.selected?.orderSum) || 0,
+            cancelCount: Number(p.statistic?.selected?.cancelCount) || 0,
+          }))
+          .filter((p) => p.nmId > 0);
+      } catch (err) {
+        clearTimeout(timer);
+        throw err;
+      }
+    }
   }
 
   private async fetchBatch(

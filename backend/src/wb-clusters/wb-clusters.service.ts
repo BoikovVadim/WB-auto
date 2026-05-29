@@ -696,41 +696,38 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
 
   // ─── Today's live orders via Sales Funnel (Воронка продаж) ───────────────────
   //
-  // Источник: POST /api/analytics/v3/sales-funnel/products/history по ВСЕМУ
-  // каталогу nmId. orderCount/orderSum совпадают с кабинетом WB «Заказали
-  // товаров (на сумму)» — в отличие от Statistics API, Воронка ВКЛЮЧАЕТ заказы
-  // с неподтверждённой оплатой. Statistics их выкидывал → систематический
-  // недосчёт (замерено вживую 29.05: 883 против 1001 заказа, −12% по count и
-  // −11% по сумме). Именно эта дыра и была видна как «у нас на ~100 меньше».
+  // Источник: POST /api/analytics/v3/sales-funnel/products (сводка за период).
+  // orderCount/orderSum совпадают с кабинетом WB «Заказали товаров (на сумму)» —
+  // в отличие от Statistics API, Воронка ВКЛЮЧАЕТ заказы с неподтверждённой
+  // оплатой. Statistics их выкидывал → систематический недосчёт (замерено вживую
+  // 29.05: 883 против 1001 заказа, −12% count / −11% сумма). Именно эта дыра и
+  // была видна как «у нас на ~100 меньше».
+  //
+  // Почему /products, а не /history: /history требует список nmId и режется по
+  // 20 на запрос (весь каталог = ~23 батча × 25с ≈ 10 мин). /products НЕ требует
+  // nmId и пагинируется по 1000 — все активные товары за сегодня приходят за
+  // ОДИН запрос (≈ секунды). Эндпоинт отдаёт и orderCount/orderSum, и cancelCount.
   //
   // Что пишем для сегодняшней даты:
-  //   - orders_count = orderCount из Воронки (как в кабинете);
-  //   - orders_sum   = orderSum из Воронки («Заказали на сумму»);
-  //   - cancelled_count = 0 — Воронка не отдаёт разбивку по отменам, а фронт его
-  //     и не использует (витрина «заказы сегодня» = orders_count, % выкупа =
-  //     buyouts/orders). Buyouts не трогаем — их закрывает ночной CSV.
+  //   - orders_count    = orderCount  (как в кабинете);
+  //   - orders_sum      = orderSum    («Заказали на сумму»);
+  //   - cancelled_count = cancelCount (Воронка отдаёт отмены отдельно).
+  // Buyouts не трогаем — их закрывает ночной CSV.
   //
-  // Цена частоты: Воронка обновляется у WB РАЗ В ЧАС, плюс лимит 3 req/min × 20
-  // nmId → весь каталог (~450 товаров) = ~23 батча ≈ 10 мин на прогон. Поэтому
-  // cron часовой (см. wbOrdersSyncCron), не 10-минутный: чаще нет смысла (данные
-  // всё равно часовые) и опасно (упрёмся в 429). Клиент сам батчит по 20,
-  // троттлит 25с и ретраит 429 — один запрос «весь список» WB не принимает.
+  // NB: данные Воронки у WB обновляются примерно раз в час, поэтому чаще, чем
+  // раз в ~15 мин (см. wbOrdersSyncCron), дёргать смысла нет — число всё равно
+  // меняется не чаще часа. Запрос дешёвый (1 шт.), в лимит 3 req/min укладывается
+  // с запасом.
 
   async syncOrdersTodayFromSalesFunnel(): Promise<void> {
     if (!await this.guardOrdersSync()) return;
 
-    const nmIds = await this.wbClustersRepository.getKnownCatalogNmIds();
-    if (nmIds.length === 0) {
-      this.logger.warn("Orders Sales Funnel sync: каталог пуст, skip.");
-      return;
-    }
-
     const todayStr = this.getMoscowDateStr(0);
-    let history: Awaited<ReturnType<WbSellerAnalyticsApiClient["fetchSalesFunnelHistory"]>>;
+    let products: Awaited<ReturnType<WbSellerAnalyticsApiClient["fetchProductsSummary"]>>;
     try {
-      history = await this.analyticsClient.fetchSalesFunnelHistory(todayStr, todayStr, nmIds);
+      products = await this.analyticsClient.fetchProductsSummary(todayStr, todayStr);
     } catch (err) {
-      // Прогон не удался целиком — НЕ обнуляем сегодня, оставляем прошлые значения.
+      // Запрос не удался — НЕ обнуляем сегодня, оставляем прошлые значения.
       this.logger.warn(`Orders Sales Funnel sync error: ${(err as Error).message}`);
       return;
     }
@@ -738,21 +735,16 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     const upserts: { nmId: number; ordersCount: number; cancelledCount: number; ordersSum: number }[] = [];
     let totalOrders = 0;
     let totalSum = 0;
-    for (const p of history) {
-      const nmId = p.product?.nmId;
-      if (!nmId) continue;
-      let oc = 0;
-      let os = 0;
-      for (const h of p.history) {
-        if (String(h.date).slice(0, 10) === todayStr) {
-          oc += Number(h.orderCount) || 0;
-          os += Number(h.orderSum) || 0;
-        }
-      }
-      if (oc === 0 && os === 0) continue;
-      totalOrders += oc;
-      totalSum += os;
-      upserts.push({ nmId, ordersCount: oc, cancelledCount: 0, ordersSum: Math.round(os * 100) / 100 });
+    for (const p of products) {
+      if (p.orderCount === 0 && p.orderSum === 0) continue;
+      totalOrders += p.orderCount;
+      totalSum += p.orderSum;
+      upserts.push({
+        nmId: p.nmId,
+        ordersCount: p.orderCount,
+        cancelledCount: p.cancelCount,
+        ordersSum: Math.round(p.orderSum * 100) / 100,
+      });
     }
 
     // Сначала обнуляем сегодняшние строки (товары, чьи заказы за день обнулились,
@@ -762,8 +754,8 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
       await this.wbClustersRepository.upsertOrdersTodayLive(upserts);
     }
     this.logger.log(
-      `Orders Sales Funnel sync (${todayStr}): ${nmIds.length} nmId → ` +
-        `${upserts.length} товаров с заказами, ${totalOrders} заказов, сумма ${totalSum.toFixed(2)}`,
+      `Orders Sales Funnel sync (${todayStr}): ${products.length} активных товаров → ` +
+        `${upserts.length} с заказами, ${totalOrders} заказов, сумма ${totalSum.toFixed(2)}`,
     );
   }
 

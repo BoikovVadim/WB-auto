@@ -168,12 +168,11 @@ export class WbClustersScheduler implements OnModuleInit {
   private ordersTodaySyncRunning = false;
 
   /**
-   * Освежаем СЕГОДНЯ через Sales Funnel (Воронку) — orderCount/orderSum совпадают
-   * с кабинетом WB «Заказали товаров», в отличие от Statistics API (тот выкидывал
-   * заказы с неподтверждённой оплатой → недосчёт ~12%). По умолчанию ЧАСОВОЙ cron
-   * (см. wbOrdersSyncCron): данные Воронки и так обновляются раз в час, а прогон
-   * по всему каталогу (~450 nmId, батчи по 20, 25с троттл) занимает ~10 мин.
-   * Гард ordersTodaySyncRunning страхует от наложения, если прогон затянулся.
+   * Освежаем СЕГОДНЯ через Sales Funnel (Воронку, /products) — orderCount/orderSum/
+   * cancelCount совпадают с кабинетом WB «Заказали товаров», в отличие от Statistics
+   * API (тот выкидывал заказы с неподтверждённой оплатой → недосчёт ~12%). Все
+   * активные товары приходят за один запрос, прогон занимает секунды — cron каждые
+   * 15 мин (см. wbOrdersSyncCron). Гард ordersTodaySyncRunning страхует от наложения.
    * Частоту можно переопределить через WB_ORDERS_SYNC_CRON.
    */
   @Cron(appEnv.wbOrdersSyncCron)
