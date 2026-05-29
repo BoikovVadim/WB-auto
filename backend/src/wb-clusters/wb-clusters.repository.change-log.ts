@@ -196,8 +196,10 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
           nm_id::text AS nm_id,
           entity_label,
           change_type,
-          old_value,
-          new_value,
+          -- В истории показываем цену без «(база N)» — служебная база нужна только в
+          -- сыром аудите. Дедуп ниже работает уже по очищенному значению.
+          regexp_replace(old_value, ' \\(база [0-9]+\\)$', '') AS old_value,
+          regexp_replace(new_value, ' \\(база [0-9]+\\)$', '') AS new_value,
           created_at AS event_at
         FROM ${this.tableName("wb_system_change_log")}
       ),
