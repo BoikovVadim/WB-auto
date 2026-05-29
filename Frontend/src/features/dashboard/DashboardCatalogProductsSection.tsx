@@ -201,59 +201,35 @@ const CostInputCell = memo(function CostInputCell({
 });
 
 // ─── Price edit cell (запись на маркетплейс WB) ───────────────────────────────
-
-type PriceStatusPresentation = { symbol: string; color: string; title: string };
-
-function priceStatusPresentation(status: PriceChangeStatus): PriceStatusPresentation {
-  switch (status.syncStatus) {
-    case "confirmed":
-      return { symbol: "✓", color: "#16a34a", title: "Цена подтверждена на маркетплейсе WB" };
-    case "failed":
-      return { symbol: "!", color: "#dc2626", title: status.lastError ?? "WB не принял новую цену" };
-    default:
-      // queued | sending | pending | throttled
-      return { symbol: "•", color: "#d97706", title: "Отправляется на WB, ждём подтверждения…" };
-  }
-}
+// Клик по числу или карандашу → инлайн-ввод. Enter → модалка подтверждения
+// (подтверждение/отмена живут в родителе). Без статусов и без readback: значение
+// фиксируется в таблице оптимистично (overlay), WB применяет цену сам.
 
 const PriceInputCell = memo(function PriceInputCell({
   nmId,
   entry,
-  status,
+  overlay,
   isEditing,
   onStartEdit,
   onCommitEdit,
-  onSaved,
+  onRequestConfirm,
 }: {
   nmId: number;
   entry: CurrentPriceEntry | undefined;
-  status: PriceChangeStatus | undefined;
+  /** Последняя выставленная пользователем цена — показываем её оптимистично. */
+  overlay: PriceChangeStatus | undefined;
   isEditing: boolean;
   onStartEdit: (nmId: number) => void;
   onCommitEdit: () => void;
-  onSaved: (nmId: number, targetFinal: number) => Promise<void>;
+  onRequestConfirm: (nmId: number, targetFinal: number) => void;
 }) {
   const [draft, setDraft] = useState<string>("");
-  const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Отображаемая цена: оптимистично показываем желаемую (desiredFinal) сразу после
-  // ввода; после ответа WB (confirmed/failed) — фактическую кабинетную (observedFinal);
-  // иначе — последний снапшот.
-  const snapshotFinal = entry?.priceWithDiscount ?? null;
-  const currentFinal: number | null = (() => {
-    if (status) {
-      if (
-        (status.syncStatus === "confirmed" || status.syncStatus === "failed") &&
-        status.observedFinal != null
-      ) {
-        return status.observedFinal;
-      }
-      return status.desiredFinal;
-    }
-    return snapshotFinal;
-  })();
-  const discount = entry?.discount ?? 0;
+  // Цена в ячейке: если пользователь уже выставлял цену — показываем его значение
+  // (оптимистично, переживает перезагрузку), иначе последний снапшот.
+  const currentFinal: number | null =
+    overlay ? overlay.desiredFinal : (entry?.priceWithDiscount ?? null);
   const currentFinalRef = useRef(currentFinal);
   useEffect(() => { currentFinalRef.current = currentFinal; }, [currentFinal]);
 
@@ -264,85 +240,51 @@ const PriceInputCell = memo(function PriceInputCell({
     if (isEditing && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
   }, [isEditing]);
 
-  // Превью того, что реально уйдёт на WB: целая базовая цена и фактический итог
-  // после округления (скидка не меняется). Считаем ровно как сервер.
-  const preview = (() => {
-    const t = draft.trim().replace(",", ".");
-    const target = Number(t);
-    if (t === "" || !Number.isFinite(target) || target <= 0) return null;
-    if (!(discount >= 0 && discount < 100)) return null;
-    // База — целое (WB не принимает копейки), подбираем ближайшую под целевой итог.
-    const base = Math.round(target / (1 - discount / 100));
-    const actual = Math.round(base * (1 - discount / 100) * 100) / 100;
-    // На витрине WB цена в целых рублях. При скидке > 0 ошибка округления < 0,5 ₽,
-    // поэтому витринная цена совпадает с введённой ровно.
-    const shelf = Math.round(actual);
-    return { base, actual, shelf };
-  })();
-
-  const commit = useCallback(async () => {
+  const submit = useCallback(() => {
     const t = draft.trim().replace(",", ".");
     if (t === "") { onCommitEdit(); return; }
     const target = Number(t);
     if (!Number.isFinite(target) || target <= 0) { onCommitEdit(); return; }
-    // No-op: совпало с текущим итогом → на WB ничего не отправляем.
+    // No-op только если введено РОВНО текущее значение ячейки (можно ставить любое
+    // другое число, в т.ч. равное исходной цене до прежних правок).
     if (currentFinalRef.current !== null && Math.abs(target - currentFinalRef.current) < 0.005) {
       onCommitEdit();
       return;
     }
-    setSaving(true);
-    try {
-      await onSaved(nmId, target);
-      onCommitEdit();
-    } catch {
-      // оставляем режим редактирования, чтобы можно было повторить
-    } finally {
-      setSaving(false);
-    }
-  }, [draft, nmId, onSaved, onCommitEdit]);
+    onRequestConfirm(nmId, target);
+  }, [draft, nmId, onRequestConfirm, onCommitEdit]);
 
   if (isEditing) {
     return (
-      <span style={{ position: "relative", display: "inline-block", width: "100%" }}>
-        <input
-          ref={inputRef}
-          className={`wb-cost-price-input${saving ? " wb-cost-price-input--saving" : ""}`}
-          type="text"
-          inputMode="decimal"
-          value={draft}
-          placeholder="0"
-          disabled={saving}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => { void commit(); }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); void commit(); }
-            else if (e.key === "Escape") { onCommitEdit(); }
-            e.stopPropagation();
-          }}
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          aria-label="Цена со скидкой продавца"
-        />
-        {preview && (
-          <span
-            style={{
-              position: "absolute", top: "100%", right: 0, zIndex: 20, marginTop: 2,
-              whiteSpace: "nowrap", background: "#fff", border: "1px solid #e5e7eb",
-              borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "#334155",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
-            }}
-            title={`Базовая цена WB — целое число (копейки нельзя). Точный расчётный итог ${formatMoney(preview.actual)}; на витрине WB цена в целых рублях, поэтому покупатель видит ровно ${String(preview.shelf)} ₽.`}
-          >
-            → база {String(preview.base)} ₽ · на витрине {String(preview.shelf)} ₽
-          </span>
-        )}
-      </span>
+      <input
+        ref={inputRef}
+        className="wb-cost-price-input"
+        type="text"
+        inputMode="decimal"
+        value={draft}
+        placeholder="0"
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => { submit(); }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); submit(); }
+          else if (e.key === "Escape") { onCommitEdit(); }
+          e.stopPropagation();
+        }}
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        aria-label="Цена со скидкой продавца"
+      />
     );
   }
 
-  const statusInfo = status ? priceStatusPresentation(status) : null;
   return (
-    <span className="wb-cost-price-display">
+    <span
+      className="wb-cost-price-display"
+      style={{ cursor: "pointer" }}
+      role="button"
+      tabIndex={-1}
+      onClick={(e) => { e.stopPropagation(); onStartEdit(nmId); }}
+    >
       <button
         type="button"
         className="wb-cost-price-edit-icon"
@@ -362,12 +304,69 @@ const PriceInputCell = memo(function PriceInputCell({
           ? formatMoney(currentFinal)
           : <span className="wb-cost-price-empty">—</span>}
       </span>
-      {statusInfo && (
-        <span className="wb-price-status" title={statusInfo.title} style={{ color: statusInfo.color }}>
-          {statusInfo.symbol}
-        </span>
-      )}
     </span>
+  );
+});
+
+// ─── Модалка подтверждения изменения цены ─────────────────────────────────────
+// Всплывает после Enter в поле. Enter — применить, Esc/Отмена/клик по фону — закрыть
+// без изменений. Кнопка «Поставить» в фокусе, поэтому Enter применяет сразу.
+
+const PriceConfirmModal = memo(function PriceConfirmModal({
+  productLabel,
+  oldFinal,
+  shelf,
+  onConfirm,
+  onCancel,
+}: {
+  productLabel: string;
+  oldFinal: number | null;
+  shelf: number;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    confirmRef.current?.focus();
+  }, []);
+
+  return (
+    <div
+      className="wb-price-confirm-backdrop"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+        else if (e.key === "Enter") { e.preventDefault(); onConfirm(); }
+      }}
+    >
+      <div className="wb-price-confirm" role="dialog" aria-modal="true">
+        <div className="wb-price-confirm-title">Изменить цену на маркетплейсе WB</div>
+        <div className="wb-price-confirm-body">
+          <div className="wb-price-confirm-product">{productLabel}</div>
+          <div className="wb-price-confirm-prices">
+            {oldFinal !== null && (
+              <span className="wb-price-confirm-old">{formatMoney(oldFinal)}</span>
+            )}
+            <span className="wb-price-confirm-arrow">→</span>
+            <span className="wb-price-confirm-new">{formatMoney(shelf)}</span>
+          </div>
+          <div className="wb-price-confirm-note">Цена на витрине WB станет {String(shelf)} ₽.</div>
+        </div>
+        <div className="wb-price-confirm-actions">
+          <button type="button" className="wb-btn-secondary" onClick={onCancel}>
+            Отмена
+          </button>
+          <button
+            ref={confirmRef}
+            type="button"
+            className="wb-btn-primary"
+            onClick={onConfirm}
+          >
+            Поставить
+          </button>
+        </div>
+      </div>
+    </div>
   );
 });
 
@@ -521,6 +520,20 @@ export const DashboardCatalogProductsSection = memo(
     const handleCommitPriceEdit = useCallback(() => {
       setEditingPriceNmId(null);
     }, []);
+
+    // Модалка подтверждения цены: открывается после Enter в поле.
+    const [priceConfirm, setPriceConfirm] = useState<{ nmId: number; target: number } | null>(null);
+    const handleRequestPriceConfirm = useCallback((nmId: number, target: number) => {
+      setEditingPriceNmId(null);
+      setPriceConfirm({ nmId, target });
+    }, []);
+    const handleCancelPriceConfirm = useCallback(() => setPriceConfirm(null), []);
+    const handleConfirmPrice = useCallback(async () => {
+      if (!priceConfirm) return;
+      const { nmId, target } = priceConfirm;
+      setPriceConfirm(null);
+      await props.onPriceSaved(nmId, target);
+    }, [priceConfirm, props]);
 
     const handleCellClick = useCallback(
       (nmId: number, index: number, event: React.MouseEvent) => {
@@ -1042,20 +1055,16 @@ export const DashboardCatalogProductsSection = memo(
           );
         case "price":
           return (
-            <td
-              key={key}
-              className="wb-table-cell--numeric wb-table-cell--cost"
-              onDoubleClick={nmId !== null ? () => handleStartPriceEdit(nmId) : undefined}
-            >
+            <td key={key} className="wb-table-cell--numeric wb-table-cell--cost">
               {nmId !== null ? (
                 <PriceInputCell
                   nmId={nmId}
                   entry={priceEntry}
-                  status={props.priceChangeStatuses.get(nmId)}
+                  overlay={props.priceChangeStatuses.get(nmId)}
                   isEditing={editingPriceNmId === nmId}
                   onStartEdit={handleStartPriceEdit}
                   onCommitEdit={handleCommitPriceEdit}
-                  onSaved={props.onPriceSaved}
+                  onRequestConfirm={handleRequestPriceConfirm}
                 />
               ) : (
                 <span style={{ opacity: 0.3 }}>—</span>
@@ -1198,6 +1207,26 @@ export const DashboardCatalogProductsSection = memo(
         ) : props.isCatalogLoading ? null : (
           <p className="wb-empty-copy">{ui.productsEmpty}</p>
         )}
+
+        {priceConfirm && (() => {
+          const e = props.priceCounts.get(priceConfirm.nmId);
+          const d = e?.discount ?? 0;
+          const base = Math.round(priceConfirm.target / (1 - d / 100));
+          const shelf = Math.round(base * (1 - d / 100));
+          const overlay = props.priceChangeStatuses.get(priceConfirm.nmId);
+          const oldFinal = overlay ? overlay.desiredFinal : (e?.priceWithDiscount ?? null);
+          const product = props.filteredProducts.find((p) => p.nmId === priceConfirm.nmId);
+          const label = product ? getDisplayVendorCode(product) : `#${String(priceConfirm.nmId)}`;
+          return (
+            <PriceConfirmModal
+              productLabel={label}
+              oldFinal={oldFinal}
+              shelf={shelf}
+              onConfirm={() => { void handleConfirmPrice(); }}
+              onCancel={handleCancelPriceConfirm}
+            />
+          );
+        })()}
       </section>
     );
   },

@@ -1056,9 +1056,6 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
   // Скидку НЕ трогаем: двигаем только базовую цену под целевой итог «со скидкой».
   // No-op guard: если новая база совпала с текущей — в WB ничего не отправляем.
 
-  // Reconcile-крон тикает каждые 10 с; 36 попыток ≈ 6 минут на подтверждение от WB.
-  private readonly maxPriceReconcileAttempts = 36;
-
   private finalFromBase(base: number, discount: number): number {
     return Math.round(base * (1 - discount / 100) * 100) / 100;
   }
@@ -1085,27 +1082,28 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     // Обратный пересчёт: целевой итог → целая базовая цена (скидка неизменна).
     const newBase = Math.round(targetFinal / (1 - discount / 100));
     const actualFinal = this.finalFromBase(newBase, discount);
+    // Витринная цена WB — в целых рублях; её и фиксируем как итог (ровно введённое).
+    const shelfFinal = Math.round(actualFinal);
 
     const result = {
       nmId,
       desiredBasePrice: newBase,
       desiredDiscount: discount,
-      desiredFinal: actualFinal,
+      desiredFinal: shelfFinal,
       currentBasePrice: currentBase,
       currentFinal,
       lastError: null as string | null,
     };
 
-    // No-op guard — не дёргаем WB, если база не меняется.
-    if (newBase === currentBase) {
-      return { ...result, status: "noop" as const };
-    }
+    // Никакого no-op по снапшоту: пользователь может выставить любое значение
+    // (в т.ч. равное исходной цене до правок) — оно должно примениться. Защита от
+    // повторной отправки того же числа живёт на фронте (сравнение с тем, что в ячейке).
 
     await this.wbClustersRepository.upsertPriceChangeQueued({
       nmId,
       basePrice: newBase,
       discount,
-      finalPrice: actualFinal,
+      finalPrice: shelfFinal,
     });
 
     this.wbClustersRepository
@@ -1114,8 +1112,8 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
         nmId,
         entityLabel: `Товар #${String(nmId)}`,
         changeType: "set",
-        oldValue: `${currentFinal.toFixed(2)} (база ${String(currentBase)})`,
-        newValue: `${actualFinal.toFixed(2)} (база ${String(newBase)})`,
+        oldValue: `${String(Math.round(currentFinal))} ₽ (база ${String(currentBase)})`,
+        newValue: `${String(shelfFinal)} ₽ (база ${String(newBase)})`,
       })
       .catch(() => {/* non-critical */});
 
@@ -1131,77 +1129,16 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     }
   }
 
-  /** Статусы изменений цен — для индикаторов-галочек на фронте. */
+  /**
+   * Последние выставленные пользователем цены (overlay для таблицы) — чтобы ячейка
+   * сразу и после перезагрузки показывала введённое значение. Без статусов/проверок:
+   * по договорённости мы доверяем, что WB применяет цену, и не делаем readback.
+   */
   async getProductPriceChangeStatuses() {
     if (!this.wbClustersRepository.isConfigured()) return { items: [] };
     await this.wbClustersRepository.ensureSchema();
     const items = await this.wbClustersRepository.getPriceChangeRows();
     return { items };
-  }
-
-  /**
-   * Reconcile: readback цен с WB и подтверждение/повтор/фейл. Обрабатывает
-   * ТОЛЬКО активные строки (sending/pending/throttled), которые пользователь уже
-   * поставил в очередь явным PUT — никакого авто-enqueue здесь нет. Если активных
-   * строк нет, WB вообще не дёргается.
-   */
-  async reconcilePriceChanges(): Promise<void> {
-    if (!this.wbClustersRepository.isConfigured()) return;
-    await this.wbClustersRepository.ensureSchema();
-    const active = await this.wbClustersRepository.getActivePriceChanges();
-    if (active.length === 0) return;
-
-    let goods: Awaited<ReturnType<WbPricesApiClient["fetchAllGoods"]>>;
-    try {
-      goods = await this.pricesApiClient.fetchAllGoods();
-    } catch (err) {
-      this.logger.warn(`reconcilePriceChanges readback error: ${(err as Error).message}`);
-      return; // оставим статусы как есть, повторим на следующем тике
-    }
-    const byNmId = new Map<number, { price: number; discount: number }>();
-    for (const g of goods) {
-      const firstSize = g.sizes[0];
-      if (firstSize) byNmId.set(g.nmID, { price: firstSize.price, discount: g.discount });
-    }
-
-    const retryInMs = 10_000;
-    for (const row of active) {
-      const actual = byNmId.get(row.nmId);
-      // Фактический итог «со скидкой», который сейчас в кабинете WB (для коррекции UI).
-      const observedFinal =
-        actual !== undefined
-          ? Math.round(actual.price * (1 - actual.discount / 100) * 100) / 100
-          : undefined;
-      const confirmed =
-        actual !== undefined &&
-        Math.round(actual.price) === Math.round(row.desiredBasePrice) &&
-        Math.round(actual.discount) === Math.round(row.desiredDiscount);
-      if (confirmed) {
-        await this.wbClustersRepository.updatePriceChange(row.nmId, {
-          syncStatus: "confirmed",
-          confirmedAt: new Date().toISOString(),
-          observedFinal,
-          retryAt: null,
-          lastError: null,
-        });
-        continue;
-      }
-      if (row.attemptCount + 1 >= this.maxPriceReconcileAttempts) {
-        await this.wbClustersRepository.updatePriceChange(row.nmId, {
-          syncStatus: "failed",
-          bumpAttempt: true,
-          observedFinal,
-          lastError: "WB не подтвердил новую цену за отведённое число попыток.",
-        });
-      } else {
-        await this.wbClustersRepository.updatePriceChange(row.nmId, {
-          syncStatus: "pending",
-          bumpAttempt: true,
-          observedFinal,
-          retryAt: new Date(Date.now() + retryInMs).toISOString(),
-        });
-      }
-    }
   }
 
   /** Nightly snapshot: copies each product's latest cost price into today's row (idempotent). */

@@ -5,18 +5,15 @@ import {
   type PriceChangeStatus,
 } from "../../api/syncClientPrices";
 
-// Адаптивный поллинг: пока есть незавершённые изменения (queued/sending/pending/
-// throttled) — часто (2 с), чтобы галочка ✓ приходила почти сразу; иначе редко (20 с).
-const FAST_INTERVAL_MS = 2 * 1000;
-const IDLE_INTERVAL_MS = 20 * 1000;
-
-const ACTIVE_STATUSES = new Set(["queued", "sending", "pending", "throttled"]);
-
+// Overlay последних выставленных пользователем цен. Без периодического поллинга:
+// постоянный re-render каждые N секунд заставлял виртуализатор переизмерять строки
+// и колонка «дёргалась». Грузим один раз на маунте; в течение сессии обновляем
+// оптимистично (upsert) и после сохранения (refresh).
 export type UsePriceChangeStatusesResult = {
-  /** nmId → последний статус изменения цены (для индикатора-галочки и цены в ячейке). */
+  /** nmId → последняя выставленная цена (overlay для ячейки «Цена»). */
   priceChangeStatuses: Map<number, PriceChangeStatus>;
   refreshPriceChangeStatuses: () => void;
-  /** Оптимистично вставить/обновить статус (мгновенная фиксация цены в таблице). */
+  /** Оптимистично вставить/обновить значение (мгновенная фиксация цены в таблице). */
   upsertPriceChangeStatus: (status: PriceChangeStatus) => void;
 };
 
@@ -25,8 +22,6 @@ export function usePriceChangeStatuses(): UsePriceChangeStatusesResult {
     new Map(),
   );
   const isMountedRef = useRef(true);
-  const statusesRef = useRef(priceChangeStatuses);
-  useEffect(() => { statusesRef.current = priceChangeStatuses; }, [priceChangeStatuses]);
 
   const load = useCallback(() => {
     fetchPriceChangeStatuses()
@@ -50,18 +45,8 @@ export function usePriceChangeStatuses(): UsePriceChangeStatusesResult {
   useEffect(() => {
     isMountedRef.current = true;
     load();
-    let timer: ReturnType<typeof setTimeout>;
-    const tick = () => {
-      load();
-      const hasActive = Array.from(statusesRef.current.values()).some((s) =>
-        ACTIVE_STATUSES.has(s.syncStatus),
-      );
-      timer = setTimeout(tick, hasActive ? FAST_INTERVAL_MS : IDLE_INTERVAL_MS);
-    };
-    timer = setTimeout(tick, IDLE_INTERVAL_MS);
     return () => {
       isMountedRef.current = false;
-      clearTimeout(timer);
     };
   }, [load]);
 

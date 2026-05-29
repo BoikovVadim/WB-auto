@@ -2968,6 +2968,96 @@ input {
   pointer-events: none;
 }
 
+/* Модалка подтверждения изменения цены */
+.wb-price-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wb-price-confirm {
+  width: 360px;
+  max-width: 92vw;
+  background: var(--wb-surface, #fff);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+  padding: 20px;
+}
+.wb-price-confirm-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--wb-text-main);
+}
+.wb-price-confirm-body {
+  margin: 14px 0 18px;
+}
+.wb-price-confirm-product {
+  font-size: 13px;
+  color: var(--wb-text-muted);
+  margin-bottom: 10px;
+  word-break: break-word;
+}
+.wb-price-confirm-prices {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 700;
+}
+.wb-price-confirm-old {
+  color: var(--wb-text-muted);
+  text-decoration: line-through;
+  font-weight: 500;
+  font-size: 16px;
+}
+.wb-price-confirm-arrow {
+  color: var(--wb-text-muted);
+}
+.wb-price-confirm-new {
+  color: var(--wb-text-main);
+}
+.wb-price-confirm-note {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--wb-text-muted);
+}
+.wb-price-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.wb-btn-primary,
+.wb-btn-secondary {
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.wb-btn-primary {
+  background: var(--wb-gold-dark, #b8860b);
+  color: #fff;
+}
+.wb-btn-primary:hover {
+  filter: brightness(1.06);
+}
+.wb-btn-primary:focus-visible {
+  outline: 2px solid var(--wb-gold-dark, #b8860b);
+  outline-offset: 2px;
+}
+.wb-btn-secondary {
+  background: transparent;
+  border-color: var(--wb-border, #e5e7eb);
+  color: var(--wb-text-main);
+}
+.wb-btn-secondary:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
 /* Cost price td — zero vertical padding: height is owned by the child element.
    Must use .wb-data-table td.wb-table-cell--cost (specificity 0,1,2) to beat
    the global .wb-data-table td rule (specificity 0,1,1). */
