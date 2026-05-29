@@ -13,6 +13,13 @@ export const apiClient = axios.create({
 
 export const advertisingApiTimeoutMs = 45_000;
 
+/**
+ * Матричные эндпоинты (товары × даты) тяжелее обычных и на холодную (после деплоя,
+ * пустой кэш PG) могут перешагнуть глобальный лимит 10 c — тогда axios тихо рвал
+ * запрос, а лист ретроспективы оставался немо-пустым. Даём им запас.
+ */
+export const matrixApiTimeoutMs = 30_000;
+
 export const productAdvertisingSheetRequestInFlight = new Map<
   string,
   Promise<ProductAdvertisingSheetResponse>

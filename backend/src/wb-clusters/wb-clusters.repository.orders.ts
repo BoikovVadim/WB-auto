@@ -200,9 +200,14 @@ export abstract class WbClustersRepositoryOrders extends WbClustersRepositoryCha
   /** Returns all order counts (all dates, all products) for the retrospective matrix. */
   async getOrdersMatrix(): Promise<{ nmId: number; orderDate: string; ordersCount: number }[]> {
     const result = await this.getPool().query<{ nm_id: string; order_date: string; orders_count: string }>(
+      // Без ORDER BY намеренно: getOrdersMatrixCompact (service) сам строит набор
+      // дат и сортирует их, ключуя по nmId — порядок строк из SQL не используется.
+      // Прежний `ORDER BY nm_id, order_date DESC` сортировал по ТЕКСТОВЫМ выходным
+      // колонкам (nm_id::text, TO_CHAR(order_date)) — индекс не применялся, PG делал
+      // external-merge sort со спилом на диск (холодные ~7 c на 73k строк). Seq scan
+      // без сортировки — ~50 мс.
       `SELECT nm_id::text, TO_CHAR(order_date, 'YYYY-MM-DD') AS order_date, orders_count::text
-       FROM ${this.tableName("wb_product_daily_orders")}
-       ORDER BY nm_id ASC, order_date DESC`,
+       FROM ${this.tableName("wb_product_daily_orders")}`,
     );
     return result.rows.map((r) => ({
       nmId: Number(r.nm_id),
@@ -289,11 +294,13 @@ export abstract class WbClustersRepositoryOrders extends WbClustersRepositoryCha
       order_date: string;
       orders_sum: string;
     }>(
+      // Без ORDER BY намеренно (см. getOrdersMatrix выше): compact-сборка в сервисе
+      // сама сортирует даты и ключует по nmId. Текстовый ORDER BY давал external-merge
+      // sort со спилом на диск — холодные ~7 c (и наследовалось в revenue-matrix).
       `SELECT nm_id::text,
               TO_CHAR(order_date, 'YYYY-MM-DD') AS order_date,
               orders_sum::text
-       FROM ${this.tableName("wb_product_daily_orders")}
-       ORDER BY nm_id ASC, order_date DESC`,
+       FROM ${this.tableName("wb_product_daily_orders")}`,
     );
     return result.rows.map((r) => ({
       nmId: Number(r.nm_id),

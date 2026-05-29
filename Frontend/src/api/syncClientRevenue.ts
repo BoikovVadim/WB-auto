@@ -1,4 +1,4 @@
-import { apiClient } from "./syncClientHttp";
+import { apiClient, matrixApiTimeoutMs } from "./syncClientHttp";
 
 /**
  * Потенциальная выручка за сегодня по товарам. Считается на бэкенде как
@@ -29,6 +29,7 @@ export type RevenueMatrixCompact = {
 export async function fetchRevenueMatrixCompact(): Promise<RevenueMatrixCompact> {
   const response = await apiClient.get<RevenueMatrixCompact>(
     "/wb-clusters/products/revenue-matrix-compact",
+    { timeout: matrixApiTimeoutMs },
   );
   return response.data ?? { dates: [], products: [] };
 }

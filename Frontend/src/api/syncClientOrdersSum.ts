@@ -1,4 +1,4 @@
-import { apiClient } from "./syncClientHttp";
+import { apiClient, matrixApiTimeoutMs } from "./syncClientHttp";
 
 export type TodayOrdersSum = {
   nmId: number;
@@ -24,6 +24,7 @@ export type OrdersSumMatrixCompact = {
 export async function fetchOrdersSumMatrixCompact(): Promise<OrdersSumMatrixCompact> {
   const response = await apiClient.get<OrdersSumMatrixCompact>(
     "/wb-clusters/products/orders-sum-matrix-compact",
+    { timeout: matrixApiTimeoutMs },
   );
   return response.data ?? { dates: [], products: [] };
 }

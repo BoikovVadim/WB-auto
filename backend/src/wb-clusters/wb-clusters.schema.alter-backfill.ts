@@ -402,6 +402,15 @@ export function getProductDailyOrdersCreateStatements({
       CREATE INDEX IF NOT EXISTS wb_product_daily_orders_date_idx
         ON ${tableName("wb_product_daily_orders")} (order_date DESC)
     `,
+    // Покрывающий индекс под матричные выборки (nm_id × order_date): позволяет
+    // index-only scan без обращения к heap для getOrdersMatrix / getOrdersSumMatrix /
+    // getBuyoutMatrix. INCLUDE держит все читаемые матрицами поля. Дешёвая страховка
+    // на рост истории (таблица растёт ~447 товаров/день).
+    `
+      CREATE INDEX IF NOT EXISTS wb_product_daily_orders_nm_date_desc_idx
+        ON ${tableName("wb_product_daily_orders")} (nm_id ASC, order_date DESC)
+        INCLUDE (orders_count, orders_sum, buyouts_count)
+    `,
   ];
 }
 

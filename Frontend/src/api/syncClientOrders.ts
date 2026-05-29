@@ -1,4 +1,4 @@
-import { apiClient } from "./syncClientHttp";
+import { apiClient, matrixApiTimeoutMs } from "./syncClientHttp";
 
 export type TodayOrderCount = {
   nmId: number;
@@ -26,6 +26,7 @@ export type OrdersMatrixCompact = {
 export async function fetchOrdersMatrixCompact(): Promise<OrdersMatrixCompact> {
   const response = await apiClient.get<OrdersMatrixCompact>(
     "/wb-clusters/products/orders-matrix-compact",
+    { timeout: matrixApiTimeoutMs },
   );
   return response.data ?? { dates: [], products: [] };
 }

@@ -1,4 +1,4 @@
-import { apiClient } from "./syncClientHttp";
+import { apiClient, matrixApiTimeoutMs } from "./syncClientHttp";
 
 /**
  * «С/с продаж» за сегодня по товарам — себестоимость выкупленных заказов.
@@ -30,6 +30,7 @@ export type CostSumMatrixCompact = {
 export async function fetchCostSumMatrixCompact(): Promise<CostSumMatrixCompact> {
   const response = await apiClient.get<CostSumMatrixCompact>(
     "/wb-clusters/products/cost-sum-matrix-compact",
+    { timeout: matrixApiTimeoutMs },
   );
   return response.data ?? { dates: [], products: [] };
 }

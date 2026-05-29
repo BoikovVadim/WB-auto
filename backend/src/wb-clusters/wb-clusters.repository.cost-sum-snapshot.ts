@@ -98,11 +98,12 @@ export abstract class WbClustersRepositoryCostSumSnapshot extends WbClustersRepo
       snapshot_date: string;
       cost_sum: string | null;
     }>(
+      // Без ORDER BY: даты сортируются ниже в JS, строки ключуются по nmId — порядок
+      // из SQL не нужен (и текстовый ORDER BY заставлял бы PG сортировать на диске).
       `SELECT nm_id::text,
               TO_CHAR(snapshot_date, 'YYYY-MM-DD') AS snapshot_date,
               cost_sum::text
-       FROM ${costSumTbl}
-       ORDER BY snapshot_date DESC, nm_id ASC`,
+       FROM ${costSumTbl}`,
     );
     if (result.rows.length === 0) return { dates: [], products: [] };
 
