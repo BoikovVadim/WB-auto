@@ -256,9 +256,13 @@ const PriceInputCell = memo(function PriceInputCell({
     const target = Number(t);
     if (t === "" || !Number.isFinite(target) || target <= 0) return null;
     if (!(discount >= 0 && discount < 100)) return null;
+    // База — целое (WB не принимает копейки), подбираем ближайшую под целевой итог.
     const base = Math.round(target / (1 - discount / 100));
     const actual = Math.round(base * (1 - discount / 100) * 100) / 100;
-    return { base, actual };
+    // На витрине WB цена в целых рублях. При скидке > 0 ошибка округления < 0,5 ₽,
+    // поэтому витринная цена совпадает с введённой ровно.
+    const shelf = Math.round(actual);
+    return { base, actual, shelf };
   })();
 
   const commit = useCallback(async () => {
@@ -312,9 +316,9 @@ const PriceInputCell = memo(function PriceInputCell({
               borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "#334155",
               boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
             }}
-            title="Уйдёт на маркетплейс WB: базовая цена → фактический итог со скидкой"
+            title={`Базовая цена WB — целое число (копейки нельзя). Точный расчётный итог ${formatMoney(preview.actual)}; на витрине WB цена в целых рублях, поэтому покупатель видит ровно ${String(preview.shelf)} ₽.`}
           >
-            → база {String(preview.base)} ₽ · итог {formatMoney(preview.actual)}
+            → база {String(preview.base)} ₽ · на витрине {String(preview.shelf)} ₽
           </span>
         )}
       </span>
