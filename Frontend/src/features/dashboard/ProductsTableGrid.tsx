@@ -30,6 +30,10 @@ import { useFrozenPaneSync } from "./useFrozenPaneSync";
 import type { ProductListItem } from "./useDashboardProductsWorkspace";
 
 const CATALOG_PRODUCTS_SCROLL_KEY = "catalog-products-list";
+// Горизонтальная позиция (scrollLeft) — отдельный ключ того же персист-модуля. Нужна,
+// чтобы возврат с детального листа не кидал таблицу влево (колонки маржи/калькуляторов
+// в «Юнит Экономике» далеко справа — клик по их заголовку требует прокрутки вправо).
+const CATALOG_PRODUCTS_SCROLL_X_KEY = "catalog-products-list:x";
 
 // Левые колонки, закрепляемые слева (ведущий непрерывный префикс из этого набора).
 const PINNED_COLUMN_KEYS: readonly ProductsColumnKey[] = ["index", "nmId", "vendorCode"];
@@ -195,20 +199,26 @@ export function ProductsTableGrid(props: ProductsTableGridProps) {
   const handleScroll = useCallback(() => {
     syncMirrors();
     const el = bodyRef.current;
-    if (el) saveScrollPosition(CATALOG_PRODUCTS_SCROLL_KEY, el.scrollTop);
+    if (el) {
+      saveScrollPosition(CATALOG_PRODUCTS_SCROLL_KEY, el.scrollTop);
+      saveScrollPosition(CATALOG_PRODUCTS_SCROLL_X_KEY, el.scrollLeft);
+    }
   }, [syncMirrors, bodyRef]);
 
-  // Восстановление позиции скролла один раз, когда товары уже есть (иначе scrollTop
-  // выставится до появления строк и схлопнется в 0).
+  // Восстановление позиции скролла (верт. + гориз.) один раз, когда товары уже есть
+  // (иначе scrollTop/Left выставится до появления строк и схлопнется в 0). Возврат с
+  // детального листа ремаунтит грид → restoredRef сбрасывается → позиция возвращается.
   const restoredRef = useRef(false);
   useLayoutEffect(() => {
     if (restoredRef.current) return;
     const el = bodyRef.current;
     if (!el || products.length === 0) return;
     restoredRef.current = true;
-    const target = loadScrollPosition(CATALOG_PRODUCTS_SCROLL_KEY);
-    if (target > 0) {
-      el.scrollTop = target;
+    const top = loadScrollPosition(CATALOG_PRODUCTS_SCROLL_KEY);
+    const left = loadScrollPosition(CATALOG_PRODUCTS_SCROLL_X_KEY);
+    if (top > 0 || left > 0) {
+      el.scrollTop = top;
+      el.scrollLeft = left;
       syncMirrors();
     }
   }, [products.length, syncMirrors, bodyRef]);
