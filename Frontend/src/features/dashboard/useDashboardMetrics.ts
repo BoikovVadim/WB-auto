@@ -25,8 +25,12 @@ import { usePriceChangeStatuses } from "./usePriceChangeStatuses";
  * остатки, цены, суммы заказов, выручка, себестоимость продаж, расход рекламы, СПП),
  * их ретро-матрицы и хелперы записи (себестоимость, цена на WB).
  *
- * Тяжёлые ретро-матрицы грузятся ЛЕНИВО — только когда открыт соответствующий лист
- * (флаги передаются из useDashboardSheets), а не на маунте дашборда.
+ * Ретро-матрицы грузятся в фоне, пока пользователь в разделе товаров (Товары/Юнит
+ * Экономика) — `inProductsWorkspace`. Раньше фетч стартовал только при открытии листа,
+ * и первое за день открытие ждало 1.5–8 с (orders-matrix ≈605 КБ). Теперь к моменту
+ * клика данные уже в стейте/кэше → лист открывается мгновенно. На самом дашборде (вне
+ * раздела товаров) матрицы по-прежнему НЕ грузятся. Освежение — интервал 30 мин,
+ * пауза на скрытой вкладке; история меняется раз в сутки, поэтому staleness не важен.
  */
 export function useDashboardMetrics(input: {
   isOrdersSheetOpen: boolean;
@@ -35,24 +39,33 @@ export function useDashboardMetrics(input: {
   isCostSumSheetOpen: boolean;
   isAdSpendSheetOpen: boolean;
   isSppSheetOpen: boolean;
+  /** Активен раздел товаров (Товары/Юнит Экономика) — префетч матриц, видимых в обоих. */
+  inProductsWorkspace: boolean;
+  /** Активна именно секция «Товары» — там видны заказы/суммы/выручка/с-с/реклама
+   *  (в «Юнит Экономике» эти колонки скрыты, их листы не открыть → не префетчим). */
+  inCatalogProducts: boolean;
 }) {
+  // Лист открыт ИЛИ метрика доступна в текущей секции → грузим матрицу (фоновый префетч).
+  // catalog-only метрики (orders-семейство) префетчим только в «Товарах»; spp — в обеих.
+  const ws = input.inProductsWorkspace;
+  const cat = input.inCatalogProducts;
   const { costPrices, isCostPricesLoading, prefetchCostPrices, handleCostSaved, handleCostCleared } =
     useCostPrices();
   const { orderCounts } = useOrders();
-  const { ordersMatrix } = useOrdersMatrix(input.isOrdersSheetOpen);
+  const { ordersMatrix } = useOrdersMatrix(input.isOrdersSheetOpen || cat);
   const { buyoutCounts, rollingBuyoutCounts } = useBuyouts();
   const { stockCounts } = useCurrentStocks();
   const { priceCounts } = useCurrentPrices();
   const { ordersSumValues } = useOrdersSum();
-  const { ordersSumMatrix } = useOrdersSumMatrix(input.isOrdersSumSheetOpen);
+  const { ordersSumMatrix } = useOrdersSumMatrix(input.isOrdersSumSheetOpen || cat);
   const { revenueValues } = useRevenue();
-  const { revenueMatrix } = useRevenueMatrix(input.isRevenueSheetOpen);
+  const { revenueMatrix } = useRevenueMatrix(input.isRevenueSheetOpen || cat);
   const { costSumValues } = useCostSum();
-  const { costSumMatrix } = useCostSumMatrix(input.isCostSumSheetOpen);
+  const { costSumMatrix } = useCostSumMatrix(input.isCostSumSheetOpen || cat);
   const { adSpendValues } = useAdSpend();
-  const { adSpendMatrix } = useAdSpendMatrix(input.isAdSpendSheetOpen);
+  const { adSpendMatrix } = useAdSpendMatrix(input.isAdSpendSheetOpen || cat);
   const { sppValues } = useSpp();
-  const { sppMatrix } = useSppMatrix(input.isSppSheetOpen);
+  const { sppMatrix } = useSppMatrix(input.isSppSheetOpen || ws);
   const {
     taxValues,
     commissionValues,

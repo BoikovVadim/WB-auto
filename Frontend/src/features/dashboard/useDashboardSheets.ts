@@ -40,6 +40,9 @@ export function useDashboardSheets(input: {
   return {
     activeSheet,
     setActiveSheet,
+    // Раздел товаров активен (Товары/Юнит Экономика) — используется для фонового
+    // префетча ретро-матриц, чтобы лист открывался мгновенно (см. useDashboardMetrics).
+    inProductsWorkspace,
     isCostPriceSheetOpen: inProductsWorkspace && activeSheet === "cost-price",
     isOrdersSheetOpen: inProductsWorkspace && activeSheet === "orders",
     isBuyoutSheetOpen: inProductsWorkspace && activeSheet === "buyout",

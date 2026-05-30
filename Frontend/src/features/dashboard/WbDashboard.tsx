@@ -123,6 +123,7 @@ export function WbDashboard() {
     isAcquiringSheetOpen,
     isMarginRubSheetOpen,
     isMarginPercentSheetOpen,
+    inProductsWorkspace,
     openSheet,
     closeSheet,
   } = useDashboardSheets({
@@ -171,6 +172,8 @@ export function WbDashboard() {
     isCostSumSheetOpen,
     isAdSpendSheetOpen,
     isSppSheetOpen,
+    inProductsWorkspace,
+    inCatalogProducts: activeSection === "catalog-products",
   });
   const invalidateProductAdvertisingDetail = useCallback(
     (target: ProductAdvertisingDetailInvalidationTarget = "all") => {
