@@ -182,27 +182,37 @@ export class WbClustersScheduler implements OnModuleInit {
   private sppTodaySyncRunning = false;
 
   /**
-   * Освежаем СПП (среднюю скидку постоянного покупателя) за СЕГОДНЯ каждый час
-   * (в начале каждого часа по МСК). spp есть только в Statistics API (лимит ~1 req/min,
-   * а запрос на день один), поэтому считать на лету на каждый рендер нельзя — крон
-   * пишет в wb_product_spp_daily, фронт читает готовые строки. Гард sppTodaySyncRunning
-   * страхует от наложения с долгой ночной финализацией / бэкфиллом.
+   * Запускает СПП-синк под общим мьютексом sppTodaySyncRunning: today-sync и ночная
+   * финализация вчера не должны идти параллельно (оба читают Statistics API с лимитом
+   * 1 req/min). Если предыдущий прогон ещё идёт — тик пропускается и логируется под
+   * своим label. Снимает копипасту wbOrdersSyncEnabled + guard + try/catch/finally.
    */
-  @Cron("0 0 * * * *")
-  async handleSppTodaySync() {
+  private async runSppGuarded(label: string, fn: () => Promise<void>): Promise<void> {
     if (!appEnv.wbOrdersSyncEnabled) return;
     if (this.sppTodaySyncRunning) {
-      this.logger.warn("SPP today sync: предыдущий прогон ещё идёт, пропускаю тик.");
+      this.logger.warn(`${label}: предыдущий прогон ещё идёт, пропускаю тик.`);
       return;
     }
     this.sppTodaySyncRunning = true;
     try {
-      await this.wbClustersService.syncSppToday();
+      await fn();
     } catch (err) {
-      this.logger.warn(`SPP today sync error: ${(err as Error).message}`);
+      this.logger.warn(`${label} error: ${(err as Error).message}`);
     } finally {
       this.sppTodaySyncRunning = false;
     }
+  }
+
+  /**
+   * Освежаем СПП (среднюю скидку постоянного покупателя) за СЕГОДНЯ каждый час
+   * (в начале каждого часа по МСК). spp есть только в Statistics API (лимит ~1 req/min,
+   * а запрос на день один), поэтому считать на лету на каждый рендер нельзя — крон
+   * пишет в wb_product_spp_daily, фронт читает готовые строки. Наложение с ночной
+   * финализацией / бэкфиллом страхует общий мьютекс в runSppGuarded.
+   */
+  @Cron("0 0 * * * *")
+  async handleSppTodaySync() {
+    await this.runSppGuarded("SPP today sync", () => this.wbClustersService.syncSppToday());
   }
 
   /**
@@ -212,19 +222,7 @@ export class WbClustersScheduler implements OnModuleInit {
    */
   @Cron("0 55 0 * * *")
   async handleSppFinalizeYesterday() {
-    if (!appEnv.wbOrdersSyncEnabled) return;
-    if (this.sppTodaySyncRunning) {
-      this.logger.warn("SPP finalize: today-sync ещё идёт, пропускаю тик.");
-      return;
-    }
-    this.sppTodaySyncRunning = true;
-    try {
-      await this.wbClustersService.syncSppYesterday();
-    } catch (err) {
-      this.logger.warn(`SPP finalize error: ${(err as Error).message}`);
-    } finally {
-      this.sppTodaySyncRunning = false;
-    }
+    await this.runSppGuarded("SPP finalize", () => this.wbClustersService.syncSppYesterday());
   }
 
   private ordersTodaySyncRunning = false;
