@@ -46,16 +46,17 @@ export type ProductsBodyRenderCtx = {
 
 const dash = <span style={{ opacity: 0.3 }}>—</span>;
 
-// Ячейка, которую оборачивает withPin (ему нужны className/style в props).
-type PinnableCell = ReactElement<{ className?: string; style?: CSSProperties }>;
+// Ячейка grid-таблицы: <div> с className/style (grid дорисовывает абсолютное
+// позиционирование клоном — см. ProductsTableGrid).
+export type GridCell = ReactElement<{ className?: string; style?: CSSProperties }>;
 
 /** Числовая ₽-ячейка: formatMoney при наличии значения, иначе тусклый «—». */
-function moneyCell(key: string, value: number | undefined, positiveOnly: boolean): PinnableCell {
+function moneyCell(key: string, value: number | undefined, positiveOnly: boolean): GridCell {
   const show = value !== undefined && (!positiveOnly || value > 0);
   return (
-    <td key={key} className="wb-table-cell--numeric">
+    <div key={key} className="wb-pg-cell wb-pg-cell--num">
       {show ? formatMoney(value) : dash}
-    </td>
+    </div>
   );
 }
 
@@ -65,7 +66,7 @@ export function renderProductsBodyCell(
   product: ProductListItem,
   index: number,
   ctx: ProductsBodyRenderCtx,
-): PinnableCell | undefined {
+): GridCell | undefined {
   const key = col.key;
   const nmId = product.nmId;
   const isSelected = nmId !== null && ctx.selectedNmIds.has(nmId);
@@ -73,29 +74,34 @@ export function renderProductsBodyCell(
 
   switch (key) {
     case "index":
-      return <td key={key} className="wb-table-cell--numeric">{String(index + 1)}</td>;
+      return <div key={key} className="wb-pg-cell wb-pg-cell--num">{String(index + 1)}</div>;
     case "nmId":
-      return <td key={key} className="wb-table-cell--numeric">{nmId === null ? "—" : String(nmId)}</td>;
+      return <div key={key} className="wb-pg-cell wb-pg-cell--num">{nmId === null ? "—" : String(nmId)}</div>;
     case "vendorCode":
       return (
-        <td key={key}>
-          <span
-            title={getDisplayVendorCode(product)}
-            style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-          >
+        <div key={key} className="wb-pg-cell">
+          <span className="wb-pg-ellipsis" title={getDisplayVendorCode(product)}>
             {getDisplayVendorCode(product)}
           </span>
-        </td>
+        </div>
       );
     case "category":
-      return <td key={key}>{product.categoryName ?? "—"}</td>;
+      return (
+        <div key={key} className="wb-pg-cell">
+          <span className="wb-pg-ellipsis">{product.categoryName ?? "—"}</span>
+        </div>
+      );
     case "subject":
-      return <td key={key}>{product.subjectName ?? "—"}</td>;
+      return (
+        <div key={key} className="wb-pg-cell">
+          <span className="wb-pg-ellipsis">{product.subjectName ?? "—"}</span>
+        </div>
+      );
     case "cost":
       return (
-        <td
+        <div
           key={key}
-          className={`wb-table-cell--cost${isSelected ? " wb-table-cell--cost-selected" : ""}`}
+          className={`wb-pg-cell wb-pg-cell--num wb-pg-cell--cost${isSelected ? " wb-pg-cell--cost-selected" : ""}`}
           onClick={nmId !== null ? (e) => ctx.onCellClick(nmId, index, e) : undefined}
           onDoubleClick={nmId !== null ? () => ctx.onCellDoubleClick(nmId, index) : undefined}
         >
@@ -110,11 +116,11 @@ export function renderProductsBodyCell(
               onStartEdit={ctx.onStartEdit}
             />
           ) : "—"}
-        </td>
+        </div>
       );
     case "price":
       return (
-        <td key={key} className="wb-table-cell--numeric wb-table-cell--cost">
+        <div key={key} className="wb-pg-cell wb-pg-cell--num wb-pg-cell--cost">
           {nmId !== null ? (
             <PriceInputCell
               nmId={nmId}
@@ -126,7 +132,7 @@ export function renderProductsBodyCell(
               onRequestConfirm={ctx.onRequestPriceConfirm}
             />
           ) : dash}
-        </td>
+        </div>
       );
     case "commission":
       return moneyCell(key, nmId !== null ? ctx.commissionValues.get(nmId) : undefined, false);
@@ -140,18 +146,18 @@ export function renderProductsBodyCell(
       // и ручную подстановку было видно глазом.
       const pct = nmId !== null ? ctx.acquiringPercentValues.get(nmId) : undefined;
       if (pct === undefined) {
-        return <td key={key} className="wb-table-cell--numeric">{dash}</td>;
+        return <div key={key} className="wb-pg-cell wb-pg-cell--num">{dash}</div>;
       }
       const isFactual = nmId !== null && ctx.acquiringFactualSet.has(nmId);
       return (
-        <td
+        <div
           key={key}
-          className="wb-table-cell--numeric"
+          className="wb-pg-cell wb-pg-cell--num"
           title={isFactual ? "Факт за последнюю закрытую неделю" : "Ручной % — продаж за неделю не было"}
           style={isFactual ? undefined : { opacity: 0.5 }}
         >
           {formatPercent(pct)}
-        </td>
+        </div>
       );
     }
     case "drr":
@@ -162,17 +168,17 @@ export function renderProductsBodyCell(
     case "marginPercent": {
       const margin = nmId !== null ? ctx.marginPercentValues.get(nmId) : undefined;
       return (
-        <td key={key} className="wb-table-cell--numeric">
+        <div key={key} className="wb-pg-cell wb-pg-cell--num">
           {margin !== undefined ? formatPercent(margin) : dash}
-        </td>
+        </div>
       );
     }
     case "orders": {
       const orders = nmId !== null ? ctx.orderCounts.get(nmId) : undefined;
       return (
-        <td key={key} className="wb-table-cell--numeric wb-table-cell--orders">
+        <div key={key} className="wb-pg-cell wb-pg-cell--num">
           {orders && orders.ordersCount > 0 ? String(orders.ordersCount) : "—"}
-        </td>
+        </div>
       );
     }
     case "buyout": {
@@ -181,23 +187,23 @@ export function renderProductsBodyCell(
       const hasData = !!buyout && buyout.ordersCount > 0 && buyout.buyoutsCount > 0;
       const percent = hasData ? (buyout.buyoutsCount / buyout.ordersCount) * 100 : null;
       return (
-        <td key={key} className="wb-table-cell--numeric">
+        <div key={key} className="wb-pg-cell wb-pg-cell--num">
           {percent !== null ? formatPercent(percent) : dash}
-        </td>
+        </div>
       );
     }
     case "spp": {
       // spp=0 — валидное значение (нет скидки); «—» только при отсутствии данных.
       const spp = nmId !== null ? ctx.sppValues.get(nmId) : undefined;
       return (
-        <td key={key} className="wb-table-cell--numeric">
+        <div key={key} className="wb-pg-cell wb-pg-cell--num">
           {spp !== undefined ? formatPercent(spp) : dash}
-        </td>
+        </div>
       );
     }
     case "stock": {
       const stock = nmId !== null ? ctx.stockCounts.get(nmId) : undefined;
-      return <td key={key} className="wb-table-cell--numeric">{stock !== undefined ? String(stock) : "—"}</td>;
+      return <div key={key} className="wb-pg-cell wb-pg-cell--num">{stock !== undefined ? String(stock) : "—"}</div>;
     }
     case "ordersSum":
       return moneyCell(key, nmId !== null ? ctx.ordersSumValues.get(nmId) : undefined, true);

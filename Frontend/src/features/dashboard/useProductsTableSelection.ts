@@ -5,8 +5,8 @@ import type { ProductListItem } from "./useDashboardProductsWorkspace";
 type Input = {
   /** Текущий отображаемый (отсортированный) список — нужен для Shift-диапазона. */
   displayProducts: ProductListItem[];
-  /** Ref на <table> — клик вне неё сбрасывает выделение/правку. */
-  tableRef: RefObject<HTMLTableElement | null>;
+  /** Ref на контейнер таблицы — клик вне него сбрасывает выделение/правку. */
+  tableRef: RefObject<HTMLElement | null>;
   onCostCleared: (nmIds: number[]) => Promise<void>;
   onPriceSaved: (nmId: number, targetFinal: number) => Promise<void>;
 };

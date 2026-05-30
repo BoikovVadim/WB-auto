@@ -1,5 +1,4 @@
-import { cloneElement, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { CostPriceCurrent } from "../../api/syncClientCostPrice";
 import type { TodayOrderCount } from "../../api/syncClientOrders";
@@ -7,37 +6,20 @@ import type { TodayBuyoutCount } from "../../api/syncClientBuyouts";
 import type { CurrentPriceEntry } from "./useCurrentPrices";
 import type { PriceChangeStatus } from "../../api/syncClientPrices";
 import { ui } from "./copy";
-import {
-  loadScrollPosition,
-  saveScrollPosition,
-} from "./persistence/scrollPositionPersistence";
-import type { ProductColumnDefinition, ProductsColumnKey } from "./productsTableColumns";
+import type { ProductsColumnKey } from "./productsTableColumns";
 import { useProductsColumnOrderState } from "./useProductsColumnOrderState";
-import { useProductsColumnResize } from "./useProductsColumnResize";
 import type { ProductListItem, ProductListSortKey } from "./useDashboardProductsWorkspace";
 import { PriceConfirmModal } from "./ProductsTableCells";
-import { getColWidth, getDisplayVendorCode } from "./productsTableHelpers";
+import { getDisplayVendorCode } from "./productsTableHelpers";
 import { sortProductsByLocalKey, type LocalSortKey } from "./productsTableSort";
 import { useProductsTableSelection } from "./useProductsTableSelection";
 import { useProductsTableTotals } from "./useProductsTableTotals";
-import {
-  renderProductsHeaderCell,
-  renderProductsTotalsCell,
-  type ProductsHeaderRenderCtx,
-} from "./ProductsTableHeadCells";
-import { ProductsTableRow } from "./ProductsTableRow";
+import type { ProductsHeaderRenderCtx } from "./ProductsTableHeadCells";
+import { ProductsTableGrid } from "./ProductsTableGrid";
 import { useProductsBodyCtx } from "./useProductsBodyCtx";
 
 export type { CostPriceCurrent };
 export type { CurrentPriceEntry };
-
-const CATALOG_PRODUCTS_SCROLL_KEY = "catalog-products-list";
-
-// Левые колонки, закреплённые при горизонтальном скролле (как №/ID/Название в
-// ретроспективах). Закрепляем только ведущий непрерывный префикс из этого набора —
-// если пользователь перетащит между ними обычную колонку, закрепление аккуратно
-// прекратится, без визуальных нахлёстов.
-const PINNED_COLUMN_KEYS: readonly ProductsColumnKey[] = ["index", "nmId", "vendorCode"];
 
 type DashboardCatalogProductsSectionProps = {
   productCatalogCount: number;
@@ -101,8 +83,8 @@ type DashboardCatalogProductsSectionProps = {
 
 export const DashboardCatalogProductsSection = memo(
   function DashboardCatalogProductsSection(props: DashboardCatalogProductsSectionProps) {
-    const tableWrapRef = useRef<HTMLDivElement | null>(null);
-    const tableRef = useRef<HTMLTableElement | null>(null);
+    // Ref на контейнер grid — нужен селекту строк (клик-вне/Ctrl+C/Esc).
+    const containerRef = useRef<HTMLDivElement | null>(null);
 
     // ── Column ordering (drag-and-drop) ────────────────────────────────────────
     const { draggedColumn, orderedColumns: allOrderedColumns, setDraggedColumn, handleDrop } =
@@ -141,13 +123,15 @@ export const DashboardCatalogProductsSection = memo(
       });
     }, []);
 
+    const { onProductsSortToggle } = props;
     const handleParentSortToggle = useCallback(
       (key: ProductListSortKey) => {
         setLocalSortKey(null);
-        props.onProductsSortToggle(key);
+        onProductsSortToggle(key);
       },
-      [props],
+      [onProductsSortToggle],
     );
+    const handleDragEnd = useCallback(() => setDraggedColumn(null), [setDraggedColumn]);
 
     // Products sorted by local sort (if active), otherwise parent-sorted list (см. productsTableSort).
     const displayProducts = useMemo(
@@ -178,7 +162,7 @@ export const DashboardCatalogProductsSection = memo(
     // Объект целиком передаём в useProductsBodyCtx; отдельные поля нужны только модалке цены.
     const selection = useProductsTableSelection({
       displayProducts,
-      tableRef,
+      tableRef: containerRef,
       onCostCleared: props.onCostCleared,
       onPriceSaved: props.onPriceSaved,
     });
@@ -207,84 +191,6 @@ export const DashboardCatalogProductsSection = memo(
       }
     }, [widestVendorCode]);
 
-    const totalW = useMemo(
-      () => orderedColumns.reduce((sum, col) => sum + getColWidth(col, nameColWidth), 0),
-      [orderedColumns, nameColWidth],
-    );
-
-    // ── Закрепление левых колонок (sticky) ───────────────────────────────────────
-    // Считаем left-офсет для каждой закреплённой колонки из ведущего префикса
-    // PINNED_COLUMN_KEYS; lastPinnedKey — для разделительной тени справа.
-    const { pinnedLeftByKey, lastPinnedKey } = useMemo(() => {
-      const map = new Map<ProductsColumnKey, number>();
-      let left = 0;
-      let last: ProductsColumnKey | null = null;
-      for (const col of orderedColumns) {
-        if (!PINNED_COLUMN_KEYS.includes(col.key)) break;
-        map.set(col.key, left);
-        left += getColWidth(col, nameColWidth);
-        last = col.key;
-      }
-      return { pinnedLeftByKey: map, lastPinnedKey: last };
-    }, [orderedColumns, nameColWidth]);
-
-    // Применяет sticky-класс + left-офсет к уже отрендеренной ячейке колонки (th/td),
-    // не трогая switch'и рендереров. Фоны закреплённых ячеек задаёт класс
-    // .wb-table-cell--sticky-left (header/totals/body — каждый со своим фоном).
-    const withPin = useCallback(
-      (
-        col: ProductColumnDefinition,
-        el: ReactElement<{ className?: string; style?: React.CSSProperties }> | undefined,
-      ) => {
-        if (!el) return el;
-        const left = pinnedLeftByKey.get(col.key);
-        if (left === undefined) return el;
-        const className = [
-          el.props.className,
-          "wb-table-cell--sticky-left",
-          col.key === lastPinnedKey ? "wb-table-cell--sticky-left-last" : "",
-        ]
-          .filter(Boolean)
-          .join(" ");
-        return cloneElement(el, { className, style: { ...el.props.style, left } });
-      },
-      [pinnedLeftByKey, lastPinnedKey],
-    );
-
-    // Ресайз колонок мышью (тянуть правый край заголовка) — см. useProductsColumnResize.
-    const handleResizeMouseDown = useProductsColumnResize(tableRef);
-
-    useLayoutEffect(() => {
-      const el = tableWrapRef.current;
-      if (!el) return;
-      const target = loadScrollPosition(CATALOG_PRODUCTS_SCROLL_KEY);
-      if (target > 0) el.scrollTop = target;
-    }, [props.hasCatalogItems]);
-
-    // ── Виртуализация строк ──────────────────────────────────────────────────────
-    // Рендерим только видимые строки (тот же приём, что в ретроспективах), НЕ трогая
-    // разметку ячеек, редактирование себестоимости, drag-reorder, выделение и
-    // сортировки — поэтому регрессий нет, а скролл/сортировка/поиск становятся
-    // мгновенными при сотнях товаров. Высоту строк измеряем динамически
-    // (measureElement), чтобы скролл не «уплывал».
-    const rowVirtualizer = useVirtualizer({
-      count: displayProducts.length,
-      getScrollElement: () => tableWrapRef.current,
-      estimateSize: () => 26,
-      // Больший буфер сверху/снизу окна: быстрый скролл (флинг) не выбегает за
-      // отрисованную зону, поэтому строки не «пропадают» на ведущем крае.
-      overscan: 20,
-    });
-    const virtualRows = rowVirtualizer.getVirtualItems();
-    const virtualTotalSize = rowVirtualizer.getTotalSize();
-    const padTop = virtualRows.length > 0 ? (virtualRows[0]?.start ?? 0) : 0;
-    const padBottom =
-      virtualRows.length > 0
-        ? virtualTotalSize - (virtualRows[virtualRows.length - 1]?.end ?? 0)
-        : 0;
-
-    const { productsSortKey: sortKey, productsSortDirection: sortDir } = props;
-
     const totals = useProductsTableTotals({
       filteredProducts: props.filteredProducts,
       orderCounts: props.orderCounts,
@@ -303,36 +209,60 @@ export const DashboardCatalogProductsSection = memo(
       sppValues: props.sppValues,
     });
 
-    // ── Контекст для вынесенных рендереров шапки/тела ───────────────────────────
-    const headerCtx: ProductsHeaderRenderCtx = {
-      localSortKey,
-      localSortDir,
-      parentSortKey: sortKey,
-      parentSortDir: sortDir,
-      draggedColumn,
-      onParentSort: handleParentSortToggle,
-      onLocalSort: handleLocalSortToggle,
-      onDragStart: setDraggedColumn,
-      onDragEnd: () => setDraggedColumn(null),
-      onDrop: handleDrop,
-      onResizeMouseDown: handleResizeMouseDown,
-      sheets: {
-        cost: props.onOpenCostPriceSheet,
-        price: props.onOpenPricesSheet,
-        orders: props.onOpenOrdersSheet,
-        buyout: props.onOpenBuyoutSheet,
-        spp: props.onOpenSppSheet,
-        stock: props.onOpenStocksSheet,
-        ordersSum: props.onOpenOrdersSumSheet,
-        revenue: props.onOpenRevenueSheet,
-        costSum: props.onOpenCostSumSheet,
-        adSpend: props.onOpenAdSpendSheet,
-        acquiring: props.onOpenAcquiringSheet,
-      },
-    };
+    // ── Контекст шапки (стабилен при скролле → шапка grid не переотрисовывается).
+    // onResizeMouseDown инжектит сам grid (он владеет ширинами колонок). ──────────
+    const headerCtx = useMemo<Omit<ProductsHeaderRenderCtx, "onResizeMouseDown">>(
+      () => ({
+        localSortKey,
+        localSortDir,
+        parentSortKey: props.productsSortKey,
+        parentSortDir: props.productsSortDirection,
+        draggedColumn,
+        onParentSort: handleParentSortToggle,
+        onLocalSort: handleLocalSortToggle,
+        onDragStart: setDraggedColumn,
+        onDragEnd: handleDragEnd,
+        onDrop: handleDrop,
+        sheets: {
+          cost: props.onOpenCostPriceSheet,
+          price: props.onOpenPricesSheet,
+          orders: props.onOpenOrdersSheet,
+          buyout: props.onOpenBuyoutSheet,
+          spp: props.onOpenSppSheet,
+          stock: props.onOpenStocksSheet,
+          ordersSum: props.onOpenOrdersSumSheet,
+          revenue: props.onOpenRevenueSheet,
+          costSum: props.onOpenCostSumSheet,
+          adSpend: props.onOpenAdSpendSheet,
+          acquiring: props.onOpenAcquiringSheet,
+        },
+      }),
+      [
+        localSortKey,
+        localSortDir,
+        props.productsSortKey,
+        props.productsSortDirection,
+        draggedColumn,
+        handleParentSortToggle,
+        handleLocalSortToggle,
+        setDraggedColumn,
+        handleDragEnd,
+        handleDrop,
+        props.onOpenCostPriceSheet,
+        props.onOpenPricesSheet,
+        props.onOpenOrdersSheet,
+        props.onOpenBuyoutSheet,
+        props.onOpenSppSheet,
+        props.onOpenStocksSheet,
+        props.onOpenOrdersSumSheet,
+        props.onOpenRevenueSheet,
+        props.onOpenCostSumSheet,
+        props.onOpenAdSpendSheet,
+        props.onOpenAcquiringSheet,
+      ],
+    );
 
-    // Стабильный (memo) контекст рендера ячеек — см. useProductsBodyCtx. Ссылка
-    // не меняется при скролле, поэтому memo-строки ProductsTableRow не переотрисовываются.
+    // Стабильный (memo) контекст рендера ячеек — см. useProductsBodyCtx.
     const bodyCtx = useProductsBodyCtx(props, selection);
 
     // ── Render ─────────────────────────────────────────────────────────────────
@@ -355,77 +285,16 @@ export const DashboardCatalogProductsSection = memo(
         {props.hasCatalogItems ? (
           <div className="wb-products-page">
             <section className="wb-table-section">
-              <div
-                ref={tableWrapRef}
-                className="wb-table-wrap--catalog-restricted"
-                onScroll={(e) => {
-                  saveScrollPosition(CATALOG_PRODUCTS_SCROLL_KEY, e.currentTarget.scrollTop);
-                }}
-              >
-                <table
-                  ref={tableRef}
-                  className="wb-data-table wb-data-table--products"
-                  style={{ tableLayout: "fixed", width: `${String(totalW)}px` }}
-                >
-                  <colgroup>
-                    {orderedColumns.map((col) => (
-                      <col
-                        key={col.key}
-                        style={{ width: `${String(getColWidth(col, nameColWidth))}px` }}
-                      />
-                    ))}
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      {orderedColumns.map((col, colIdx) => withPin(col, renderProductsHeaderCell(col, colIdx, headerCtx)))}
-                    </tr>
-                    {displayProducts.length > 0 && (
-                      <tr className="wb-products-totals-row wb-thead-row--second">
-                        {orderedColumns.map((col) => withPin(col, renderProductsTotalsCell(col, totals)))}
-                      </tr>
-                    )}
-                  </thead>
-                  <tbody>
-                    {displayProducts.length > 0 ? (
-                      <>
-                        {padTop > 0 && (
-                          <tr aria-hidden>
-                            <td colSpan={orderedColumns.length} style={{ height: padTop, padding: 0, border: 0 }} />
-                          </tr>
-                        )}
-                        {virtualRows.map((vRow) => {
-                          const product = displayProducts[vRow.index];
-                          if (!product) return null;
-                          return (
-                            <tr
-                              key={`${product.vendorCode}-${product.nmId ?? "none"}`}
-                              data-index={vRow.index}
-                              ref={rowVirtualizer.measureElement}
-                            >
-                              <ProductsTableRow
-                                product={product}
-                                index={vRow.index}
-                                orderedColumns={orderedColumns}
-                                bodyCtx={bodyCtx}
-                                withPin={withPin}
-                              />
-                            </tr>
-                          );
-                        })}
-                        {padBottom > 0 && (
-                          <tr aria-hidden>
-                            <td colSpan={orderedColumns.length} style={{ height: padBottom, padding: 0, border: 0 }} />
-                          </tr>
-                        )}
-                      </>
-                    ) : (
-                      <tr>
-                        <td colSpan={orderedColumns.length}>{ui.noProductsFound}</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              <ProductsTableGrid
+                products={displayProducts}
+                orderedColumns={orderedColumns}
+                nameColWidth={nameColWidth}
+                headerCtx={headerCtx}
+                bodyCtx={bodyCtx}
+                totals={totals}
+                hasTotalsRow={displayProducts.length > 0}
+                containerRef={containerRef}
+              />
             </section>
           </div>
         ) : props.isCatalogLoading ? null : (

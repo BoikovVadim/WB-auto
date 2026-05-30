@@ -18,7 +18,7 @@ export type ProductsHeaderRenderCtx = {
   onLocalSort: (key: LocalSortKey) => void;
   onDragStart: (key: ProductsColumnKey) => void;
   onDragEnd: () => void;
-  onDrop: (event: React.DragEvent<HTMLTableCellElement>, key: ProductsColumnKey) => void;
+  onDrop: (event: React.DragEvent<HTMLElement>, key: ProductsColumnKey) => void;
   onResizeMouseDown: (event: React.MouseEvent<HTMLDivElement>) => void;
   sheets: {
     cost: () => void;
@@ -35,14 +35,8 @@ export type ProductsHeaderRenderCtx = {
   };
 };
 
-// Ячейка, которую оборачивает withPin (ему нужны className/style в props).
-type PinnableCell = ReactElement<{ className?: string; style?: CSSProperties }>;
-
-const NUMERIC_HEADER_KEYS: ReadonlySet<ProductsColumnKey> = new Set([
-  "index", "nmId", "cost", "price", "commission", "tax", "acquiring", "acquiringPercent", "drr",
-  "marginRub", "marginPercent",
-  "orders", "buyout", "spp", "stock", "ordersSum", "revenue", "costSum", "adSpend",
-]);
+// Ячейка grid-таблицы: <div> с className/style (grid дорисовывает позиционирование клоном).
+type GridCell = ReactElement<{ className?: string; style?: CSSProperties }>;
 
 /**
  * Заголовок столбца таблицы товаров. Левые (index/nmId/vendorCode/category/subject) —
@@ -51,9 +45,8 @@ const NUMERIC_HEADER_KEYS: ReadonlySet<ProductsColumnKey> = new Set([
  */
 export function renderProductsHeaderCell(
   col: ProductColumnDefinition,
-  colIdx: number,
   ctx: ProductsHeaderRenderCtx,
-): PinnableCell {
+): GridCell {
   const key = col.key;
   const parentSortKey = getParentSortKey(key);
   const isParentActive =
@@ -63,7 +56,7 @@ export function renderProductsHeaderCell(
 
   const dragHandlers = {
     draggable: true as const,
-    onDragStart: (e: React.DragEvent<HTMLTableCellElement>) => {
+    onDragStart: (e: React.DragEvent<HTMLElement>) => {
       if ((e.target as HTMLElement).closest(".wb-col-resize-handle")) {
         e.preventDefault();
         return;
@@ -71,12 +64,9 @@ export function renderProductsHeaderCell(
       ctx.onDragStart(key);
     },
     onDragEnd: () => ctx.onDragEnd(),
-    onDragOver: (e: React.DragEvent<HTMLTableCellElement>) => e.preventDefault(),
-    onDrop: (e: React.DragEvent<HTMLTableCellElement>) => ctx.onDrop(e, key),
+    onDragOver: (e: React.DragEvent<HTMLElement>) => e.preventDefault(),
+    onDrop: (e: React.DragEvent<HTMLElement>) => ctx.onDrop(e, key),
   };
-
-  const thStyle: React.CSSProperties = {};
-  if (NUMERIC_HEADER_KEYS.has(key)) thStyle.textAlign = "right";
 
   // Заголовок столбца с ретроспективой: клик по названию открывает лист, по стрелке — сортирует.
   const renderSheetHeader = (
@@ -115,7 +105,7 @@ export function renderProductsHeaderCell(
         <SortArrow active={isParentActive} direction={ctx.parentSortDir} />
       </button>
       {withResize && (
-        <div className="wb-col-resize-handle" data-col-idx={String(colIdx)} onMouseDown={ctx.onResizeMouseDown} />
+        <div className="wb-col-resize-handle" data-col-key={key} onMouseDown={ctx.onResizeMouseDown} />
       )}
     </>
   );
@@ -174,14 +164,13 @@ export function renderProductsHeaderCell(
   })();
 
   return (
-    <th
+    <div
       key={key}
-      className={isDragging ? "wb-products-column--dragging" : undefined}
-      style={thStyle}
+      className={`wb-pg-head${isDragging ? " wb-products-column--dragging" : ""}`}
       {...dragHandlers}
     >
       {content}
-    </th>
+    </div>
   );
 }
 
@@ -189,36 +178,36 @@ export function renderProductsHeaderCell(
 export function renderProductsTotalsCell(
   col: ProductColumnDefinition,
   totals: ProductsTableTotals,
-): PinnableCell {
+): GridCell {
   const key = col.key;
   const moneyCell = (value: number | null) => (
-    <th key={key} className="wb-table-cell--numeric">
+    <div key={key} className="wb-pg-total wb-pg-total--num">
       {value !== null ? formatMoney(value) : "—"}
-    </th>
+    </div>
   );
 
   switch (key) {
     case "vendorCode":
       return (
-        <th key={key} style={{ textAlign: "left", fontWeight: 700, color: "rgba(15,23,42,0.45)" }}>
+        <div key={key} className="wb-pg-total wb-pg-total--label">
           Итого
-        </th>
+        </div>
       );
     case "orders":
       return (
-        <th key={key} className="wb-table-cell--numeric">
+        <div key={key} className="wb-pg-total wb-pg-total--num">
           {totals.totalOrders > 0 ? String(totals.totalOrders) : "—"}
-        </th>
+        </div>
       );
     case "buyout":
-      return <th key={key} className="wb-table-cell--numeric">{formatPercent(totals.totalBuyoutPercent)}</th>;
+      return <div key={key} className="wb-pg-total wb-pg-total--num">{formatPercent(totals.totalBuyoutPercent)}</div>;
     case "spp":
-      return <th key={key} className="wb-table-cell--numeric">{formatPercent(totals.totalSpp)}</th>;
+      return <div key={key} className="wb-pg-total wb-pg-total--num">{formatPercent(totals.totalSpp)}</div>;
     case "stock":
       return (
-        <th key={key} className="wb-table-cell--numeric">
+        <div key={key} className="wb-pg-total wb-pg-total--num">
           {totals.totalStocks !== null ? String(totals.totalStocks) : "—"}
-        </th>
+        </div>
       );
     case "commission":
       return moneyCell(totals.totalCommission);
@@ -228,9 +217,9 @@ export function renderProductsTotalsCell(
       return moneyCell(totals.totalAcquiring);
     case "acquiringPercent":
       return (
-        <th key={key} className="wb-table-cell--numeric">
+        <div key={key} className="wb-pg-total wb-pg-total--num">
           {totals.totalAcquiringPercent !== null ? formatPercent(totals.totalAcquiringPercent) : "—"}
-        </th>
+        </div>
       );
     case "drr":
       return moneyCell(totals.totalDrr);
@@ -238,9 +227,9 @@ export function renderProductsTotalsCell(
       return moneyCell(totals.totalMarginRub);
     case "marginPercent":
       return (
-        <th key={key} className="wb-table-cell--numeric">
+        <div key={key} className="wb-pg-total wb-pg-total--num">
           {totals.totalMarginPercent !== null ? formatPercent(totals.totalMarginPercent) : "—"}
-        </th>
+        </div>
       );
     case "ordersSum":
       return moneyCell(totals.totalOrdersSum);
@@ -251,6 +240,6 @@ export function renderProductsTotalsCell(
     case "adSpend":
       return moneyCell(totals.totalAdSpend);
     default:
-      return <th key={key} />;
+      return <div key={key} className="wb-pg-total" />;
   }
 }

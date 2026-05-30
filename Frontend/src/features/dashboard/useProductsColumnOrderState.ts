@@ -45,7 +45,7 @@ export function useProductsColumnOrderState() {
   );
 
   const handleDrop = useCallback(
-    (event: React.DragEvent<HTMLTableCellElement>, target: ProductsColumnKey) => {
+    (event: React.DragEvent<HTMLElement>, target: ProductsColumnKey) => {
       event.preventDefault();
       if (draggedColumn) handleMoveColumn(draggedColumn, target);
       setDraggedColumn(null);
