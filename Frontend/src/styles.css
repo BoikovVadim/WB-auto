@@ -784,10 +784,15 @@ input {
   z-index: calc(var(--wb-table-sticky-z-header) + 1);
 }
 
-/* Totals row uses a warmer background to stand out, but still opaque */
+/* Totals row uses a warmer background to stand out, but still opaque.
+   z-index подняли до header+1: иначе правило .wb-products-totals-row th ниже по
+   тексту (та же специфичность) сбрасывает закреплённую ячейку до z-index header,
+   и скроллящиеся ячейки тоталов (Комиссия и т.п.), будучи позже в DOM, рисуются
+   ПОВЕРХ закреплённой колонки — total «просвечивает» за границу закрепления. */
 .wb-data-table .wb-products-totals-row .wb-table-cell--sticky-left,
 .wb-data-table .wb-products-totals-row th.wb-table-cell--sticky-left {
   background: var(--wb-table-totals-bg);
+  z-index: calc(var(--wb-table-sticky-z-header) + 1);
 }
 
 .wb-table-cell--numeric {
@@ -1272,9 +1277,12 @@ input {
   background: #fdfaf0;
 }
 
-/* Разделительная тень справа у последней закреплённой колонки (не влияет на layout). */
+/* Граница справа у последней закреплённой колонки — чёткая золотая линия, как
+   разделитель закреплённой зоны в ретроспективах (VirtualMatrixTable:
+   borderRight 2px solid var(--wb-gold-mid)). box-shadow вместо border — не влияет
+   на layout фиксированной table и рисуется поверх скроллящихся ячеек. */
 .wb-data-table--products .wb-table-cell--sticky-left-last {
-  box-shadow: 1px 0 0 rgba(0, 0, 0, 0.06);
+  box-shadow: 2px 0 0 var(--wb-gold-mid);
 }
 
 .wb-products-campaign-count-th,
