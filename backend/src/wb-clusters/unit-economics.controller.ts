@@ -38,22 +38,17 @@ export class UnitEconomicsController {
   }
 
   /**
-   * Ручной запуск синка эквайринга из отчёта реализации (fire-and-forget). days —
-   * глубина бэкфилла в днях (по умолчанию 21 = последняя закрытая неделя; для истории
-   * ретроспективы — например 180). Возвращается сразу, синк идёт в фоне.
+   * Ручной запуск синка эквайринга из отчёта реализации (fire-and-forget): тянет
+   * последнюю закрытую отчётную неделю. Возвращается сразу, синк идёт в фоне.
    */
   @Post("sync-acquiring")
   @UseGuards(WbClustersWriteGuard)
   @HttpCode(202)
-  syncAcquiring(@Query("days") days?: string) {
-    const parsed = Number(days);
-    const daysBack = Number.isFinite(parsed) && parsed > 0 ? Math.min(Math.floor(parsed), 400) : 21;
-    void this.acquiringSyncService
-      .syncAcquiringFromRealization(daysBack)
-      .catch(() => {
-        /* ошибки логируются внутри сервиса */
-      });
-    return { status: "started", daysBack };
+  syncAcquiring() {
+    void this.acquiringSyncService.syncAcquiringFromRealization().catch(() => {
+      /* ошибки логируются внутри сервиса */
+    });
+    return { status: "started" };
   }
 
   @Put("subject-commission")

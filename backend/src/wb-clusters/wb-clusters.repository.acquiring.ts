@@ -67,19 +67,7 @@ export abstract class WbClustersRepositoryAcquiring extends WbClustersRepository
     );
   }
 
-  /** Есть ли хоть одна неделя с week_start в диапазоне [from, to] (для resumable-бэкфилла). */
-  async hasAcquiringDataInRange(fromDate: string, toDate: string): Promise<boolean> {
-    const result = await this.getPool().query<{ exists: boolean }>(
-      `SELECT EXISTS(
-         SELECT 1 FROM ${this.tableName("wb_product_acquiring_weekly")}
-         WHERE week_start BETWEEN $1::DATE AND $2::DATE
-       ) AS exists`,
-      [fromDate, toDate],
-    );
-    return result.rows[0]?.exists ?? false;
-  }
-
-  /** Удаляет недели с week_start в диапазоне [from, to] — чистка чанка перед перезаписью. */
+  /** Удаляет недели с week_start в диапазоне [from, to] — чистка недели перед перезаписью. */
   async clearAcquiringRange(fromDate: string, toDate: string): Promise<void> {
     await this.getPool().query(
       `DELETE FROM ${this.tableName("wb_product_acquiring_weekly")}
