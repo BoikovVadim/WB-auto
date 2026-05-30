@@ -25,7 +25,8 @@ import {
   renderProductsTotalsCell,
   type ProductsHeaderRenderCtx,
 } from "./ProductsTableHeadCells";
-import { renderProductsBodyCell, type ProductsBodyRenderCtx } from "./ProductsTableBodyCells";
+import { ProductsTableRow } from "./ProductsTableRow";
+import { useProductsBodyCtx } from "./useProductsBodyCtx";
 
 export type { CostPriceCurrent };
 export type { CurrentPriceEntry };
@@ -174,26 +175,14 @@ export const DashboardCatalogProductsSection = memo(
     );
 
     // Выделение строк + inline-редактирование (себестоимость/цена) — см. useProductsTableSelection.
-    const {
-      selectedNmIds,
-      editingNmId,
-      editingPriceNmId,
-      priceConfirm,
-      handleCommitEdit,
-      handleStartEdit,
-      handleStartPriceEdit,
-      handleCommitPriceEdit,
-      handleRequestPriceConfirm,
-      handleCancelPriceConfirm,
-      handleConfirmPrice,
-      handleCellClick,
-      handleCellDoubleClick,
-    } = useProductsTableSelection({
+    // Объект целиком передаём в useProductsBodyCtx; отдельные поля нужны только модалке цены.
+    const selection = useProductsTableSelection({
       displayProducts,
       tableRef,
       onCostCleared: props.onCostCleared,
       onPriceSaved: props.onPriceSaved,
     });
+    const { priceConfirm, handleCancelPriceConfirm, handleConfirmPrice } = selection;
 
     const widestVendorCode = useMemo(
       () =>
@@ -282,7 +271,9 @@ export const DashboardCatalogProductsSection = memo(
       count: displayProducts.length,
       getScrollElement: () => tableWrapRef.current,
       estimateSize: () => 26,
-      overscan: 14,
+      // Больший буфер сверху/снизу окна: быстрый скролл (флинг) не выбегает за
+      // отрисованную зону, поэтому строки не «пропадают» на ведущем крае.
+      overscan: 20,
     });
     const virtualRows = rowVirtualizer.getVirtualItems();
     const virtualTotalSize = rowVirtualizer.getTotalSize();
@@ -340,38 +331,9 @@ export const DashboardCatalogProductsSection = memo(
       },
     };
 
-    const bodyCtx: ProductsBodyRenderCtx = {
-      costPrices: props.costPrices,
-      orderCounts: props.orderCounts,
-      rollingBuyoutCounts: props.rollingBuyoutCounts,
-      stockCounts: props.stockCounts,
-      priceCounts: props.priceCounts,
-      ordersSumValues: props.ordersSumValues,
-      revenueValues: props.revenueValues,
-      costSumValues: props.costSumValues,
-      adSpendValues: props.adSpendValues,
-      sppValues: props.sppValues,
-      commissionValues: props.commissionValues,
-      taxValues: props.taxValues,
-      acquiringValues: props.acquiringValues,
-      acquiringPercentValues: props.acquiringPercentValues,
-      acquiringFactualSet: props.acquiringFactualSet,
-      drrValues: props.drrValues,
-      marginRubValues: props.marginRubValues,
-      marginPercentValues: props.marginPercentValues,
-      priceChangeStatuses: props.priceChangeStatuses,
-      selectedNmIds,
-      editingNmId,
-      editingPriceNmId,
-      onCellClick: handleCellClick,
-      onCellDoubleClick: handleCellDoubleClick,
-      onCostSaved: props.onCostSaved,
-      onCommitEdit: handleCommitEdit,
-      onStartEdit: handleStartEdit,
-      onStartPriceEdit: handleStartPriceEdit,
-      onCommitPriceEdit: handleCommitPriceEdit,
-      onRequestPriceConfirm: handleRequestPriceConfirm,
-    };
+    // Стабильный (memo) контекст рендера ячеек — см. useProductsBodyCtx. Ссылка
+    // не меняется при скролле, поэтому memo-строки ProductsTableRow не переотрисовываются.
+    const bodyCtx = useProductsBodyCtx(props, selection);
 
     // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -440,7 +402,13 @@ export const DashboardCatalogProductsSection = memo(
                               data-index={vRow.index}
                               ref={rowVirtualizer.measureElement}
                             >
-                              {orderedColumns.map((col) => withPin(col, renderProductsBodyCell(col, product, vRow.index, bodyCtx)))}
+                              <ProductsTableRow
+                                product={product}
+                                index={vRow.index}
+                                orderedColumns={orderedColumns}
+                                bodyCtx={bodyCtx}
+                                withPin={withPin}
+                              />
                             </tr>
                           );
                         })}
