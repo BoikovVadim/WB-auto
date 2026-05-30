@@ -214,6 +214,7 @@ export function renderProductsBodyCell(
               onChange={ctx.onTargetMarginChange}
               onCommitEdit={ctx.onCommitEdit}
               onStartEdit={ctx.onStartEditCalc}
+              format={formatPercent}
               ariaLabel="Целевая маржа, %"
             />
           ) : dash}
@@ -252,6 +253,7 @@ export function renderProductsBodyCell(
               onChange={ctx.onPriceCalcChange}
               onCommitEdit={ctx.onCommitEdit}
               onStartEdit={ctx.onStartEditCalc}
+              format={formatMoney}
               ariaLabel="Цена для расчёта маржи, ₽"
             />
           ) : dash}

@@ -168,6 +168,7 @@ export const CalcInputCell = memo(function CalcInputCell({
   onChange,
   onCommitEdit,
   onStartEdit,
+  format,
   ariaLabel,
 }: {
   nmId: number;
@@ -179,6 +180,8 @@ export const CalcInputCell = memo(function CalcInputCell({
   onCommitEdit: () => void;
   /** Вход в правку — карандаш. ОДИН стабильный колбэк на все ячейки (memo цел). */
   onStartEdit: (nmId: number, colKey: EditableColumnKey) => void;
+  /** Формат отображения вне правки: % для маржи, ₽ для цены (как у себестоимости/цены). */
+  format: (value: number) => string;
   ariaLabel: string;
 }) {
   const [draft, setDraft] = useState("");
@@ -271,7 +274,7 @@ export const CalcInputCell = memo(function CalcInputCell({
         </svg>
       </button>
       <span className="wb-cost-price-value">
-        {savedValue !== null ? String(savedValue) : <span className="wb-cost-price-empty">—</span>}
+        {savedValue !== null ? format(savedValue) : <span className="wb-cost-price-empty">—</span>}
       </span>
     </span>
   );

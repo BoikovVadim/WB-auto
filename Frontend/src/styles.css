@@ -3207,7 +3207,8 @@ input {
   );
   box-sizing: border-box;
   padding: 0 8px;
-  border: 1.5px solid var(--wb-gold-mid);
+  /* Без рамки: редактируемость уже обозначена карандашом, обводка инпута лишняя. */
+  border: none;
   border-radius: 6px;
   font-size: var(--wb-table-font-size);
   font-family: inherit;
@@ -3219,11 +3220,10 @@ input {
     var(--wb-table-font-size) * var(--wb-table-line-height) +
     2 * var(--wb-table-cell-padding-v)
   );
-  transition: border-color 0.12s, background 0.12s;
+  transition: background 0.12s;
 }
 
 .wb-cost-price-input:focus {
-  border-color: var(--wb-gold-mid);
   background: rgba(232, 197, 71, 0.10);
 }
 
