@@ -19,7 +19,6 @@ import {
 import { ui } from "./copy";
 import { getSafeMessage } from "./dashboardErrors";
 import type {
-  ActiveSheet,
   ProductsMode,
   DashboardSection,
 } from "./persistence/dashboardViewState";
@@ -39,29 +38,13 @@ import {
   startAdvertisingUxBudget,
 } from "./advertising/advertisingUxBudgets";
 import { WbDashboardShell } from "./WbDashboardShell";
-import { useCostPrices } from "./useCostPrices";
-import { useOrders } from "./useOrders";
-import { useOrdersMatrix } from "./useOrdersMatrix";
-import { useBuyouts } from "./useBuyouts";
-import { useCurrentStocks } from "./useCurrentStocks";
-import { useCurrentPrices } from "./useCurrentPrices";
-import { useOrdersSum } from "./useOrdersSum";
-import { useOrdersSumMatrix } from "./useOrdersSumMatrix";
-import { useRevenue } from "./useRevenue";
-import { useRevenueMatrix } from "./useRevenueMatrix";
-import { useCostSum } from "./useCostSum";
-import { useCostSumMatrix } from "./useCostSumMatrix";
-import { useAdSpend } from "./useAdSpend";
-import { useAdSpendMatrix } from "./useAdSpendMatrix";
-import { useSpp } from "./useSpp";
-import { useSppMatrix } from "./useSppMatrix";
-import { usePriceChangeStatuses } from "./usePriceChangeStatuses";
-import { applyProductPrice } from "../../api/syncClientPrices";
+import { useDashboardMetrics } from "./useDashboardMetrics";
 import { useDashboardBootstrap } from "./useDashboardBootstrap";
 import { useDashboardBrowserEffects } from "./useDashboardBrowserEffects";
 import { useDashboardExportView } from "./useDashboardExportView";
 import { useDashboardInitialState } from "./useDashboardInitialState";
 import { useDashboardProductsMode } from "./useDashboardProductsMode";
+import { useDashboardSheets } from "./useDashboardSheets";
 import { useDashboardProductsWorkspace } from "./useDashboardProductsWorkspace";
 import { useDashboardWorkspaceActions } from "./useDashboardWorkspaceActions";
 import type { DashboardStatusNotice } from "./useDashboardWorkspaceActionTypes";
@@ -136,68 +119,59 @@ export function WbDashboard() {
   const [productsSearch, setProductsSearch] = useState(persistedViewState.productsSearch);
   const [productsSortKey, setProductsSortKey] = useState<import("./useDashboardProductsWorkspace").ProductListSortKey>(persistedViewState.productsSortKey);
   const [productsSortDirection, setProductsSortDirection] = useState<"asc" | "desc">(persistedViewState.productsSortDirection);
-  const [activeSheet, setActiveSheet] = useState<ActiveSheet>(
-    persistedViewState.activeSection === "catalog-products"
-      ? persistedViewState.activeSheet
-      : "none",
-  );
-  const isCostPriceSheetOpen = activeSection === "catalog-products" && activeSheet === "cost-price";
-  const isOrdersSheetOpen    = activeSection === "catalog-products" && activeSheet === "orders";
-  const isBuyoutSheetOpen    = activeSection === "catalog-products" && activeSheet === "buyout";
-  const isStocksSheetOpen    = activeSection === "catalog-products" && activeSheet === "stocks";
-  const isPricesSheetOpen    = activeSection === "catalog-products" && activeSheet === "prices";
-  const isOrdersSumSheetOpen = activeSection === "catalog-products" && activeSheet === "orders-sum";
-  const isRevenueSheetOpen   = activeSection === "catalog-products" && activeSheet === "revenue";
-  const isCostSumSheetOpen   = activeSection === "catalog-products" && activeSheet === "cost-sum";
-  const isAdSpendSheetOpen   = activeSection === "catalog-products" && activeSheet === "ad-spend";
-  const isSppSheetOpen       = activeSection === "catalog-products" && activeSheet === "spp";
-  const { costPrices, isCostPricesLoading, prefetchCostPrices, handleCostSaved, handleCostCleared } = useCostPrices();
-  const { orderCounts } = useOrders();
-  const { ordersMatrix } = useOrdersMatrix(isOrdersSheetOpen);
-  const { buyoutCounts, rollingBuyoutCounts } = useBuyouts();
-  const { stockCounts } = useCurrentStocks();
-  const { priceCounts } = useCurrentPrices();
-  const { ordersSumValues } = useOrdersSum();
-  // Тяжёлые матрицы грузятся ТОЛЬКО когда открыт соответствующий лист ретроспективы —
-  // не висят на маунте и не поллятся в фоне. Кэш в localStorage отдаёт их мгновенно при
-  // открытии. Снимает 4 самых тяжёлых запроса с первичной загрузки дашборда.
-  const { ordersSumMatrix } = useOrdersSumMatrix(isOrdersSumSheetOpen);
-  const { revenueValues } = useRevenue();
-  const { revenueMatrix } = useRevenueMatrix(isRevenueSheetOpen);
-  const { costSumValues } = useCostSum();
-  const { costSumMatrix } = useCostSumMatrix(isCostSumSheetOpen);
-  const { adSpendValues } = useAdSpend();
-  const { adSpendMatrix } = useAdSpendMatrix(isAdSpendSheetOpen);
-  const { sppValues } = useSpp();
-  const { sppMatrix } = useSppMatrix(isSppSheetOpen);
-  const { priceChangeStatuses, refreshPriceChangeStatuses, upsertPriceChangeStatus } =
-    usePriceChangeStatuses();
-  const handlePriceSaved = useCallback(
-    async (nmId: number, targetFinal: number) => {
-      // ⚠️ Реальная запись цены на маркетплейс WB. Дёргается только из ячейки «Цена».
-      const res = await applyProductPrice(nmId, targetFinal);
-      if (res.status !== "noop") {
-        // Оптимистично фиксируем новую цену в таблице сразу (до подтверждения WB).
-        // reconcile-крон позже скорректирует observedFinal на реальную кабинетную.
-        upsertPriceChangeStatus({
-          nmId: res.nmId,
-          desiredBasePrice: res.desiredBasePrice,
-          desiredDiscount: res.desiredDiscount,
-          desiredFinal: res.desiredFinal,
-          syncStatus: res.status === "failed" ? "failed" : "sending",
-          uploadId: null,
-          observedFinal: res.status === "failed" ? res.currentFinal : null,
-          confirmedAt: null,
-          retryAt: null,
-          lastError: res.lastError,
-          attemptCount: 0,
-          updatedAt: new Date().toISOString(),
-        });
-      }
-      refreshPriceChangeStatuses();
-    },
-    [refreshPriceChangeStatuses, upsertPriceChangeStatus],
-  );
+  const {
+    activeSheet,
+    setActiveSheet,
+    isCostPriceSheetOpen,
+    isOrdersSheetOpen,
+    isBuyoutSheetOpen,
+    isStocksSheetOpen,
+    isPricesSheetOpen,
+    isOrdersSumSheetOpen,
+    isRevenueSheetOpen,
+    isCostSumSheetOpen,
+    isAdSpendSheetOpen,
+    isSppSheetOpen,
+    openSheet,
+    closeSheet,
+  } = useDashboardSheets({
+    activeSection,
+    setActiveSection,
+    persistedActiveSection: persistedViewState.activeSection,
+    persistedActiveSheet: persistedViewState.activeSheet,
+  });
+  const {
+    costPrices,
+    isCostPricesLoading,
+    prefetchCostPrices,
+    handleCostSaved,
+    handleCostCleared,
+    orderCounts,
+    ordersMatrix,
+    buyoutCounts,
+    rollingBuyoutCounts,
+    stockCounts,
+    priceCounts,
+    ordersSumValues,
+    ordersSumMatrix,
+    revenueValues,
+    revenueMatrix,
+    costSumValues,
+    costSumMatrix,
+    adSpendValues,
+    adSpendMatrix,
+    sppValues,
+    sppMatrix,
+    priceChangeStatuses,
+    handlePriceSaved,
+  } = useDashboardMetrics({
+    isOrdersSheetOpen,
+    isOrdersSumSheetOpen,
+    isRevenueSheetOpen,
+    isCostSumSheetOpen,
+    isAdSpendSheetOpen,
+    isSppSheetOpen,
+  });
   const invalidateProductAdvertisingDetail = useCallback(
     (target: ProductAdvertisingDetailInvalidationTarget = "all") => {
       setProductAdvertisingDetailRevisions((currentValue) =>
@@ -520,6 +494,12 @@ export function WbDashboard() {
         setActiveSheet("none");
         setActiveSection("catalog-products");
       }}
+      onOpenUnitEconomicsSection={() => {
+        prefetchProductsWorkspace();
+        prefetchCostPrices();
+        setActiveSheet("none");
+        setActiveSection("unit-economics");
+      }}
       onOpenDashboardSection={() => { setActiveSection("dashboard"); }}
       onOpenDashboardTechSection={() => { setActiveSection("dashboard-tech"); }}
       onOpenDashboardCabinetSection={() => { setActiveSection("dashboard-cabinet"); }}
@@ -553,26 +533,26 @@ export function WbDashboard() {
       priceChangeStatuses={priceChangeStatuses}
       isCostPricesLoading={isCostPricesLoading}
       costPrices={costPrices}
-      onOpenCostPriceSheet={() => { setActiveSheet("cost-price"); }}
-      onCloseCostPriceSheet={() => { setActiveSheet("none"); }}
-      onOpenOrdersSheet={() => { setActiveSection("catalog-products"); setActiveSheet("orders"); }}
-      onCloseOrdersSheet={() => { setActiveSheet("none"); }}
-      onOpenBuyoutSheet={() => { setActiveSection("catalog-products"); setActiveSheet("buyout"); }}
-      onCloseBuyoutSheet={() => { setActiveSheet("none"); }}
-      onOpenStocksSheet={() => { setActiveSection("catalog-products"); setActiveSheet("stocks"); }}
-      onCloseStocksSheet={() => { setActiveSheet("none"); }}
-      onOpenPricesSheet={() => { setActiveSection("catalog-products"); setActiveSheet("prices"); }}
-      onClosePricesSheet={() => { setActiveSheet("none"); }}
-      onOpenOrdersSumSheet={() => { setActiveSection("catalog-products"); setActiveSheet("orders-sum"); }}
-      onCloseOrdersSumSheet={() => { setActiveSheet("none"); }}
-      onOpenRevenueSheet={() => { setActiveSection("catalog-products"); setActiveSheet("revenue"); }}
-      onCloseRevenueSheet={() => { setActiveSheet("none"); }}
-      onOpenCostSumSheet={() => { setActiveSection("catalog-products"); setActiveSheet("cost-sum"); }}
-      onCloseCostSumSheet={() => { setActiveSheet("none"); }}
-      onOpenAdSpendSheet={() => { setActiveSection("catalog-products"); setActiveSheet("ad-spend"); }}
-      onCloseAdSpendSheet={() => { setActiveSheet("none"); }}
-      onOpenSppSheet={() => { setActiveSection("catalog-products"); setActiveSheet("spp"); }}
-      onCloseSppSheet={() => { setActiveSheet("none"); }}
+      onOpenCostPriceSheet={() => openSheet("cost-price")}
+      onCloseCostPriceSheet={closeSheet}
+      onOpenOrdersSheet={() => openSheet("orders")}
+      onCloseOrdersSheet={closeSheet}
+      onOpenBuyoutSheet={() => openSheet("buyout")}
+      onCloseBuyoutSheet={closeSheet}
+      onOpenStocksSheet={() => openSheet("stocks")}
+      onCloseStocksSheet={closeSheet}
+      onOpenPricesSheet={() => openSheet("prices")}
+      onClosePricesSheet={closeSheet}
+      onOpenOrdersSumSheet={() => openSheet("orders-sum")}
+      onCloseOrdersSumSheet={closeSheet}
+      onOpenRevenueSheet={() => openSheet("revenue")}
+      onCloseRevenueSheet={closeSheet}
+      onOpenCostSumSheet={() => openSheet("cost-sum")}
+      onCloseCostSumSheet={closeSheet}
+      onOpenAdSpendSheet={() => openSheet("ad-spend")}
+      onCloseAdSpendSheet={closeSheet}
+      onOpenSppSheet={() => openSheet("spp")}
+      onCloseSppSheet={closeSheet}
       onCostSaved={handleCostSaved}
       onCostCleared={handleCostCleared}
       onPriceSaved={handlePriceSaved}

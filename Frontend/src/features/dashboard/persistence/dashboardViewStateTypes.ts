@@ -5,6 +5,7 @@ export type DashboardSection =
   | "method"
   | "products"
   | "catalog-products"
+  | "unit-economics"
   | "jam"
   | "catalog"
   | "campaigns"
@@ -20,8 +21,8 @@ export type DashboardSection =
 
 export type ProductsMode = "list" | "detail";
 
-// Overlay sheet active within catalog-products section.
-// "none" means the main products table is shown.
+// Overlay sheet active within a products-workspace section (catalog-products /
+// unit-economics). "none" means the main products table is shown.
 export type ActiveSheet = "none" | "cost-price" | "orders" | "stocks" | "prices" | "buyout" | "orders-sum" | "revenue" | "cost-sum" | "spp" | "ad-spend";
 
 // Valid sort keys for the products table — must stay in sync with ProductListSortKey.
@@ -88,6 +89,7 @@ export function isDashboardSection(value: unknown): value is DashboardSection {
     value === "method" ||
     value === "products" ||
     value === "catalog-products" ||
+    value === "unit-economics" ||
     value === "jam" ||
     value === "catalog" ||
     value === "campaigns" ||
@@ -101,6 +103,14 @@ export function isDashboardSection(value: unknown): value is DashboardSection {
     value === "dashboard-cabinet" ||
     value === "change-history"
   );
+}
+
+// Секции, рендерящие рабочий стол товаров (таблица товаров + ретро-листы метрик):
+// "catalog-products" = «Товары», "unit-economics" = «Юнит Экономика» (тот же вид;
+// сюда постепенно переносим юнит-экономические данные). Один предикат на все места,
+// чтобы гейтинг загрузки каталога, флаги открытых листов и URL-персист не разъехались.
+export function isProductsWorkspaceSection(value: DashboardSection): boolean {
+  return value === "catalog-products" || value === "unit-economics";
 }
 
 export function isProductsMode(value: unknown): value is ProductsMode {

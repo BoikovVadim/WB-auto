@@ -24,6 +24,7 @@ import type {
 import { useProductAdvertisingWorkspacePrefetch } from "./advertising/useProductAdvertisingWorkspacePrefetch";
 import { useProductWorkspace } from "./advertising/useProductWorkspace";
 import type { AdvertisingDateRange } from "./advertising/date";
+import { isProductsWorkspaceSection } from "./persistence/dashboardViewStateTypes";
 import { useDashboardProductCatalog } from "./useDashboardProductCatalog";
 import { useDashboardProductSelection } from "./useDashboardProductSelection";
 import { useProductSnapshotTargets } from "./useProductSnapshotTargets";
@@ -66,7 +67,7 @@ export function useDashboardProductsWorkspace(input: {
 }) {
   const { invalidateProductAdvertisingDetail } = input;
   const isProductsSectionActive =
-    input.activeSection === "products" || input.activeSection === "catalog-products";
+    input.activeSection === "products" || isProductsWorkspaceSection(input.activeSection);
   const isProductsListActive = isProductsSectionActive && input.productsMode === "list";
   const isProductsDetailActive = isProductsSectionActive && input.productsMode === "detail";
   const {

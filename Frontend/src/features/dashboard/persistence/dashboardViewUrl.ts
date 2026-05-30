@@ -2,6 +2,7 @@ import type { ActiveSheet, DashboardSection, DashboardViewState } from "./dashbo
 import {
   isActiveSheet,
   isDashboardSection,
+  isProductsWorkspaceSection,
   isSyncEntity,
   readPersistedDateValue,
 } from "./dashboardViewStateTypes";
@@ -64,7 +65,7 @@ export function readDashboardViewStateFromUrl(): Partial<
   }
 
   const activeSheet: ActiveSheet =
-    view === "catalog-products" && isActiveSheet(sheetParam) ? sheetParam : "none";
+    isProductsWorkspaceSection(view) && isActiveSheet(sheetParam) ? sheetParam : "none";
 
   if (view === "method" || view === "products") {
     return {
@@ -128,8 +129,8 @@ export function writeDashboardViewStateToUrl(
     params.set("view", state.activeSection);
   }
 
-  // Sheet (only meaningful for catalog-products)
-  if (state.activeSection === "catalog-products" && state.activeSheet !== "none") {
+  // Sheet (only meaningful for products-workspace sections)
+  if (isProductsWorkspaceSection(state.activeSection) && state.activeSheet !== "none") {
     params.set("sheet", state.activeSheet);
   } else {
     params.delete("sheet");
@@ -216,6 +217,6 @@ export function readNavEntryFromUrl(): DashboardNavEntry | null {
   if (view !== null && !isDashboardSection(view)) return null;
   const activeSection: DashboardSection = view === null ? "exports" : view;
   const activeSheet: ActiveSheet =
-    activeSection === "catalog-products" && isActiveSheet(sheetParam) ? sheetParam : "none";
+    isProductsWorkspaceSection(activeSection) && isActiveSheet(sheetParam) ? sheetParam : "none";
   return { activeSection, activeSheet };
 }

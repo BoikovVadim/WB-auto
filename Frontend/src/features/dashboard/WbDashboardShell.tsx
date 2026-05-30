@@ -1,18 +1,3 @@
-import type { ReactNode } from "react";
-
-import type {
-  ExportMethodStatus,
-  HealthResponse,
-  IntegrationStatusResponse,
-  SearchQueriesExportPayload,
-  SearchQueryProduct,
-  SyncEntity,
-  TokenSessionResponse,
-  WbExportJobResponse,
-  WbExportListItem,
-  WbExportResponse,
-} from "../../api/syncClient";
-import { ui } from "./copy";
 import { DashboardCampaignsSection } from "./DashboardCampaignsSection";
 import { DashboardCatalogSection } from "./DashboardCatalogSection";
 import { DashboardClusterStatsSection } from "./DashboardClusterStatsSection";
@@ -38,131 +23,9 @@ import { DashboardProductsSection } from "./DashboardProductsSection";
 import { DashboardQueryFrequenciesSection } from "./DashboardQueryFrequenciesSection";
 import { DashboardSyncRunsSection } from "./DashboardSyncRunsSection";
 import { DashboardTechSection } from "./DashboardTechSection";
-import type {
-  DashboardProductOption,
-  DashboardStatusNotice,
-} from "./useDashboardWorkspaceActionTypes";
-import type { DashboardSection, ProductsMode } from "./persistence/dashboardViewState";
-
-type WbDashboardShellProps = {
-  activeSection: DashboardSection;
-  health: HealthResponse | null;
-  integrationStatus: IntegrationStatusResponse | null;
-  tokenSession: TokenSessionResponse | null;
-  methodCards: ExportMethodStatus[];
-  productsMode: ProductsMode;
-  resolvedCatalogProduct: DashboardProductOption | null;
-  productCatalogCount: number;
-  productsSearch: string;
-  hasCatalogItems: boolean;
-  isCatalogLoading: boolean;
-  filteredProducts: DashboardProductOption[];
-  productsSortKey: import("./useDashboardProductsWorkspace").ProductListSortKey;
-  productsSortDirection: "asc" | "desc";
-  detailWorkspace: ReactNode;
-  currentMethod: ExportMethodStatus | null;
-  methodArchive: WbExportListItem[];
-  selectedExportId: string | null;
-  selectedMethodEntity: SyncEntity | null;
-  isExportLoading: boolean;
-  currentExport: WbExportResponse | null;
-  activeExportJob: WbExportJobResponse | null;
-  displayPayload: SearchQueriesExportPayload | null;
-  isMethodTablesReady: boolean;
-  selectedProductNmId: number | null;
-  selectedProduct: SearchQueryProduct | null;
-  isArchiveLoading: boolean;
-  tokenInput: string;
-  isTokenSaving: boolean;
-  error?: string | null;
-  statusNotice: DashboardStatusNotice;
-  onSetExportsSection: () => void;
-  onOpenJamSection: () => void;
-  onOpenCatalogSection: () => void;
-  onOpenCampaignsSection: () => void;
-  onOpenSyncRunsSection: () => void;
-  onOpenClusterStatsSection: () => void;
-  onOpenDailyStatsSection: () => void;
-  onOpenMinusPhrasesSection: () => void;
-  onOpenQueryFrequenciesSection: () => void;
-  onOpenProductsSection: () => void;
-  onPrefetchProductsSection: () => void;
-  onOpenCatalogProductsSection: () => void;
-  onPrefetchCatalogProductsSection: () => void;
-  onOpenDashboardSection: () => void;
-  onOpenDashboardTechSection: () => void;
-  onOpenDashboardCabinetSection: () => void;
-  onOpenChangeHistorySection: () => void;
-  isCostPriceSheetOpen: boolean;
-  isCostPricesLoading: boolean;
-  costPrices: Map<number, import("./DashboardCatalogProductsSection").CostPriceCurrent>;
-  orderCounts: Map<number, import("../../api/syncClientOrders").TodayOrderCount>;
-  ordersMatrix: import("./useOrdersMatrix").OrdersMatrix;
-  buyoutCounts: Map<number, import("../../api/syncClientBuyouts").TodayBuyoutCount>;
-  rollingBuyoutCounts: Map<number, import("../../api/syncClientBuyouts").TodayBuyoutCount>;
-  stockCounts: Map<number, number>;
-  priceCounts: Map<number, import("./useCurrentPrices").CurrentPriceEntry>;
-  ordersSumValues: Map<number, number>;
-  ordersSumMatrix: import("./useOrdersSumMatrix").OrdersSumMatrix;
-  revenueValues: Map<number, number>;
-  revenueMatrix: import("./useRevenueMatrix").RevenueMatrix;
-  costSumValues: Map<number, number>;
-  costSumMatrix: import("./useCostSumMatrix").CostSumMatrix;
-  adSpendValues: Map<number, number>;
-  adSpendMatrix: import("./useAdSpendMatrix").AdSpendMatrix;
-  sppValues: Map<number, number>;
-  sppMatrix: import("./useSppMatrix").SppMatrix;
-  priceChangeStatuses: Map<number, import("../../api/syncClientPrices").PriceChangeStatus>;
-  isOrdersSheetOpen: boolean;
-  isBuyoutSheetOpen: boolean;
-  isStocksSheetOpen: boolean;
-  isPricesSheetOpen: boolean;
-  isOrdersSumSheetOpen: boolean;
-  isRevenueSheetOpen: boolean;
-  isCostSumSheetOpen: boolean;
-  isAdSpendSheetOpen: boolean;
-  isSppSheetOpen: boolean;
-  onOpenCostPriceSheet: () => void;
-  onCloseCostPriceSheet: () => void;
-  onOpenOrdersSheet: () => void;
-  onCloseOrdersSheet: () => void;
-  onOpenBuyoutSheet: () => void;
-  onCloseBuyoutSheet: () => void;
-  onOpenStocksSheet: () => void;
-  onCloseStocksSheet: () => void;
-  onOpenPricesSheet: () => void;
-  onClosePricesSheet: () => void;
-  onOpenOrdersSumSheet: () => void;
-  onCloseOrdersSumSheet: () => void;
-  onOpenRevenueSheet: () => void;
-  onCloseRevenueSheet: () => void;
-  onOpenCostSumSheet: () => void;
-  onCloseCostSumSheet: () => void;
-  onOpenAdSpendSheet: () => void;
-  onCloseAdSpendSheet: () => void;
-  onOpenSppSheet: () => void;
-  onCloseSppSheet: () => void;
-  onCostSaved: (nmId: number, value: number) => Promise<void>;
-  onCostCleared: (nmIds: number[]) => Promise<void>;
-  onPriceSaved: (nmId: number, targetFinal: number) => Promise<void>;
-  onRefresh: () => void;
-  onTokenInputChange: (value: string) => void;
-  onSaveToken: () => void;
-  onClearToken: () => void;
-  onOpenMethod: (entityType: SyncEntity) => void;
-  onPrefetchMethod: (entityType: SyncEntity) => void;
-  onProductsSearchChange: (value: string) => void;
-  onProductsSortToggle: (key: import("./useDashboardProductsWorkspace").ProductListSortKey) => void;
-  onProductOpen: (product: DashboardProductOption) => void;
-  onProductHover: (nmId: number | null) => void;
-  onProductFocus: (nmId: number | null) => void;
-  onBackToProducts: () => void;
-  onBackToMethods: () => void;
-  onRunExport: (entityType: SyncEntity) => void;
-  onPrefetchSavedExport: (entityType: SyncEntity, exportId: string) => void;
-  onOpenExport: (entityType: SyncEntity, exportId: string) => void;
-  onSelectProduct: (nmId: number) => void;
-};
+import { isProductsWorkspaceSection } from "./persistence/dashboardViewState";
+import { WbCabinetSidebar } from "./WbCabinetSidebar";
+import type { WbDashboardShellProps } from "./WbDashboardShellTypes";
 
 export function WbDashboardShell({
   activeSection,
@@ -209,6 +72,7 @@ export function WbDashboardShell({
   onPrefetchProductsSection,
   onOpenCatalogProductsSection,
   onPrefetchCatalogProductsSection,
+  onOpenUnitEconomicsSection,
   onOpenDashboardSection,
   onOpenDashboardTechSection,
   onOpenDashboardCabinetSection,
@@ -285,54 +149,17 @@ export function WbDashboardShell({
 }: WbDashboardShellProps) {
   return (
     <div className="wb-cabinet">
-      <aside className="wb-cabinet-sidebar">
-        <div className="wb-cabinet-brand">
-          <div className="wb-cabinet-brand-mark">WB</div>
-          <div className="wb-cabinet-brand-line" />
-        </div>
-
-        <nav className="wb-cabinet-nav">
-          <button
-            className={`wb-cabinet-menu-item ${activeSection === "exports" ? "active" : ""}`}
-            onClick={onSetExportsSection}
-          >
-            <span className="wb-cabinet-menu-icon">E</span>
-            <span className="wb-cabinet-menu-label">{ui.viewExports}</span>
-          </button>
-          <button
-            className={`wb-cabinet-menu-item ${activeSection === "products" ? "active" : ""}`}
-            onMouseEnter={onPrefetchProductsSection}
-            onFocus={onPrefetchProductsSection}
-            onClick={onOpenProductsSection}
-          >
-            <span className="wb-cabinet-menu-icon">P</span>
-            <span className="wb-cabinet-menu-label">{ui.viewProducts}</span>
-          </button>
-          <button
-            className={`wb-cabinet-menu-item ${activeSection === "catalog-products" ? "active" : ""}`}
-            onMouseEnter={onPrefetchCatalogProductsSection}
-            onFocus={onPrefetchCatalogProductsSection}
-            onClick={onOpenCatalogProductsSection}
-          >
-            <span className="wb-cabinet-menu-icon">T</span>
-            <span className="wb-cabinet-menu-label">{ui.viewCatalogProducts}</span>
-          </button>
-          <button
-            className={`wb-cabinet-menu-item ${activeSection === "dashboard" || activeSection === "dashboard-tech" || activeSection === "dashboard-cabinet" ? "active" : ""}`}
-            onClick={onOpenDashboardSection}
-          >
-            <span className="wb-cabinet-menu-icon">Д</span>
-            <span className="wb-cabinet-menu-label">Дашборд</span>
-          </button>
-          <button
-            className={`wb-cabinet-menu-item ${activeSection === "change-history" ? "active" : ""}`}
-            onClick={onOpenChangeHistorySection}
-          >
-            <span className="wb-cabinet-menu-icon">И</span>
-            <span className="wb-cabinet-menu-label">История</span>
-          </button>
-        </nav>
-      </aside>
+      <WbCabinetSidebar
+        activeSection={activeSection}
+        onSetExportsSection={onSetExportsSection}
+        onOpenProductsSection={onOpenProductsSection}
+        onPrefetchProductsSection={onPrefetchProductsSection}
+        onOpenCatalogProductsSection={onOpenCatalogProductsSection}
+        onPrefetchCatalogProductsSection={onPrefetchCatalogProductsSection}
+        onOpenUnitEconomicsSection={onOpenUnitEconomicsSection}
+        onOpenDashboardSection={onOpenDashboardSection}
+        onOpenChangeHistorySection={onOpenChangeHistorySection}
+      />
 
       <div className="wb-cabinet-main-wrap">
         <main className="wb-cabinet-content">
@@ -375,7 +202,7 @@ export function WbDashboardShell({
               onOpenQueryFrequencies={onOpenQueryFrequenciesSection}
               onOpenOrders={onOpenOrdersSheet}
             />
-          ) : activeSection === "catalog-products" ? (
+          ) : isProductsWorkspaceSection(activeSection) ? (
             isCostPriceSheetOpen ? (
               <DashboardCatalogProductDetailSection
                 products={filteredProducts}

@@ -10,6 +10,7 @@ import {
 import { readDashboardViewStateFromUrl } from "./dashboardViewUrl";
 
 export type { ActiveSheet, DashboardSection, DashboardViewState, PersistedProductsSortKey, ProductsMode } from "./dashboardViewStateTypes";
+export { isProductsWorkspaceSection } from "./dashboardViewStateTypes";
 export { hasExplicitProductAdvertisingDateRangeInUrl } from "./dashboardViewUrl";
 export {
   readPersistedCurrentExportSnapshot,
