@@ -60,6 +60,9 @@ type DashboardCatalogProductsSectionProps = {
   /** Колонки, скрытые в этой секции. Напр. «Юнит Экономика» прячет
    *  заказы/остатки/сумму заказов/выручку/с-с продаж/рекламу. */
   hiddenColumns?: ProductsColumnKey[];
+  /** Редактирование себестоимости и цены доступно только в «Юнит Экономика».
+   *  В «Товары» эти колонки — read-only отображение тех же значений. */
+  editable: boolean;
   onProductsSearchChange: (value: string) => void;
   onProductsSortToggle: (key: ProductListSortKey) => void;
   onOpenCostPriceSheet: () => void;

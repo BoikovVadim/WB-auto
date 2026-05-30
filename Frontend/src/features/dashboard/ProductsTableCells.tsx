@@ -23,6 +23,9 @@ type CostInputCellProps = {
   savedValue: number | null;
   isSelected: boolean;
   isEditing: boolean;
+  /** Редактирование доступно только в «Юнит Экономика». В «Товары» — read-only
+   *  отображение того же значения (без карандаша и инлайн-ввода). */
+  editable: boolean;
   onSaved: (nmId: number, value: number) => Promise<void>;
   onCommitEdit: () => void;
   /** Enter edit mode — вызывается кликом по карандашу слева от значения.
@@ -36,6 +39,7 @@ export const CostInputCell = memo(function CostInputCell({
   savedValue,
   isSelected,
   isEditing,
+  editable,
   onSaved,
   onCommitEdit,
   onStartEdit,
@@ -93,7 +97,7 @@ export const CostInputCell = memo(function CostInputCell({
     }
   }, [draft, nmId, onSaved, onCommitEdit]);
 
-  if (isEditing) {
+  if (editable && isEditing) {
     return (
       <input
         ref={inputRef}
@@ -125,20 +129,22 @@ export const CostInputCell = memo(function CostInputCell({
     <span
       className={`wb-cost-price-display${isSelected ? " wb-cost-price-display--selected" : ""}`}
     >
-      <button
-        type="button"
-        className="wb-cost-price-edit-icon"
-        title="Изменить себестоимость"
-        aria-label="Изменить себестоимость"
-        tabIndex={-1}
-        onMouseDown={(e) => { e.stopPropagation(); }}
-        onClick={(e) => { e.stopPropagation(); onStartEdit(nmId); }}
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M12 20h9" />
-          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
-        </svg>
-      </button>
+      {editable && (
+        <button
+          type="button"
+          className="wb-cost-price-edit-icon"
+          title="Изменить себестоимость"
+          aria-label="Изменить себестоимость"
+          tabIndex={-1}
+          onMouseDown={(e) => { e.stopPropagation(); }}
+          onClick={(e) => { e.stopPropagation(); onStartEdit(nmId); }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+          </svg>
+        </button>
+      )}
       <span className="wb-cost-price-value">
         {savedValue !== null
           ? `${savedValue.toLocaleString("ru-RU")} ₽`
@@ -158,6 +164,7 @@ export const PriceInputCell = memo(function PriceInputCell({
   entry,
   overlay,
   isEditing,
+  editable,
   onStartEdit,
   onCommitEdit,
   onRequestConfirm,
@@ -167,6 +174,8 @@ export const PriceInputCell = memo(function PriceInputCell({
   /** Последняя выставленная пользователем цена — показываем её оптимистично. */
   overlay: PriceChangeStatus | undefined;
   isEditing: boolean;
+  /** Запись цены на WB доступна только в «Юнит Экономика». В «Товары» — read-only. */
+  editable: boolean;
   onStartEdit: (nmId: number) => void;
   onCommitEdit: () => void;
   onRequestConfirm: (nmId: number, targetFinal: number) => void;
@@ -202,7 +211,7 @@ export const PriceInputCell = memo(function PriceInputCell({
     onRequestConfirm(nmId, target);
   }, [draft, nmId, onRequestConfirm, onCommitEdit]);
 
-  if (isEditing) {
+  if (editable && isEditing) {
     return (
       <input
         ref={inputRef}
@@ -228,25 +237,27 @@ export const PriceInputCell = memo(function PriceInputCell({
   return (
     <span
       className="wb-cost-price-display"
-      style={{ cursor: "pointer" }}
-      role="button"
-      tabIndex={-1}
-      onClick={(e) => { e.stopPropagation(); onStartEdit(nmId); }}
+      style={editable ? { cursor: "pointer" } : undefined}
+      role={editable ? "button" : undefined}
+      tabIndex={editable ? -1 : undefined}
+      onClick={editable ? (e) => { e.stopPropagation(); onStartEdit(nmId); } : undefined}
     >
-      <button
-        type="button"
-        className="wb-cost-price-edit-icon"
-        title="Изменить цену и отправить на маркетплейс WB"
-        aria-label="Изменить цену"
-        tabIndex={-1}
-        onMouseDown={(e) => { e.stopPropagation(); }}
-        onClick={(e) => { e.stopPropagation(); onStartEdit(nmId); }}
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M12 20h9" />
-          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
-        </svg>
-      </button>
+      {editable && (
+        <button
+          type="button"
+          className="wb-cost-price-edit-icon"
+          title="Изменить цену и отправить на маркетплейс WB"
+          aria-label="Изменить цену"
+          tabIndex={-1}
+          onMouseDown={(e) => { e.stopPropagation(); }}
+          onClick={(e) => { e.stopPropagation(); onStartEdit(nmId); }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+          </svg>
+        </button>
+      )}
       <span className="wb-cost-price-value">
         {currentFinal !== null
           ? formatMoney(currentFinal)

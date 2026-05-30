@@ -294,6 +294,7 @@ export function WbDashboardShell({
             ) : (
               <DashboardCatalogProductsSection
                 hiddenColumns={activeSection === "unit-economics" ? UNIT_ECONOMICS_HIDDEN_COLUMNS : CATALOG_PRODUCTS_HIDDEN_COLUMNS}
+                editable={activeSection === "unit-economics"}
                 productCatalogCount={productCatalogCount}
                 productsSearch={productsSearch}
                 hasCatalogItems={hasCatalogItems}

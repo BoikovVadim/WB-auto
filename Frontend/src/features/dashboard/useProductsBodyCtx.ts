@@ -24,6 +24,7 @@ export type ProductsBodyData = Pick<
   | "marginRubValues"
   | "marginPercentValues"
   | "priceChangeStatuses"
+  | "editable"
   | "onCostSaved"
 >;
 
@@ -77,6 +78,7 @@ export function useProductsBodyCtx(
       marginRubValues: data.marginRubValues,
       marginPercentValues: data.marginPercentValues,
       priceChangeStatuses: data.priceChangeStatuses,
+      editable: data.editable,
       onCostSaved: data.onCostSaved,
       selectedNmIds: selection.selectedNmIds,
       editingNmId: selection.editingNmId,
@@ -109,6 +111,7 @@ export function useProductsBodyCtx(
       data.marginRubValues,
       data.marginPercentValues,
       data.priceChangeStatuses,
+      data.editable,
       data.onCostSaved,
       selection.selectedNmIds,
       selection.editingNmId,

@@ -31,6 +31,10 @@ export type ProductsBodyRenderCtx = {
   marginRubValues: Map<number, number>;
   marginPercentValues: Map<number, number>;
   priceChangeStatuses: Map<number, PriceChangeStatus>;
+  /** Редактирование себестоимости/цены доступно только в «Юнит Экономика».
+   *  В «Товары» (editable=false) cost/price рендерятся read-only — те же значения,
+   *  но без карандаша, инлайн-ввода и выделения cost-ячеек под Delete. */
+  editable: boolean;
   selectedNmIds: Set<number>;
   editingNmId: number | null;
   editingPriceNmId: number | null;
@@ -102,8 +106,8 @@ export function renderProductsBodyCell(
         <div
           key={key}
           className={`wb-pg-cell wb-pg-cell--num wb-pg-cell--cost${isSelected ? " wb-pg-cell--cost-selected" : ""}`}
-          onClick={nmId !== null ? (e) => ctx.onCellClick(nmId, index, e) : undefined}
-          onDoubleClick={nmId !== null ? () => ctx.onCellDoubleClick(nmId, index) : undefined}
+          onClick={ctx.editable && nmId !== null ? (e) => ctx.onCellClick(nmId, index, e) : undefined}
+          onDoubleClick={ctx.editable && nmId !== null ? () => ctx.onCellDoubleClick(nmId, index) : undefined}
         >
           {nmId !== null ? (
             <CostInputCell
@@ -111,6 +115,7 @@ export function renderProductsBodyCell(
               savedValue={ctx.costPrices.get(nmId)?.costValue ?? null}
               isSelected={isSelected}
               isEditing={isEditing}
+              editable={ctx.editable}
               onSaved={ctx.onCostSaved}
               onCommitEdit={ctx.onCommitEdit}
               onStartEdit={ctx.onStartEdit}
@@ -127,6 +132,7 @@ export function renderProductsBodyCell(
               entry={ctx.priceCounts.get(nmId)}
               overlay={ctx.priceChangeStatuses.get(nmId)}
               isEditing={ctx.editingPriceNmId === nmId}
+              editable={ctx.editable}
               onStartEdit={ctx.onStartPriceEdit}
               onCommitEdit={ctx.onCommitPriceEdit}
               onRequestConfirm={ctx.onRequestPriceConfirm}
