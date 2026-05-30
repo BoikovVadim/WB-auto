@@ -9,11 +9,20 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
-export type CellContent = {
-  display: ReactNode;
-  /** Plain text for clipboard. Empty string = no value. */
-  copy: string;
-};
+import {
+  COL_ID_IDX,
+  COL_NAME_IDX,
+  COL_NO_IDX,
+  COL_PINNED_IDX,
+  MatrixBodyRow,
+  MatrixLeftRow,
+  MatrixPinnedRow,
+  type CellContent,
+  type CellMouseHandlers,
+  type VisibleCol,
+} from "./VirtualMatrixRows";
+
+export type { CellContent } from "./VirtualMatrixRows";
 
 export type DateColumn = {
   /** Stable identifier for keys */
@@ -77,13 +86,6 @@ export type VirtualMatrixTableProps = {
 
 const ROW_H = 32;
 const HEADER_ROW_H = 26;
-
-// Column index space for selection:
-//  -3 → №,  -2 → ID,  -1 → Название,  0 → pinned (if present),  k ≥ 1 → dataCols[k-1]
-const COL_NO_IDX = -3;
-const COL_ID_IDX = -2;
-const COL_NAME_IDX = -1;
-const COL_PINNED_IDX = 0;
 
 function ResizeHandle({
   onStart,
@@ -190,27 +192,6 @@ const totalsCellBase: React.CSSProperties = {
   borderBottom: "1px solid rgba(201, 162, 39, 0.3)",
   borderRight: "1px solid rgba(0,0,0,0.04)",
   padding: "0 6px",
-};
-
-const bodyCellBase: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontSize: 12,
-  boxSizing: "border-box",
-  background: "#fff",
-  borderBottom: "1px solid rgba(0,0,0,0.04)",
-  borderRight: "1px solid rgba(0,0,0,0.03)",
-  padding: "0 6px",
-  cursor: "cell",
-  userSelect: "none",
-};
-
-const nameCellBase: React.CSSProperties = {
-  ...bodyCellBase,
-  justifyContent: "flex-start",
-  overflow: "hidden",
-  whiteSpace: "nowrap",
 };
 
 function normalizeSelection(
@@ -412,47 +393,58 @@ export function VirtualMatrixTable(props: VirtualMatrixTableProps) {
   const [anchor, setAnchor] = useState<{ r: number; c: number } | null>(null);
   const [focus, setFocus] = useState<{ r: number; c: number } | null>(null);
   const draggingRef = useRef(false);
+  // Mirror of `anchor` for the (stable) delegated mousedown handler — lets the
+  // handler read the current anchor for shift-extend without depending on state
+  // (which would change its identity and bust every memoized row each selection).
+  const anchorRef = useRef<{ r: number; c: number } | null>(null);
 
   const selRect = useMemo(() => {
     if (!anchor || !focus) return null;
     return normalizeSelection(anchor, focus);
   }, [anchor, focus]);
 
-  const isInSelection = useCallback(
-    (r: number, c: number) =>
-      selRect !== null &&
-      r >= selRect.r1 &&
-      r <= selRect.r2 &&
-      c >= selRect.c1 &&
-      c <= selRect.c2,
-    [selRect],
-  );
-
-  const beginSelect = useCallback(
-    (r: number, c: number) => (event: React.MouseEvent) => {
+  // Delegated cell handlers — coordinates come from `data-r`/`data-c` on the cell
+  // (event.currentTarget), so these stay stable (empty deps) and never allocate a
+  // closure per cell. Same event semantics as before (currentTarget is the cell).
+  const onCellMouseDown = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
       if (event.button !== 0) return;
       // Don't start selection from clicks on resize handles or header buttons
       const target = event.target as HTMLElement;
       if (target.closest("button") || target.closest("[data-resize]")) return;
+      const el = event.currentTarget;
+      const r = Number(el.dataset.r);
+      const c = Number(el.dataset.c);
+      if (Number.isNaN(r) || Number.isNaN(c)) return;
       event.preventDefault();
-      const isShift = event.shiftKey;
-      if (isShift && anchor) {
+      if (event.shiftKey && anchorRef.current) {
         setFocus({ r, c });
       } else {
-        setAnchor({ r, c });
-        setFocus({ r, c });
+        const a = { r, c };
+        anchorRef.current = a;
+        setAnchor(a);
+        setFocus(a);
       }
       draggingRef.current = true;
     },
-    [anchor],
+    [],
   );
 
-  const extendSelect = useCallback(
-    (r: number, c: number) => () => {
+  const onCellMouseEnter = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
       if (!draggingRef.current) return;
+      const el = event.currentTarget;
+      const r = Number(el.dataset.r);
+      const c = Number(el.dataset.c);
+      if (Number.isNaN(r) || Number.isNaN(c)) return;
       setFocus({ r, c });
     },
     [],
+  );
+
+  const cellHandlers = useMemo<CellMouseHandlers>(
+    () => ({ onMouseDown: onCellMouseDown, onMouseEnter: onCellMouseEnter }),
+    [onCellMouseDown, onCellMouseEnter],
   );
 
   useEffect(() => {
@@ -545,6 +537,7 @@ export function VirtualMatrixTable(props: VirtualMatrixTableProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        anchorRef.current = null;
         setAnchor(null);
         setFocus(null);
       }
@@ -552,6 +545,7 @@ export function VirtualMatrixTable(props: VirtualMatrixTableProps) {
     const onClick = (e: MouseEvent) => {
       if (!containerRef.current) return;
       if (!containerRef.current.contains(e.target as Node)) {
+        anchorRef.current = null;
         setAnchor(null);
         setFocus(null);
       }
@@ -569,8 +563,27 @@ export function VirtualMatrixTable(props: VirtualMatrixTableProps) {
   const rowItems = rowVirt.getVirtualItems();
   const colItems = colVirt.getVirtualItems();
 
-  // Highlight bg for selected cells
-  const selBg = "rgba(56,132,255,0.14)";
+  // Selection rect → flat numeric bounds for memoized rows. No selection → an
+  // empty range (r1=1,r2=0) that never matches any row index (≥0).
+  const selR1 = selRect?.r1 ?? 1;
+  const selR2 = selRect?.r2 ?? 0;
+  const selC1 = selRect?.c1 ?? 1;
+  const selC2 = selRect?.c2 ?? 0;
+
+  // Visible column window + a stable key for it. The key stays constant during
+  // pure vertical scroll (same horizontal window + width), so memoized body rows
+  // bail out; it changes on horizontal scroll / column resize, re-rendering rows.
+  const visibleCols: VisibleCol[] = colItems.map((vc) => ({
+    index: vc.index,
+    start: vc.start,
+    size: vc.size,
+  }));
+  const colsKey =
+    colItems.length > 0
+      ? `${String(colItems[0]?.index)}:${String(
+          colItems[colItems.length - 1]?.index,
+        )}:${String(dataColWidth)}`
+      : `empty:${String(dataColWidth)}`;
 
   // Grid template columns: [left fixed] [pinned?] [dates]
   const gridTemplateColumns = pinnedCol
@@ -809,77 +822,24 @@ export function VirtualMatrixTable(props: VirtualMatrixTableProps) {
                     willChange: "transform",
                   }}
                 >
-                  {rowItems.map((vr) => {
-                    const leading = getLeftLeading(vr.index);
-                    const cells: Array<{
-                      colIdx: number;
-                      left: number;
-                      width: number;
-                      content: CellContent;
-                      style: React.CSSProperties;
-                    }> = [
-                      {
-                        colIdx: COL_NO_IDX,
-                        left: 0,
-                        width: noCol.width,
-                        content: leading.no,
-                        style: { ...bodyCellBase, color: "rgba(15,23,42,0.5)" },
-                      },
-                      {
-                        colIdx: COL_ID_IDX,
-                        left: noCol.width,
-                        width: idCol.width,
-                        content: leading.id,
-                        style: { ...bodyCellBase },
-                      },
-                      {
-                        colIdx: COL_NAME_IDX,
-                        left: noCol.width + idCol.width,
-                        width: nameCol.width,
-                        content: leading.name,
-                        style: { ...nameCellBase },
-                      },
-                    ];
-                    return (
-                      <Fragment key={vr.key}>
-                        {cells.map((c) => {
-                          const sel = isInSelection(vr.index, c.colIdx);
-                          return (
-                            <div
-                              key={c.colIdx}
-                              onMouseDown={beginSelect(vr.index, c.colIdx)}
-                              onMouseEnter={extendSelect(vr.index, c.colIdx)}
-                              style={{
-                                position: "absolute",
-                                top: vr.start,
-                                left: c.left,
-                                width: c.width,
-                                height: vr.size,
-                                ...c.style,
-                                ...(sel ? { background: selBg } : {}),
-                              }}
-                            >
-                              {c.colIdx === COL_NAME_IDX ? (
-                                <span
-                                  style={{
-                                    display: "block",
-                                    width: "100%",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                    whiteSpace: "nowrap",
-                                  }}
-                                >
-                                  {c.content.display}
-                                </span>
-                              ) : (
-                                c.content.display
-                              )}
-                            </div>
-                          );
-                        })}
-                      </Fragment>
-                    );
-                  })}
+                  {rowItems.map((vr) => (
+                    <MatrixLeftRow
+                      key={getRowKey(vr.index)}
+                      rowIndex={vr.index}
+                      top={vr.start}
+                      rowHeight={vr.size}
+                      leftFixedW={leftFixedW}
+                      noW={noCol.width}
+                      idW={idCol.width}
+                      nameW={nameCol.width}
+                      getLeftLeading={getLeftLeading}
+                      selR1={selR1}
+                      selR2={selR2}
+                      selC1={selC1}
+                      selC2={selC2}
+                      handlers={cellHandlers}
+                    />
+                  ))}
                 </div>
               </div>
 
@@ -902,30 +862,21 @@ export function VirtualMatrixTable(props: VirtualMatrixTableProps) {
                       willChange: "transform",
                     }}
                   >
-                    {rowItems.map((vr) => {
-                      const cell = getPinnedCell(vr.index);
-                      const sel = isInSelection(vr.index, COL_PINNED_IDX);
-                      const hasValue = cell.copy !== "";
-                      return (
-                        <div
-                          key={vr.key}
-                          onMouseDown={beginSelect(vr.index, COL_PINNED_IDX)}
-                          onMouseEnter={extendSelect(vr.index, COL_PINNED_IDX)}
-                          style={{
-                            position: "absolute",
-                            top: vr.start,
-                            left: 0,
-                            width: pinnedW,
-                            height: vr.size,
-                            ...bodyCellBase,
-                            fontWeight: hasValue ? 600 : undefined,
-                            ...(sel ? { background: selBg } : {}),
-                          }}
-                        >
-                          {cell.display}
-                        </div>
-                      );
-                    })}
+                    {rowItems.map((vr) => (
+                      <MatrixPinnedRow
+                        key={getRowKey(vr.index)}
+                        rowIndex={vr.index}
+                        top={vr.start}
+                        rowHeight={vr.size}
+                        pinnedW={pinnedW}
+                        getPinnedCell={getPinnedCell}
+                        selR1={selR1}
+                        selR2={selR2}
+                        selC1={selC1}
+                        selC2={selC2}
+                        handlers={cellHandlers}
+                      />
+                    ))}
                   </div>
                 </div>
               )}
@@ -948,33 +899,23 @@ export function VirtualMatrixTable(props: VirtualMatrixTableProps) {
                     position: "relative",
                   }}
                 >
-                  {rowItems.map((vr) =>
-                    colItems.map((vc) => {
-                      const cell = getCell(vr.index, vc.index);
-                      const selCol = vc.index + 1; // dataCols[k] → selection col k+1
-                      const sel = isInSelection(vr.index, selCol);
-                      const hasValue = cell.copy !== "";
-                      return (
-                        <div
-                          key={`${vr.key}:${vc.key}`}
-                          onMouseDown={beginSelect(vr.index, selCol)}
-                          onMouseEnter={extendSelect(vr.index, selCol)}
-                          style={{
-                            position: "absolute",
-                            top: vr.start,
-                            left: vc.start,
-                            width: vc.size,
-                            height: vr.size,
-                            ...bodyCellBase,
-                            fontWeight: hasValue ? 600 : undefined,
-                            ...(sel ? { background: selBg } : {}),
-                          }}
-                        >
-                          {cell.display}
-                        </div>
-                      );
-                    }),
-                  )}
+                  {rowItems.map((vr) => (
+                    <MatrixBodyRow
+                      key={getRowKey(vr.index)}
+                      rowIndex={vr.index}
+                      top={vr.start}
+                      rowHeight={vr.size}
+                      rowWidth={datesAreaW}
+                      cols={visibleCols}
+                      colsKey={colsKey}
+                      getCell={getCell}
+                      selR1={selR1}
+                      selR2={selR2}
+                      selC1={selC1}
+                      selC2={selC2}
+                      handlers={cellHandlers}
+                    />
+                  ))}
                 </div>
               </div>
             </div>
