@@ -241,6 +241,22 @@ export const appEnv = {
     "WB_PROMOTION_STATS_MIN_INTERVAL_MS",
     "6500",
   ),
+  // WB enforces a hard 1 req/min limit on /adv/v2/fullstats (полный расход кампании).
+  // Up to 100 campaigns per request. Do NOT reduce below ~60 s or 429 → cooldown.
+  wbPromotionFullstatsMinIntervalMs: parsePositiveIntegerEnv(
+    "WB_PROMOTION_FULLSTATS_MIN_INTERVAL_MS",
+    "60000",
+  ),
+  // До 100 кампаний за один запрос /adv/v2/fullstats.
+  wbPromotionFullstatsChunkSize: parsePositiveIntegerEnv(
+    "WB_PROMOTION_FULLSTATS_CHUNK_SIZE",
+    "100",
+    1,
+  ),
+  // Часовой крон полного расхода рекламы из /adv/v2/fullstats (в начале каждого часа МСК).
+  wbPromotionFullstatsSyncCron:
+    getOptionalEnv("WB_PROMOTION_FULLSTATS_SYNC_CRON", "0 0 * * * *").trim() ||
+    "0 0 * * * *",
   wbPromotionRetryAttempts: parsePositiveIntegerEnv(
     "WB_PROMOTION_RETRY_ATTEMPTS",
     "2",

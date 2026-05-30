@@ -27,6 +27,17 @@ export function getClusterQueueCreateStatements({
       )
     `,
     `
+      CREATE TABLE IF NOT EXISTS ${tableName("wb_advert_daily_spend")} (
+        advert_id BIGINT NOT NULL,
+        nm_id BIGINT NOT NULL,
+        stat_date DATE NOT NULL,
+        spend NUMERIC NULL,
+        currency TEXT NULL,
+        synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (advert_id, nm_id, stat_date)
+      )
+    `,
+    `
       CREATE TABLE IF NOT EXISTS ${tableName("wb_cluster_bids")} (
         bid_key TEXT PRIMARY KEY,
         advert_id BIGINT NOT NULL,

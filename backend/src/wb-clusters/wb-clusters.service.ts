@@ -40,6 +40,7 @@ import type {
   WbClustersStatusResponse,
   WbClustersSyncStartResponse,
 } from "./wb-clusters.types";
+import { runAdSpendFullstatsSync } from "./wb-clusters-ad-spend-fullstats.flow";
 import * as wb_clusters_command_flow from "./wb-clusters-command-flow";
 import * as wb_clusters_read_flow from "./wb-clusters-read-flow";
 import * as wb_clusters_sync_flow from "./wb-clusters-sync-flow";
@@ -855,11 +856,22 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     return this.wbClustersRepository.getCostSumSnapshotMatrix();
   }
 
-  // ─── Расходы на рекламу (агрегат wb_cluster_daily_stats по товару) ────────────
+  // ─── Расходы на рекламу (агрегат wb_advert_daily_spend по товару) ─────────────
   //
-  // «Общий расход на товар» = SUM(spend) по всем кампаниям/кластерам за день.
-  // Дневная статистика синкается для всех кампаний (cpm + cpc), backfill истории
-  // уже есть → считаем на лету, отдельная таблица/крон не нужны (как «Выручка»).
+  // «Общий расход на товар» = SUM(spend) по всем кампаниям товара за день.
+  // Источник — ПОЛНЫЙ расход кампании из /adv/v2/fullstats (как в кабинете WB):
+  // часовой крон syncAdSpendFromFullstats пишет (advert × товар × день), фронт
+  // читает готовые строки. Раньше брали SUM(spend) из normquery/stats — там расход
+  // только по поисковым запросам, показы вне поиска (каталог/карточки/рекомендации)
+  // терялись, и суммы выходили заметно ниже кабинета.
+
+  /**
+   * Часовой синк полного расхода рекламы из WB /adv/v2/fullstats →
+   * wb_advert_daily_spend. Логика — в wb-clusters-ad-spend-fullstats.flow.ts.
+   */
+  async syncAdSpendFromFullstats(): Promise<void> {
+    return runAdSpendFullstatsSync(this);
+  }
 
   /** Сегодняшний (МСК) расход на рекламу по товарам. */
   async getTodayAdSpend(): Promise<{ items: { nmId: number; spend: number }[] }> {

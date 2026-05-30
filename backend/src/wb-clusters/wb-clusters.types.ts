@@ -21,6 +21,7 @@ export type {
   PromotionCampaignDetailsItem,
   PromotionCampaignDetailsResponse,
   PromotionDailyNormQueryStatsResponse,
+  PromotionFullstatsResponse,
   PromotionKeywordStatsResponse,
   PromotionMinimumProductBidsRequest,
   PromotionNormQueryBidsResponse,

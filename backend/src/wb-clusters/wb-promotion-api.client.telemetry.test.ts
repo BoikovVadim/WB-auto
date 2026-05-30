@@ -19,6 +19,7 @@ describe("wb promotion lane telemetry", () => {
       "bid-write",
       "default",
       "details",
+      "fullstats",
       "minus-read",
       "minus-write",
       "stats",

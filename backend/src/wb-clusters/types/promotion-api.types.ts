@@ -137,6 +137,28 @@ export interface PromotionDailyNormQueryStatsResponse {
   }> | null;
 }
 
+/**
+ * Ответ /adv/v2/fullstats — ПОЛНЫЙ расход кампании (как в кабинете WB),
+ * с разбивкой по дням → площадкам (apps) → товарам (nm). В отличие от
+ * normquery/stats (расход только в разрезе поисковых запросов), сюда входит
+ * расход на показы вне поиска (каталог, карточки, рекомендации). Поле `sum` —
+ * это расход в рублях. Тело запроса — массив { id, interval:{begin,end} }.
+ */
+export type PromotionFullstatsResponse = Array<{
+  advertId: number;
+  days?: Array<{
+    date: string;
+    apps?: Array<{
+      appType?: number;
+      nm?: Array<{
+        nmId: number;
+        sum?: number;
+        name?: string;
+      }> | null;
+    }> | null;
+  }> | null;
+}>;
+
 export interface PromotionKeywordStatsResponse {
   keywords: Array<{
     date: string;

@@ -643,6 +643,16 @@ export class WbClustersController {
     return { status: "started" };
   }
 
+  /** Триггерит синк полного расхода рекламы из WB /adv/v2/fullstats. */
+  @Post("products/sync-ad-spend")
+  @UseGuards(WbClustersWriteGuard)
+  triggerAdSpendSync() {
+    this.wbClustersService.syncAdSpendFromFullstats().catch((error: unknown) => {
+      this.logger.error("Background syncAdSpendFromFullstats failed", error);
+    });
+    return { status: "started" };
+  }
+
   @Get("products/:nmId/cost-price-history")
   getCostPriceHistory(@Param("nmId", ParseIntPipe) nmId: number) {
     return this.wbClustersService.getCostPriceHistory(nmId);

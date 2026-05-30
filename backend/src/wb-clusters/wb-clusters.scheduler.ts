@@ -253,6 +253,32 @@ export class WbClustersScheduler implements OnModuleInit {
   }
 
 
+  private adSpendFullstatsSyncRunning = false;
+
+  /**
+   * Раз в час (в начале часа МСК) тянем ПОЛНЫЙ расход рекламы из WB /adv/v2/fullstats
+   * (как в кабинете) в wb_advert_daily_spend. Отдельно от основного 10-мин синка:
+   * у fullstats жёсткий лимит 1 запрос/мин, до 100 кампаний за запрос — в частый
+   * цикл его ставить нельзя. Гард adSpendFullstatsSyncRunning страхует от наложения
+   * прогонов, если кампаний много и предыдущий проход ещё идёт.
+   */
+  @Cron(appEnv.wbPromotionFullstatsSyncCron)
+  async handleAdSpendFullstatsSync() {
+    if (!appEnv.wbPromotionSyncEnabled) return;
+    if (this.adSpendFullstatsSyncRunning) {
+      this.logger.warn("Ad-spend fullstats sync: предыдущий прогон ещё идёт, пропускаю тик.");
+      return;
+    }
+    this.adSpendFullstatsSyncRunning = true;
+    try {
+      await this.wbClustersService.syncAdSpendFromFullstats();
+    } catch (err) {
+      this.logger.warn(`Ad-spend fullstats sync error: ${(err as Error).message}`);
+    } finally {
+      this.adSpendFullstatsSyncRunning = false;
+    }
+  }
+
   // ─── Stocks snapshot ─────────────────────────────────────────────────────────
   //
   // Раз в сутки в 01:00 МСК (дефолт WB_STOCKS_SNAPSHOT_CRON). Сервер в Europe/Moscow →

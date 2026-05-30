@@ -43,6 +43,7 @@ import type {
   PromotionCampaignCountResponse,
   PromotionCampaignDetailsResponse,
   PromotionDailyNormQueryStatsResponse,
+  PromotionFullstatsResponse,
   PromotionKeywordStatsResponse,
   PromotionMinimumProductBidsRequest,
   PromotionNormQueryBidsResponse,
@@ -189,6 +190,20 @@ export class WbPromotionApiClient {
       return { items: [] satisfies NonNullable<PromotionDailyNormQueryStatsResponse["items"]> };
     }
     return this.request<PromotionDailyNormQueryStatsResponse>({ method: "POST", path: "/adv/v1/normquery/stats", body: params });
+  }
+
+  async getFullstats(params: { advertIds: number[]; from: string; to: string }) {
+    if (params.advertIds.length === 0) {
+      return [] satisfies PromotionFullstatsResponse;
+    }
+    const body = params.advertIds.map((id) => ({
+      id,
+      interval: { begin: params.from, end: params.to },
+    }));
+    return this.request<PromotionFullstatsResponse>(
+      { method: "POST", path: "/adv/v2/fullstats", body },
+      { failFastOnTooManyRequests: false },
+    );
   }
 
   async getKeywordStats(params: { advertId: number; from: string; to: string }) {

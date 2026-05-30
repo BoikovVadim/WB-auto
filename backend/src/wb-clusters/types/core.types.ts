@@ -21,6 +21,7 @@ export type PromotionThrottleLane =
   | "minus-read"
   | "details"
   | "stats"
+  | "fullstats"
   | "default";
 
 export type ClusterBidSyncStatus =

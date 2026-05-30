@@ -7,6 +7,7 @@ export const PROMOTION_THROTTLE_LANES = [
   "minus-read",
   "details",
   "stats",
+  "fullstats",
   "default",
 ] as const satisfies readonly PromotionThrottleLane[];
 
@@ -14,7 +15,9 @@ export interface PromotionRequestConfig {
   method: "GET" | "POST";
   path: string;
   query?: Record<string, string>;
-  body?: Record<string, unknown>;
+  // Большинство Promotion-эндпоинтов принимают объект, но /adv/v2/fullstats ждёт
+  // массив кампаний в корне тела — поэтому допускаем и массив.
+  body?: Record<string, unknown> | unknown[];
 }
 
 export interface PromotionRequestOptions {
