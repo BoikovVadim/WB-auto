@@ -28,6 +28,8 @@ export function getColLabel(key: ProductsColumnKey): string {
     case "commission": return "Комиссия";
     case "acquiring": return "Эквайринг";
     case "drr":       return "ДРР";
+    case "marginRub": return "Маржа ₽";
+    case "marginPercent": return "Маржа %";
     case "orders":    return "Заказы";
     case "buyout":    return "% выкупа";
     case "spp":       return "СПП";

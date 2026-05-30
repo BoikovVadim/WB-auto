@@ -2,6 +2,7 @@ import { useMemo } from "react";
 
 import type { TodayBuyoutCount } from "../../api/syncClientBuyouts";
 import type { TodayOrderCount } from "../../api/syncClientOrders";
+import type { CurrentPriceEntry } from "./useCurrentPrices";
 import type { ProductListItem } from "./useDashboardProductsWorkspace";
 
 export type ProductsTableTotals = {
@@ -15,6 +16,8 @@ export type ProductsTableTotals = {
   totalCommission: number | null;
   totalAcquiring: number | null;
   totalDrr: number | null;
+  totalMarginRub: number | null;
+  totalMarginPercent: number | null;
   totalSpp: number | null;
 };
 
@@ -30,6 +33,8 @@ type Input = {
   commissionValues: Map<number, number>;
   acquiringValues: Map<number, number>;
   drrValues: Map<number, number>;
+  marginRubValues: Map<number, number>;
+  priceCounts: Map<number, CurrentPriceEntry>;
   sppValues: Map<number, number>;
 };
 
@@ -71,6 +76,8 @@ export function useProductsTableTotals(input: Input): ProductsTableTotals {
     commissionValues,
     acquiringValues,
     drrValues,
+    marginRubValues,
+    priceCounts,
     sppValues,
   } = input;
 
@@ -139,6 +146,30 @@ export function useProductsTableTotals(input: Input): ProductsTableTotals {
     [filteredProducts, drrValues],
   );
 
+  const totalMarginRub = useMemo(
+    () => sumOverProducts(filteredProducts, marginRubValues, false),
+    [filteredProducts, marginRubValues],
+  );
+
+  // Маржа «Итого, %» — взвешенная: Σмаржа₽ / Σцены-со-скидкой × 100 (по тем же товарам,
+  // у кого есть маржа и база цены). Простое среднее % исказило бы итог при разных ценах.
+  const totalMarginPercent = useMemo(() => {
+    let marginSum = 0;
+    let baseSum = 0;
+    let hasAny = false;
+    for (const p of filteredProducts) {
+      if (p.nmId === null) continue;
+      const margin = marginRubValues.get(p.nmId);
+      const base = priceCounts.get(p.nmId)?.priceWithDiscount;
+      if (margin !== undefined && base !== undefined && base > 0) {
+        marginSum += margin;
+        baseSum += base;
+        hasAny = true;
+      }
+    }
+    return hasAny && baseSum > 0 ? (marginSum / baseSum) * 100 : null;
+  }, [filteredProducts, marginRubValues, priceCounts]);
+
   // СПП «Итого» — простое среднее по товарам с данными (то же усреднение, что у самой
   // метрики). spp=0 — валидное значение, учитывается; «—» только без данных.
   const totalSpp = useMemo(() => {
@@ -166,6 +197,8 @@ export function useProductsTableTotals(input: Input): ProductsTableTotals {
     totalCommission,
     totalAcquiring,
     totalDrr,
+    totalMarginRub,
+    totalMarginPercent,
     totalSpp,
   };
 }

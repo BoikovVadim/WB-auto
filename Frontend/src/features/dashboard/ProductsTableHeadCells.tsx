@@ -39,6 +39,7 @@ type PinnableCell = ReactElement<{ className?: string; style?: CSSProperties }>;
 
 const NUMERIC_HEADER_KEYS: ReadonlySet<ProductsColumnKey> = new Set([
   "index", "nmId", "cost", "price", "commission", "acquiring", "drr",
+  "marginRub", "marginPercent",
   "orders", "buyout", "spp", "stock", "ordersSum", "revenue", "costSum", "adSpend",
 ]);
 
@@ -139,6 +140,10 @@ export function renderProductsHeaderCell(
         return renderSortOnlyHeader("Эквайринг", "acquiring");
       case "drr":
         return renderSortOnlyHeader("ДРР", "drr");
+      case "marginRub":
+        return renderSortOnlyHeader("Маржа, ₽", "marginRub");
+      case "marginPercent":
+        return renderSortOnlyHeader("Маржа, %", "marginPercent");
       case "orders":
         return renderSheetHeader("Заказы", "orders", ctx.sheets.orders, "Открыть ретроспективу заказов");
       case "buyout":
@@ -211,6 +216,14 @@ export function renderProductsTotalsCell(
       return moneyCell(totals.totalAcquiring);
     case "drr":
       return moneyCell(totals.totalDrr);
+    case "marginRub":
+      return moneyCell(totals.totalMarginRub);
+    case "marginPercent":
+      return (
+        <th key={key} className="wb-table-cell--numeric">
+          {totals.totalMarginPercent !== null ? formatPercent(totals.totalMarginPercent) : "—"}
+        </th>
+      );
     case "ordersSum":
       return moneyCell(totals.totalOrdersSum);
     case "revenue":

@@ -103,6 +103,8 @@ export function WbDashboardShell({
   commissionValues,
   acquiringValues,
   drrValues,
+  marginRubValues,
+  marginPercentValues,
   priceChangeStatuses,
   isOrdersSheetOpen,
   isBuyoutSheetOpen,
@@ -301,6 +303,8 @@ export function WbDashboardShell({
                 commissionValues={commissionValues}
                 acquiringValues={acquiringValues}
                 drrValues={drrValues}
+                marginRubValues={marginRubValues}
+                marginPercentValues={marginPercentValues}
                 priceChangeStatuses={priceChangeStatuses}
                 onProductsSearchChange={onProductsSearchChange}
                 onProductsSortToggle={onProductsSortToggle}

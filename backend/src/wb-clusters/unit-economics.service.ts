@@ -19,6 +19,10 @@ export type UnitEconomicsChargeItem = {
   commissionRub: number | null;
   acquiringRub: number | null;
   drrRub: number | null;
+  /** Маржа в ₽ на единицу: цена со скидкой − себестоимость − комиссия − эквайринг − ДРР. */
+  marginRub: number | null;
+  /** Маржа в % к цене со скидкой (marginRub / цена со скидкой × 100). */
+  marginPercent: number | null;
 };
 
 const GLOBAL_PERCENT_METRICS: readonly GlobalPercentMetric[] = ["acquiring", "drr"];
@@ -91,22 +95,28 @@ export class UnitEconomicsService {
   }
 
   /**
-   * Комиссия, эквайринг и ДРР в ₽ на каждый товар. База — цена со скидкой
+   * Комиссия, эквайринг, ДРР и маржа в ₽/% на каждый товар. База — цена со скидкой
    * (price × (1 − discount/100)), как в колонке «Цена». Комиссия берётся по
    * предмету товара; эквайринг и ДРР — глобальные %. null, если для предмета нет %
    * или метрика не задана (фронт рисует «—»). Товары без текущей цены пропускаются.
+   *
+   * Маржа = цена со скидкой − себестоимость − комиссия − эквайринг − ДРР (до логистики/
+   * хранения/налога — этих данных пока нет). Незаданные вычеты считаются как 0; без
+   * себестоимости маржа = null (прибыль без с/с не определить).
    */
   async getCharges(): Promise<{ items: UnitEconomicsChargeItem[] }> {
     if (!this.repository.isConfigured()) return { items: [] };
     await this.repository.ensureSchema();
-    const [catalog, latestPrices, commissions, global] = await Promise.all([
+    const [catalog, latestPrices, commissions, global, costPrices] = await Promise.all([
       this.repository.listProductCatalogItems(),
       this.repository.getLatestPrices(),
       this.repository.getSubjectCommissions(),
       this.repository.getGlobalSettings(),
+      this.repository.getAllCurrentCostPrices(),
     ]);
     const commissionBySubject = new Map(commissions.map((c) => [c.subjectName, c.commissionPercent]));
     const priceByNmId = new Map(latestPrices.map((p) => [p.nmId, p]));
+    const costByNmId = new Map(costPrices.map((c) => [c.nmId, c.costValue]));
     const applyPercent = (base: number, percent: number | null): number | null =>
       percent != null ? round2(base * (percent / 100)) : null;
 
@@ -120,8 +130,26 @@ export class UnitEconomicsService {
       const commissionRub = applyPercent(priceWithDiscount, commissionPercent);
       const acquiringRub = applyPercent(priceWithDiscount, global.acquiringPercent);
       const drrRub = applyPercent(priceWithDiscount, global.drrPercent);
-      if (commissionRub === null && acquiringRub === null && drrRub === null) continue;
-      items.push({ nmId: product.nmId, commissionRub, acquiringRub, drrRub });
+
+      const cost = costByNmId.get(product.nmId) ?? null;
+      let marginRub: number | null = null;
+      let marginPercent: number | null = null;
+      if (cost != null) {
+        const deductions = (commissionRub ?? 0) + (acquiringRub ?? 0) + (drrRub ?? 0);
+        marginRub = round2(priceWithDiscount - cost - deductions);
+        marginPercent =
+          priceWithDiscount > 0 ? round2((marginRub / priceWithDiscount) * 100) : null;
+      }
+
+      if (
+        commissionRub === null &&
+        acquiringRub === null &&
+        drrRub === null &&
+        marginRub === null
+      ) {
+        continue;
+      }
+      items.push({ nmId: product.nmId, commissionRub, acquiringRub, drrRub, marginRub, marginPercent });
     }
     return { items };
   }

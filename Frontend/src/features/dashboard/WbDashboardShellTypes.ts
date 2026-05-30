@@ -92,6 +92,8 @@ export type WbDashboardShellProps = {
   commissionValues: Map<number, number>;
   acquiringValues: Map<number, number>;
   drrValues: Map<number, number>;
+  marginRubValues: Map<number, number>;
+  marginPercentValues: Map<number, number>;
   priceChangeStatuses: Map<number, import("../../api/syncClientPrices").PriceChangeStatus>;
   isOrdersSheetOpen: boolean;
   isBuyoutSheetOpen: boolean;

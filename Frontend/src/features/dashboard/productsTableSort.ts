@@ -12,6 +12,8 @@ export type LocalSortKey =
   | "commission"
   | "acquiring"
   | "drr"
+  | "marginRub"
+  | "marginPercent"
   | "orders"
   | "buyout"
   | "spp"
@@ -35,14 +37,17 @@ type SortMaps = {
   commissionValues: Map<number, number>;
   acquiringValues: Map<number, number>;
   drrValues: Map<number, number>;
+  marginRubValues: Map<number, number>;
+  marginPercentValues: Map<number, number>;
 };
 
 // Числовое значение товара для локальной сортировки. «Нет данных» для buyout/spp/
-// commission/acquiring/drr = -1 (валидный 0 сортируется выше отсутствующего); для
-// остальных — 0.
+// commission/acquiring/drr = -1 (валидный 0 сортируется выше отсутствующего); для маржи
+// = -Infinity (она бывает отрицательной, -1 был бы валидным значением); для остальных — 0.
 function localSortValue(product: ProductListItem, key: LocalSortKey, maps: SortMaps): number {
   const nmId = product.nmId;
   if (nmId === null) {
+    if (key === "marginRub" || key === "marginPercent") return Number.NEGATIVE_INFINITY;
     return key === "buyout" || key === "spp" || key === "commission" || key === "acquiring" || key === "drr"
       ? -1
       : 0;
@@ -73,6 +78,10 @@ function localSortValue(product: ProductListItem, key: LocalSortKey, maps: SortM
       return maps.acquiringValues.get(nmId) ?? -1;
     case "drr":
       return maps.drrValues.get(nmId) ?? -1;
+    case "marginRub":
+      return maps.marginRubValues.get(nmId) ?? Number.NEGATIVE_INFINITY;
+    case "marginPercent":
+      return maps.marginPercentValues.get(nmId) ?? Number.NEGATIVE_INFINITY;
     case "spp":
       return maps.sppValues.get(nmId) ?? -1;
     case "price":

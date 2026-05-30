@@ -63,6 +63,10 @@ type DashboardCatalogProductsSectionProps = {
   acquiringValues: Map<number, number>;
   /** ДРР в ₽ на товар (глобальный %) — только «Юнит Экономика». Считается на бэке. */
   drrValues: Map<number, number>;
+  /** Маржа в ₽ на единицу — только «Юнит Экономика». Считается на бэке. */
+  marginRubValues: Map<number, number>;
+  /** Маржа в % к цене со скидкой — только «Юнит Экономика». Считается на бэке. */
+  marginPercentValues: Map<number, number>;
   priceChangeStatuses: Map<number, PriceChangeStatus>;
   /** Колонки, скрытые в этой секции. Напр. «Юнит Экономика» прячет
    *  заказы/остатки/сумму заказов/выручку/с-с продаж/рекламу. */
@@ -154,8 +158,10 @@ export const DashboardCatalogProductsSection = memo(
           commissionValues: props.commissionValues,
           acquiringValues: props.acquiringValues,
           drrValues: props.drrValues,
+          marginRubValues: props.marginRubValues,
+          marginPercentValues: props.marginPercentValues,
         }),
-      [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costSumValues, props.adSpendValues, props.sppValues, props.commissionValues, props.acquiringValues, props.drrValues, props.costPrices, props.priceCounts],
+      [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costSumValues, props.adSpendValues, props.sppValues, props.commissionValues, props.acquiringValues, props.drrValues, props.marginRubValues, props.marginPercentValues, props.costPrices, props.priceCounts],
     );
 
     // Выделение строк + inline-редактирование (себестоимость/цена) — см. useProductsTableSelection.
@@ -291,6 +297,8 @@ export const DashboardCatalogProductsSection = memo(
       commissionValues: props.commissionValues,
       acquiringValues: props.acquiringValues,
       drrValues: props.drrValues,
+      marginRubValues: props.marginRubValues,
+      priceCounts: props.priceCounts,
       sppValues: props.sppValues,
     });
 
@@ -335,6 +343,8 @@ export const DashboardCatalogProductsSection = memo(
       commissionValues: props.commissionValues,
       acquiringValues: props.acquiringValues,
       drrValues: props.drrValues,
+      marginRubValues: props.marginRubValues,
+      marginPercentValues: props.marginPercentValues,
       priceChangeStatuses: props.priceChangeStatuses,
       selectedNmIds,
       editingNmId,

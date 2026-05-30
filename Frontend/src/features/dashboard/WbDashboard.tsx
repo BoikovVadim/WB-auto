@@ -153,6 +153,8 @@ export function WbDashboard() {
     commissionValues,
     acquiringValues,
     drrValues,
+    marginRubValues,
+    marginPercentValues,
     refreshUnitEconomicsCharges,
     priceChangeStatuses,
     handlePriceSaved,
@@ -459,6 +461,8 @@ export function WbDashboard() {
       commissionValues={commissionValues}
       acquiringValues={acquiringValues}
       drrValues={drrValues}
+      marginRubValues={marginRubValues}
+      marginPercentValues={marginPercentValues}
       priceChangeStatuses={priceChangeStatuses}
       isCostPricesLoading={isCostPricesLoading}
       costPrices={costPrices}

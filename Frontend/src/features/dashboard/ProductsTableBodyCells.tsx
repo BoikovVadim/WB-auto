@@ -25,6 +25,8 @@ export type ProductsBodyRenderCtx = {
   commissionValues: Map<number, number>;
   acquiringValues: Map<number, number>;
   drrValues: Map<number, number>;
+  marginRubValues: Map<number, number>;
+  marginPercentValues: Map<number, number>;
   priceChangeStatuses: Map<number, PriceChangeStatus>;
   selectedNmIds: Set<number>;
   editingNmId: number | null;
@@ -129,6 +131,17 @@ export function renderProductsBodyCell(
       return moneyCell(key, nmId !== null ? ctx.acquiringValues.get(nmId) : undefined, false);
     case "drr":
       return moneyCell(key, nmId !== null ? ctx.drrValues.get(nmId) : undefined, false);
+    case "marginRub":
+      // Маржа бывает отрицательной/нулевой — показываем как есть (positiveOnly=false), «—» только без данных.
+      return moneyCell(key, nmId !== null ? ctx.marginRubValues.get(nmId) : undefined, false);
+    case "marginPercent": {
+      const margin = nmId !== null ? ctx.marginPercentValues.get(nmId) : undefined;
+      return (
+        <td key={key} className="wb-table-cell--numeric">
+          {margin !== undefined ? formatPercent(margin) : dash}
+        </td>
+      );
+    }
     case "orders": {
       const orders = nmId !== null ? ctx.orderCounts.get(nmId) : undefined;
       return (

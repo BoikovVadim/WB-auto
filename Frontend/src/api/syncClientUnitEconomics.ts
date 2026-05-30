@@ -59,6 +59,10 @@ export type UnitEconomicsChargeItem = {
   commissionRub: number | null;
   acquiringRub: number | null;
   drrRub: number | null;
+  /** Маржа в ₽ на единицу (цена со скидкой − себестоимость − комиссия − эквайринг − ДРР). */
+  marginRub: number | null;
+  /** Маржа в % к цене со скидкой. */
+  marginPercent: number | null;
 };
 
 export async function fetchUnitEconomicsCharges(): Promise<UnitEconomicsChargeItem[]> {
