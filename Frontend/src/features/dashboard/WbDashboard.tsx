@@ -120,6 +120,7 @@ export function WbDashboard() {
     isCostSumSheetOpen,
     isAdSpendSheetOpen,
     isSppSheetOpen,
+    isAcquiringSheetOpen,
     openSheet,
     closeSheet,
   } = useDashboardSheets({
@@ -429,6 +430,7 @@ export function WbDashboard() {
       isCostSumSheetOpen={isCostSumSheetOpen}
       isAdSpendSheetOpen={isAdSpendSheetOpen}
       isSppSheetOpen={isSppSheetOpen}
+      isAcquiringSheetOpen={isAcquiringSheetOpen}
       orderCounts={orderCounts}
       ordersMatrix={ordersMatrix}
       buyoutCounts={buyoutCounts}

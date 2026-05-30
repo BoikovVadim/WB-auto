@@ -50,6 +50,7 @@ export function useDashboardSheets(input: {
     isCostSumSheetOpen: inProductsWorkspace && activeSheet === "cost-sum",
     isAdSpendSheetOpen: inProductsWorkspace && activeSheet === "ad-spend",
     isSppSheetOpen: inProductsWorkspace && activeSheet === "spp",
+    isAcquiringSheetOpen: inProductsWorkspace && activeSheet === "acquiring",
     openSheet,
     closeSheet,
   };

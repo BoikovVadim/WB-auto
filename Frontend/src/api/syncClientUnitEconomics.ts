@@ -77,3 +77,34 @@ export async function fetchUnitEconomicsCharges(): Promise<UnitEconomicsChargeIt
   );
   return response.data?.items ?? [];
 }
+
+// ─── Ретроспектива эквайринга (товары × отчётные недели) ──────────────────────
+
+export type AcquiringMatrix = {
+  weeks: { start: string; end: string }[];
+  products: {
+    nmId: number;
+    /** Средневзвешенный % эквайринга за неделю (null — продаж не было). */
+    percents: (number | null)[];
+    /** Σ эквайринга, ₽ за неделю — для взвешенного «Итого». */
+    fees: number[];
+    /** Σ розничной стоимости, ₽ за неделю — база взвешенного «Итого». */
+    retails: number[];
+  }[];
+};
+
+export async function fetchAcquiringMatrix(): Promise<AcquiringMatrix> {
+  const response = await apiClient.get<AcquiringMatrix>(
+    "/wb-clusters/unit-economics/acquiring-matrix",
+  );
+  return response.data ?? { weeks: [], products: [] };
+}
+
+/** Ручной запуск синка эквайринга (fire-and-forget). days — глубина бэкфилла. */
+export async function triggerAcquiringSync(days?: number): Promise<void> {
+  await apiClient.post(
+    "/wb-clusters/unit-economics/sync-acquiring",
+    undefined,
+    { params: days ? { days } : undefined, headers: buildWbClustersWriteHeaders() },
+  );
+}

@@ -31,6 +31,7 @@ export type ProductsHeaderRenderCtx = {
     revenue: () => void;
     costSum: () => void;
     adSpend: () => void;
+    acquiring: () => void;
   };
 };
 
@@ -141,7 +142,12 @@ export function renderProductsHeaderCell(
       case "acquiring":
         return renderSortOnlyHeader("Эквайринг, ₽", "acquiring");
       case "acquiringPercent":
-        return renderSortOnlyHeader("Эквайринг, %", "acquiringPercent");
+        return renderSheetHeader(
+          "Эквайринг, %",
+          "acquiringPercent",
+          ctx.sheets.acquiring,
+          "Открыть ретроспективу эквайринга по неделям",
+        );
       case "drr":
         return renderSortOnlyHeader("ДРР", "drr");
       case "marginRub":

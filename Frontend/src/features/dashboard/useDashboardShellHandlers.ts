@@ -95,5 +95,7 @@ export function useDashboardShellHandlers(input: Input) {
     onCloseAdSpendSheet: closeSheet,
     onOpenSppSheet: () => openSheet("spp"),
     onCloseSppSheet: closeSheet,
+    onOpenAcquiringSheet: () => openSheet("acquiring"),
+    onCloseAcquiringSheet: closeSheet,
   };
 }

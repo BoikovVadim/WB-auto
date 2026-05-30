@@ -107,6 +107,7 @@ export type WbDashboardShellProps = {
   isCostSumSheetOpen: boolean;
   isAdSpendSheetOpen: boolean;
   isSppSheetOpen: boolean;
+  isAcquiringSheetOpen: boolean;
   onOpenCostPriceSheet: () => void;
   onCloseCostPriceSheet: () => void;
   onOpenOrdersSheet: () => void;
@@ -127,6 +128,8 @@ export type WbDashboardShellProps = {
   onCloseAdSpendSheet: () => void;
   onOpenSppSheet: () => void;
   onCloseSppSheet: () => void;
+  onOpenAcquiringSheet: () => void;
+  onCloseAcquiringSheet: () => void;
   onCostSaved: (nmId: number, value: number) => Promise<void>;
   onCostCleared: (nmIds: number[]) => Promise<void>;
   onPriceSaved: (nmId: number, targetFinal: number) => Promise<void>;

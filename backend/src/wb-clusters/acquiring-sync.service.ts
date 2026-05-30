@@ -64,17 +64,9 @@ export class AcquiringSyncService {
 
     this.running = true;
     try {
-      const dateTo = moscowDateStr(0);
-      const dateFrom = moscowDateStr(-daysBack);
-      this.logger.log(`Acquiring sync: ${dateFrom}..${dateTo} (Moscow)`);
-
-      let rows: WbReportDetailRow[];
-      try {
-        rows = await this.statisticsApiClient.fetchReportDetailByPeriod(dateFrom, dateTo);
-      } catch (err) {
-        this.logger.warn(`Acquiring sync fetch error: ${(err as Error).message}`);
-        return;
-      }
+      this.logger.log(
+        `Acquiring sync: ${moscowDateStr(-daysBack)}..${moscowDateStr(0)} (Moscow), daysBack=${daysBack}`,
+      );
 
       // Агрегируем по nm_id × отчётной неделе. acquiring_fee и retail_amount суммируем
       // со знаком (возвраты приходят отрицательными) → net-эквайринг за неделю.
@@ -83,8 +75,8 @@ export class AcquiringSyncService {
         { nmId: number; weekStart: string; weekEnd: string; fee: number; retail: number }
       >();
       let minWeekStart: string | null = null;
-      for (const r of rows) {
-        if (!r.nm_id || typeof r.date_from !== "string") continue;
+      const addRow = (r: WbReportDetailRow) => {
+        if (!r.nm_id || typeof r.date_from !== "string") return;
         const weekStart = r.date_from.slice(0, 10);
         const weekEnd = typeof r.date_to === "string" ? r.date_to.slice(0, 10) : weekStart;
         const fee = Number(r.acquiring_fee) || 0;
@@ -98,6 +90,27 @@ export class AcquiringSyncService {
           agg.set(key, { nmId: r.nm_id, weekStart, weekEnd, fee, retail });
         }
         if (minWeekStart === null || weekStart < minWeekStart) minWeekStart = weekStart;
+      };
+
+      // Тянем окно чанками ≤30 дней, без перекрытия: у reportDetailByPeriod ограничен
+      // период за запрос, а бэкфилл истории (для ретроспективы) бывает длинным. Агрегат
+      // по (nm_id, отчётная неделя) копится в один Map между чанками — недели на стыке
+      // не теряются и не двоятся (границы окон не пересекаются).
+      const CHUNK_DAYS = 30;
+      for (let toOffset = 0; toOffset < daysBack; ) {
+        const fromOffset = Math.min(daysBack, toOffset + CHUNK_DAYS - 1);
+        const chunkFrom = moscowDateStr(-fromOffset);
+        const chunkTo = moscowDateStr(-toOffset);
+        try {
+          const rows = await this.statisticsApiClient.fetchReportDetailByPeriod(chunkFrom, chunkTo);
+          for (const r of rows) addRow(r);
+        } catch (err) {
+          this.logger.warn(
+            `Acquiring sync fetch error (${chunkFrom}..${chunkTo}): ${(err as Error).message}`,
+          );
+          return;
+        }
+        toOffset = fromOffset + 1;
       }
 
       const upsertRows = Array.from(agg.values()).map((a) => ({

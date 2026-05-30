@@ -14,6 +14,7 @@ import { DashboardRevenueDetailSection } from "./DashboardRevenueDetailSection";
 import { DashboardCostSumDetailSection } from "./DashboardCostSumDetailSection";
 import { DashboardAdSpendDetailSection } from "./DashboardAdSpendDetailSection";
 import { DashboardSppDetailSection } from "./DashboardSppDetailSection";
+import { DashboardAcquiringDetailSection } from "./DashboardAcquiringDetailSection";
 import { DashboardPricesDetailSection } from "./DashboardPricesDetailSection";
 import { DashboardStocksDetailSection } from "./DashboardStocksDetailSection";
 import { DashboardBuyoutDetailSection } from "./DashboardBuyoutDetailSection";
@@ -118,6 +119,7 @@ export function WbDashboardShell({
   isCostSumSheetOpen,
   isAdSpendSheetOpen,
   isSppSheetOpen,
+  isAcquiringSheetOpen,
   onOpenCostPriceSheet,
   onCloseCostPriceSheet,
   onOpenOrdersSheet,
@@ -138,6 +140,8 @@ export function WbDashboardShell({
   onCloseAdSpendSheet,
   onOpenSppSheet,
   onCloseSppSheet,
+  onOpenAcquiringSheet,
+  onCloseAcquiringSheet,
   onCostSaved,
   onCostCleared,
   onPriceSaved,
@@ -282,6 +286,11 @@ export function WbDashboardShell({
                 sppMatrix={sppMatrix}
                 onBack={onCloseSppSheet}
               />
+            ) : isAcquiringSheetOpen ? (
+              <DashboardAcquiringDetailSection
+                products={filteredProducts}
+                onBack={onCloseAcquiringSheet}
+              />
             ) : (
               <DashboardCatalogProductsSection
                 hiddenColumns={activeSection === "unit-economics" ? UNIT_ECONOMICS_HIDDEN_COLUMNS : CATALOG_PRODUCTS_HIDDEN_COLUMNS}
@@ -324,6 +333,7 @@ export function WbDashboardShell({
                 onOpenCostSumSheet={onOpenCostSumSheet}
                 onOpenAdSpendSheet={onOpenAdSpendSheet}
                 onOpenSppSheet={onOpenSppSheet}
+                onOpenAcquiringSheet={onOpenAcquiringSheet}
                 onCostSaved={onCostSaved}
                 onCostCleared={onCostCleared}
                 onPriceSaved={onPriceSaved}

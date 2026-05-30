@@ -16,6 +16,15 @@ export type LatestWeekAcquiring = {
   retailAmountSum: number;
 };
 
+/** Строка всей истории эквайринга по неделям (для матрицы-ретроспективы). */
+export type AcquiringWeeklyHistoryRow = {
+  nmId: number;
+  weekStart: string;   // "YYYY-MM-DD"
+  weekEnd: string;
+  acquiringFeeSum: number;
+  retailAmountSum: number;
+};
+
 /**
  * Acquiring repository.
  *
@@ -83,6 +92,33 @@ export abstract class WbClustersRepositoryAcquiring extends WbClustersRepository
     );
     return result.rows.map((r) => ({
       nmId: Number(r.nm_id),
+      acquiringFeeSum: Number(r.acquiring_fee_sum),
+      retailAmountSum: Number(r.retail_amount_sum),
+    }));
+  }
+
+  /** Вся история эквайринга по неделям (для матрицы-ретроспективы), по неделе и товару. */
+  async getAcquiringWeeklyHistory(): Promise<AcquiringWeeklyHistoryRow[]> {
+    const tbl = this.tableName("wb_product_acquiring_weekly");
+    const result = await this.getPool().query<{
+      nm_id: string;
+      week_start: string;
+      week_end: string;
+      acquiring_fee_sum: string;
+      retail_amount_sum: string;
+    }>(
+      `SELECT nm_id::text,
+              week_start::text,
+              week_end::text,
+              acquiring_fee_sum::text,
+              retail_amount_sum::text
+       FROM ${tbl}
+       ORDER BY week_start ASC, nm_id ASC`,
+    );
+    return result.rows.map((r) => ({
+      nmId: Number(r.nm_id),
+      weekStart: r.week_start,
+      weekEnd: r.week_end,
       acquiringFeeSum: Number(r.acquiring_fee_sum),
       retailAmountSum: Number(r.retail_amount_sum),
     }));

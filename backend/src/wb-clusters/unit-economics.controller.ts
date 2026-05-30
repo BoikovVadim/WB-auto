@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Put, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Put, Query, UseGuards } from "@nestjs/common";
 
 import { WbClustersWriteGuard } from "../common/guards/wb-clusters-write.guard";
+import { AcquiringSyncService } from "./acquiring-sync.service";
 import { SetSubjectCommissionDto } from "./dto/set-subject-commission.dto";
 import { SetGlobalPercentDto } from "./dto/set-global-percent.dto";
 import { UnitEconomicsService } from "./unit-economics.service";
@@ -14,6 +15,8 @@ export class UnitEconomicsController {
   constructor(
     @Inject(UnitEconomicsService)
     private readonly unitEconomicsService: UnitEconomicsService,
+    @Inject(AcquiringSyncService)
+    private readonly acquiringSyncService: AcquiringSyncService,
   ) {}
 
   /** Предметы каталога с их комиссией (% или null) + глобальный эквайринг. */
@@ -26,6 +29,31 @@ export class UnitEconomicsController {
   @Get("charges")
   getCharges() {
     return this.unitEconomicsService.getCharges();
+  }
+
+  /** Ретроспектива эквайринга: товары × отчётные недели (для листа VirtualMatrixTable). */
+  @Get("acquiring-matrix")
+  getAcquiringMatrix() {
+    return this.unitEconomicsService.getAcquiringMatrix();
+  }
+
+  /**
+   * Ручной запуск синка эквайринга из отчёта реализации (fire-and-forget). days —
+   * глубина бэкфилла в днях (по умолчанию 21 = последняя закрытая неделя; для истории
+   * ретроспективы — например 180). Возвращается сразу, синк идёт в фоне.
+   */
+  @Post("sync-acquiring")
+  @UseGuards(WbClustersWriteGuard)
+  @HttpCode(202)
+  syncAcquiring(@Query("days") days?: string) {
+    const parsed = Number(days);
+    const daysBack = Number.isFinite(parsed) && parsed > 0 ? Math.min(Math.floor(parsed), 400) : 21;
+    void this.acquiringSyncService
+      .syncAcquiringFromRealization(daysBack)
+      .catch(() => {
+        /* ошибки логируются внутри сервиса */
+      });
+    return { status: "started", daysBack };
   }
 
   @Put("subject-commission")

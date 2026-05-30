@@ -15,6 +15,17 @@ export type UnitEconomicsSettings = {
   drrPercent: number | null;
 };
 
+/** Ретроспектива эквайринга: товары × отчётные недели (% и суммы для взвешенного «Итого»). */
+export type AcquiringMatrix = {
+  weeks: { start: string; end: string }[];
+  products: {
+    nmId: number;
+    percents: (number | null)[];
+    fees: number[];
+    retails: number[];
+  }[];
+};
+
 export type UnitEconomicsChargeItem = {
   nmId: number;
   taxRub: number | null;
@@ -190,5 +201,48 @@ export class UnitEconomicsService {
       });
     }
     return { items };
+  }
+
+  /**
+   * Ретроспектива фактического эквайринга: товары × отчётные недели. Для каждой недели
+   * по товару — средневзвешенный % (Σfee/Σretail × 100) плюс суммы fee/retail, чтобы
+   * фронт мог посчитать взвешенный «Итого» по столбцу-неделе. Считается на сервере,
+   * фронт только рисует матрицу (VirtualMatrixTable).
+   */
+  async getAcquiringMatrix(): Promise<AcquiringMatrix> {
+    if (!this.repository.isConfigured()) return { weeks: [], products: [] };
+    await this.repository.ensureSchema();
+    const history = await this.repository.getAcquiringWeeklyHistory();
+
+    // Отчётные недели (по week_start), по возрастанию; end берём из первой встреченной строки.
+    const weekEndByStart = new Map<string, string>();
+    for (const r of history) {
+      if (!weekEndByStart.has(r.weekStart)) weekEndByStart.set(r.weekStart, r.weekEnd);
+    }
+    const weekStarts = Array.from(weekEndByStart.keys()).sort();
+    const weekIdx = new Map(weekStarts.map((w, i) => [w, i]));
+    const weeks = weekStarts.map((start) => ({ start, end: weekEndByStart.get(start) ?? start }));
+
+    const byNmId = new Map<number, AcquiringMatrix["products"][number]>();
+    for (const r of history) {
+      const idx = weekIdx.get(r.weekStart);
+      if (idx === undefined) continue;
+      let row = byNmId.get(r.nmId);
+      if (!row) {
+        row = {
+          nmId: r.nmId,
+          percents: new Array<number | null>(weeks.length).fill(null),
+          fees: new Array<number>(weeks.length).fill(0),
+          retails: new Array<number>(weeks.length).fill(0),
+        };
+        byNmId.set(r.nmId, row);
+      }
+      row.fees[idx] = r.acquiringFeeSum;
+      row.retails[idx] = r.retailAmountSum;
+      row.percents[idx] =
+        r.retailAmountSum > 0 ? round2((r.acquiringFeeSum / r.retailAmountSum) * 100) : null;
+    }
+
+    return { weeks, products: Array.from(byNmId.values()) };
   }
 }
