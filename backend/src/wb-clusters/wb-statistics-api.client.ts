@@ -109,30 +109,37 @@ export class WbStatisticsApiClient {
   constructor(private readonly getToken: () => string) {}
 
   /**
-   * Скачивает отчёт о реализации за период [dateFrom, dateTo] (даты "YYYY-MM-DD",
-   * границы трактуются WB как отчётные даты). Пагинация по курсору rrdid: на каждой
-   * странице берём последний rrd_id и шлём его как rrdid, пока WB не вернёт пустую
-   * страницу или меньше лимита. Тот же лимит statistics-api (1 req/min) — каждый
+   * Итерирует отчёт о реализации за период [dateFrom, dateTo] (даты "YYYY-MM-DD",
+   * границы трактуются WB как отчётные даты) ПОСТРАНИЧНО. Пагинация по курсору rrdid:
+   * на каждой странице берём последний rrd_id и шлём его как rrdid, пока WB не вернёт
+   * пустую страницу или меньше лимита. Тот же лимит statistics-api (1 req/min) — каждый
    * запрос проходит через общий throttle инстанса.
+   *
+   * Отдаём генератором (а не одним массивом), чтобы потребитель сворачивал страницы по
+   * мере поступления и НЕ держал весь отчёт в памяти. Финансовый отчёт WB за неделю —
+   * это десятки/сотни тысяч «жирных» строк (десятки полей каждая); парсинг целиком
+   * (LIMIT=100k) одним JSON.parse выбивал процесс за лимит heap (--max-old-space-size=768)
+   * с fatal OOM и ронял весь backend. Маленькая страница (LIMIT) держит пик памяти
+   * одного JSON.parse в безопасных рамках.
    */
-  async fetchReportDetailByPeriod(dateFrom: string, dateTo: string): Promise<WbReportDetailRow[]> {
-    const LIMIT = 100000;
-    const all: WbReportDetailRow[] = [];
+  async *iterateReportDetailByPeriod(
+    dateFrom: string,
+    dateTo: string,
+  ): AsyncGenerator<WbReportDetailRow[]> {
+    const LIMIT = 10000;
     let rrdid = 0;
 
     for (;;) {
       await this.throttle();
       const page = await this.fetchReportDetailPage(dateFrom, dateTo, rrdid, LIMIT);
       if (page.length === 0) break;
-      all.push(...page);
+      yield page;
       const last = page[page.length - 1];
       if (!last || typeof last.rrd_id !== "number") break;
       if (last.rrd_id <= rrdid) break; // защита от зацикливания
       if (page.length < LIMIT) break;
       rrdid = last.rrd_id;
     }
-
-    return all;
   }
 
   private async fetchReportDetailPage(

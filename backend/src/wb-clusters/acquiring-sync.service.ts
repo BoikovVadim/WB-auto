@@ -67,34 +67,36 @@ export class AcquiringSyncService {
       const weekTo = moscowDateStr(-(daysSinceMonday + 1));
       this.logger.log(`Acquiring sync: последняя закрытая неделя ${weekFrom}..${weekTo}`);
 
-      let rows;
-      try {
-        rows = await this.statisticsApiClient.fetchReportDetailByPeriod(weekFrom, weekTo);
-      } catch (err) {
-        this.logger.warn(`Acquiring sync fetch error: ${(err as Error).message}`);
-        return;
-      }
-
-      // Агрегируем по nm_id × отчётной неделе. acquiring_fee и retail_amount суммируем
-      // со знаком (возвраты отрицательны) → net-эквайринг за неделю.
+      // Агрегируем по nm_id × отчётной неделе ПОСТРАНИЧНО (генератор отдаёт отчёт
+      // частями) — так весь отчёт не висит в памяти, только маленький агрегат и одна
+      // страница. acquiring_fee и retail_amount суммируем со знаком (возвраты
+      // отрицательны) → net-эквайринг за неделю. Ошибка фетча в любой странице → warn и
+      // выход без записи (агрегат отбрасываем, неделю не чистим — частичных данных нет).
       const agg = new Map<
         string,
         { nmId: number; weekStart: string; weekEnd: string; fee: number; retail: number }
       >();
-      for (const r of rows) {
-        if (!r.nm_id || typeof r.date_from !== "string") continue;
-        const weekStart = r.date_from.slice(0, 10);
-        const weekEnd = typeof r.date_to === "string" ? r.date_to.slice(0, 10) : weekStart;
-        const fee = Number(r.acquiring_fee) || 0;
-        const retail = Number(r.retail_amount) || 0;
-        const key = `${r.nm_id}|${weekStart}`;
-        const entry = agg.get(key);
-        if (entry) {
-          entry.fee += fee;
-          entry.retail += retail;
-        } else {
-          agg.set(key, { nmId: r.nm_id, weekStart, weekEnd, fee, retail });
+      try {
+        for await (const page of this.statisticsApiClient.iterateReportDetailByPeriod(weekFrom, weekTo)) {
+          for (const r of page) {
+            if (!r.nm_id || typeof r.date_from !== "string") continue;
+            const weekStart = r.date_from.slice(0, 10);
+            const weekEnd = typeof r.date_to === "string" ? r.date_to.slice(0, 10) : weekStart;
+            const fee = Number(r.acquiring_fee) || 0;
+            const retail = Number(r.retail_amount) || 0;
+            const key = `${r.nm_id}|${weekStart}`;
+            const entry = agg.get(key);
+            if (entry) {
+              entry.fee += fee;
+              entry.retail += retail;
+            } else {
+              agg.set(key, { nmId: r.nm_id, weekStart, weekEnd, fee, retail });
+            }
+          }
         }
+      } catch (err) {
+        this.logger.warn(`Acquiring sync fetch error: ${(err as Error).message}`);
+        return;
       }
 
       const upsertRows = Array.from(agg.values()).map((a) => ({
