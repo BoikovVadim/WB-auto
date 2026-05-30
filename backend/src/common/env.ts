@@ -186,10 +186,11 @@ export const appEnv = {
   // а не годовой. WB доуточняет день ~2 недели, поэтому 30 дней с запасом покрывают
   // «дозревающее» окно; короткий отчёт генерится за секунды и почти не ловит 429.
   wbOrdersReconcileDays: parsePositiveIntegerEnv("WB_ORDERS_RECONCILE_DAYS", "30", 1),
-  // Stocks snapshot: taken once per day at 01:00 MSK (22:00 UTC).
-  // Downloads /api/v1/supplier/stocks and stores total quantity per nmId.
+  // Stocks snapshot: once per day at 01:00 MSK. Server runs in Europe/Moscow, so the cron
+  // string IS Moscow time, NOT UTC — the old "0 0 22 * * *" with a «22:00 UTC = 01:00 МСК»
+  // note actually fired at 22:00 MSK. Downloads /api/v1/supplier/stocks, stores qty per nmId.
   wbStocksSnapshotEnabled: parseBooleanEnv("WB_STOCKS_SNAPSHOT_ENABLED", "true"),
-  wbStocksSnapshotCron: getOptionalEnv("WB_STOCKS_SNAPSHOT_CRON", "0 0 22 * * *").trim() || "0 0 22 * * *",
+  wbStocksSnapshotCron: getOptionalEnv("WB_STOCKS_SNAPSHOT_CRON", "0 0 1 * * *").trim() || "0 0 1 * * *",
   wbClustersWriteApiKey: (process.env.WB_CLUSTERS_WRITE_API_KEY ?? "").trim(),
   wbPromotionApiBaseUrl: getOptionalUrlEnv(
     "WB_PROMOTION_API_BASE_URL",
