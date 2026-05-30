@@ -81,6 +81,17 @@ export class AcquiringSyncService {
         const chunkFrom = moscowDateStr(-fromOffset);
         const chunkTo = moscowDateStr(-toOffset);
 
+        // Самый свежий чанк (toOffset === 0) ВСЕГДА тянем — WB доуточняет недавние
+        // отчёты, нужно освежать последнюю неделю. Старые чанки, по которым данные уже
+        // есть, ПРОПУСКАЕМ (без запроса/throttle): это делает бэкфилл возобновляемым —
+        // повторный запуск за секунды доходит до первого незалитого месяца, переживая
+        // частые перезапуски процесса.
+        if (toOffset > 0 && (await this.repository.hasAcquiringDataInRange(chunkFrom, chunkTo))) {
+          this.logger.log(`Acquiring sync chunk ${chunkFrom}..${chunkTo}: уже есть, пропуск`);
+          toOffset = fromOffset + 1;
+          continue;
+        }
+
         // Агрегат ТОЛЬКО этого чанка (память ограничена одним окном). acquiring_fee и
         // retail_amount суммируем со знаком (возвраты отрицательны) -> net за неделю.
         const chunkAgg = new Map<
