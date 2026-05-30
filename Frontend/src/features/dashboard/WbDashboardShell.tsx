@@ -18,13 +18,14 @@ import { DashboardPricesDetailSection } from "./DashboardPricesDetailSection";
 import { DashboardStocksDetailSection } from "./DashboardStocksDetailSection";
 import { DashboardBuyoutDetailSection } from "./DashboardBuyoutDetailSection";
 import { DashboardChangeHistorySection } from "./DashboardChangeHistorySection";
+import { DashboardUnitEconomicsSettingsSection } from "./DashboardUnitEconomicsSettingsSection";
 import { DashboardHubSection } from "./DashboardHubSection";
 import { DashboardProductsSection } from "./DashboardProductsSection";
 import { DashboardQueryFrequenciesSection } from "./DashboardQueryFrequenciesSection";
 import { DashboardSyncRunsSection } from "./DashboardSyncRunsSection";
 import { DashboardTechSection } from "./DashboardTechSection";
 import { isProductsWorkspaceSection } from "./persistence/dashboardViewState";
-import { UNIT_ECONOMICS_HIDDEN_COLUMNS } from "./productsTableColumns";
+import { CATALOG_PRODUCTS_HIDDEN_COLUMNS, UNIT_ECONOMICS_HIDDEN_COLUMNS } from "./productsTableColumns";
 import { WbCabinetSidebar } from "./WbCabinetSidebar";
 import type { WbDashboardShellProps } from "./WbDashboardShellTypes";
 
@@ -74,6 +75,8 @@ export function WbDashboardShell({
   onOpenCatalogProductsSection,
   onPrefetchCatalogProductsSection,
   onOpenUnitEconomicsSection,
+  onOpenUnitEconomicsSettingsSection,
+  onUnitEconomicsChargesInvalidate,
   onOpenDashboardSection,
   onOpenDashboardTechSection,
   onOpenDashboardCabinetSection,
@@ -97,6 +100,8 @@ export function WbDashboardShell({
   adSpendMatrix,
   sppValues,
   sppMatrix,
+  commissionValues,
+  acquiringValues,
   priceChangeStatuses,
   isOrdersSheetOpen,
   isBuyoutSheetOpen,
@@ -158,6 +163,7 @@ export function WbDashboardShell({
         onOpenCatalogProductsSection={onOpenCatalogProductsSection}
         onPrefetchCatalogProductsSection={onPrefetchCatalogProductsSection}
         onOpenUnitEconomicsSection={onOpenUnitEconomicsSection}
+        onOpenUnitEconomicsSettingsSection={onOpenUnitEconomicsSettingsSection}
         onOpenDashboardSection={onOpenDashboardSection}
         onOpenChangeHistorySection={onOpenChangeHistorySection}
       />
@@ -272,7 +278,7 @@ export function WbDashboardShell({
               />
             ) : (
               <DashboardCatalogProductsSection
-                hiddenColumns={activeSection === "unit-economics" ? UNIT_ECONOMICS_HIDDEN_COLUMNS : undefined}
+                hiddenColumns={activeSection === "unit-economics" ? UNIT_ECONOMICS_HIDDEN_COLUMNS : CATALOG_PRODUCTS_HIDDEN_COLUMNS}
                 productCatalogCount={productCatalogCount}
                 productsSearch={productsSearch}
                 hasCatalogItems={hasCatalogItems}
@@ -291,6 +297,8 @@ export function WbDashboardShell({
                 costSumValues={costSumValues}
                 adSpendValues={adSpendValues}
                 sppValues={sppValues}
+                commissionValues={commissionValues}
+                acquiringValues={acquiringValues}
                 priceChangeStatuses={priceChangeStatuses}
                 onProductsSearchChange={onProductsSearchChange}
                 onProductsSortToggle={onProductsSortToggle}
@@ -309,6 +317,11 @@ export function WbDashboardShell({
                 onPriceSaved={onPriceSaved}
               />
             )
+          ) : activeSection === "unit-economics-settings" ? (
+            <DashboardUnitEconomicsSettingsSection
+              onBack={onOpenUnitEconomicsSection}
+              onChargesInvalidate={onUnitEconomicsChargesInvalidate}
+            />
           ) : activeSection === "products" ? (
             <DashboardProductsSection
               productsMode={productsMode}

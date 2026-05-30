@@ -64,6 +64,8 @@ export type WbDashboardShellProps = {
   onOpenCatalogProductsSection: () => void;
   onPrefetchCatalogProductsSection: () => void;
   onOpenUnitEconomicsSection: () => void;
+  onOpenUnitEconomicsSettingsSection: () => void;
+  onUnitEconomicsChargesInvalidate: () => void;
   onOpenDashboardSection: () => void;
   onOpenDashboardTechSection: () => void;
   onOpenDashboardCabinetSection: () => void;
@@ -87,6 +89,8 @@ export type WbDashboardShellProps = {
   adSpendMatrix: import("./useAdSpendMatrix").AdSpendMatrix;
   sppValues: Map<number, number>;
   sppMatrix: import("./useSppMatrix").SppMatrix;
+  commissionValues: Map<number, number>;
+  acquiringValues: Map<number, number>;
   priceChangeStatuses: Map<number, import("../../api/syncClientPrices").PriceChangeStatus>;
   isOrdersSheetOpen: boolean;
   isBuyoutSheetOpen: boolean;

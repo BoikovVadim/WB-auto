@@ -162,6 +162,9 @@ export function WbDashboard() {
     adSpendMatrix,
     sppValues,
     sppMatrix,
+    commissionValues,
+    acquiringValues,
+    refreshUnitEconomicsCharges,
     priceChangeStatuses,
     handlePriceSaved,
   } = useDashboardMetrics({
@@ -500,6 +503,11 @@ export function WbDashboard() {
         setActiveSheet("none");
         setActiveSection("unit-economics");
       }}
+      onOpenUnitEconomicsSettingsSection={() => {
+        setActiveSheet("none");
+        setActiveSection("unit-economics-settings");
+      }}
+      onUnitEconomicsChargesInvalidate={refreshUnitEconomicsCharges}
       onOpenDashboardSection={() => { setActiveSection("dashboard"); }}
       onOpenDashboardTechSection={() => { setActiveSection("dashboard-tech"); }}
       onOpenDashboardCabinetSection={() => { setActiveSection("dashboard-cabinet"); }}
@@ -530,6 +538,8 @@ export function WbDashboard() {
       adSpendMatrix={adSpendMatrix}
       sppValues={sppValues}
       sppMatrix={sppMatrix}
+      commissionValues={commissionValues}
+      acquiringValues={acquiringValues}
       priceChangeStatuses={priceChangeStatuses}
       isCostPricesLoading={isCostPricesLoading}
       costPrices={costPrices}

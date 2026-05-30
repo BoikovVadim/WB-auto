@@ -19,6 +19,8 @@ export function getColLabel(key: ProductsColumnKey): string {
     case "subject":   return ui.subject;
     case "cost":      return "Себестоимость";
     case "price":     return "Цена";
+    case "commission": return "Комиссия";
+    case "acquiring": return "Эквайринг";
     case "orders":    return "Заказы";
     case "buyout":    return "% выкупа";
     case "spp":       return "СПП";

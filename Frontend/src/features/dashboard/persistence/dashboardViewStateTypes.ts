@@ -6,6 +6,7 @@ export type DashboardSection =
   | "products"
   | "catalog-products"
   | "unit-economics"
+  | "unit-economics-settings"
   | "jam"
   | "catalog"
   | "campaigns"
@@ -90,6 +91,7 @@ export function isDashboardSection(value: unknown): value is DashboardSection {
     value === "products" ||
     value === "catalog-products" ||
     value === "unit-economics" ||
+    value === "unit-economics-settings" ||
     value === "jam" ||
     value === "catalog" ||
     value === "campaigns" ||

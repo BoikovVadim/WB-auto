@@ -53,6 +53,10 @@ type DashboardCatalogProductsSectionProps = {
   costSumValues: Map<number, number>;
   adSpendValues: Map<number, number>;
   sppValues: Map<number, number>;
+  /** Комиссия в ₽ на товар (по категории) — только «Юнит Экономика». Считается на бэке. */
+  commissionValues: Map<number, number>;
+  /** Эквайринг в ₽ на товар (глобальный %) — только «Юнит Экономика». Считается на бэке. */
+  acquiringValues: Map<number, number>;
   priceChangeStatuses: Map<number, PriceChangeStatus>;
   /** Колонки, скрытые в этой секции. Напр. «Юнит Экономика» прячет
    *  заказы/остатки/сумму заказов/выручку/с-с продаж/рекламу. */
@@ -76,7 +80,7 @@ type DashboardCatalogProductsSectionProps = {
 };
 
 // ─── Local sort key (for columns backed by external Maps) ────────────────────
-type LocalSortKey = "cost" | "price" | "orders" | "buyout" | "spp" | "stock" | "ordersSum" | "revenue" | "costSum" | "adSpend";
+type LocalSortKey = "cost" | "price" | "commission" | "acquiring" | "orders" | "buyout" | "spp" | "stock" | "ordersSum" | "revenue" | "costSum" | "adSpend";
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -172,6 +176,12 @@ export const DashboardCatalogProductsSection = memo(
         } else if (localSortKey === "adSpend") {
           av = a.nmId !== null ? (props.adSpendValues.get(a.nmId) ?? 0) : 0;
           bv = b.nmId !== null ? (props.adSpendValues.get(b.nmId) ?? 0) : 0;
+        } else if (localSortKey === "commission") {
+          av = a.nmId !== null ? (props.commissionValues.get(a.nmId) ?? -1) : -1;
+          bv = b.nmId !== null ? (props.commissionValues.get(b.nmId) ?? -1) : -1;
+        } else if (localSortKey === "acquiring") {
+          av = a.nmId !== null ? (props.acquiringValues.get(a.nmId) ?? -1) : -1;
+          bv = b.nmId !== null ? (props.acquiringValues.get(b.nmId) ?? -1) : -1;
         } else if (localSortKey === "spp") {
           av = a.nmId !== null ? (props.sppValues.get(a.nmId) ?? -1) : -1;
           bv = b.nmId !== null ? (props.sppValues.get(b.nmId) ?? -1) : -1;
@@ -185,7 +195,7 @@ export const DashboardCatalogProductsSection = memo(
         }
         return localSortDir === "asc" ? av - bv : bv - av;
       });
-    }, [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costSumValues, props.adSpendValues, props.sppValues, props.costPrices, props.priceCounts]);
+    }, [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costSumValues, props.adSpendValues, props.sppValues, props.commissionValues, props.acquiringValues, props.costPrices, props.priceCounts]);
 
     const handleCommitEdit = useCallback(() => {
       setEditingNmId(null);
@@ -539,6 +549,28 @@ export const DashboardCatalogProductsSection = memo(
       return hasAny ? sum : null;
     }, [props.filteredProducts, props.adSpendValues]);
 
+    const totalCommission = useMemo(() => {
+      let sum = 0;
+      let hasAny = false;
+      for (const p of props.filteredProducts) {
+        if (p.nmId === null) continue;
+        const v = props.commissionValues.get(p.nmId);
+        if (v !== undefined) { sum += v; hasAny = true; }
+      }
+      return hasAny ? sum : null;
+    }, [props.filteredProducts, props.commissionValues]);
+
+    const totalAcquiring = useMemo(() => {
+      let sum = 0;
+      let hasAny = false;
+      for (const p of props.filteredProducts) {
+        if (p.nmId === null) continue;
+        const v = props.acquiringValues.get(p.nmId);
+        if (v !== undefined) { sum += v; hasAny = true; }
+      }
+      return hasAny ? sum : null;
+    }, [props.filteredProducts, props.acquiringValues]);
+
     // СПП «Итого» — простое среднее по товарам с данными (то же усреднение, что у
     // самой метрики). spp=0 — валидное значение, учитывается; «—» только без данных.
     const totalSpp = useMemo(() => {
@@ -559,8 +591,7 @@ export const DashboardCatalogProductsSection = memo(
       const parentSortKey = getParentSortKey(key);
       const isParentActive = localSortKey === null && parentSortKey !== null && sortKey === parentSortKey;
       const isLocalActive = localSortKey === key;
-      const isResizable = key === "vendorCode" || key === "category" || key === "subject";
-      const isNumeric = key === "index" || key === "nmId" || key === "cost" || key === "price" || key === "orders" || key === "buyout" || key === "spp" || key === "stock" || key === "ordersSum" || key === "revenue" || key === "costSum" || key === "adSpend";
+      const isNumeric = key === "index" || key === "nmId" || key === "cost" || key === "price" || key === "commission" || key === "acquiring" || key === "orders" || key === "buyout" || key === "spp" || key === "stock" || key === "ordersSum" || key === "revenue" || key === "costSum" || key === "adSpend";
       const isDragging = draggedColumn === key;
 
       const dragHandlers = {
@@ -607,6 +638,19 @@ export const DashboardCatalogProductsSection = memo(
             <SortArrow active={isLocalActive} direction={localSortDir} />
           </button>
         </div>
+      );
+
+      // Заголовок read-only колонки без ретроспективы (комиссия/эквайринг): клик по
+      // названию = локальная сортировка, без листа.
+      const renderSortOnlyHeader = (label: string, localKey: LocalSortKey) => (
+        <button
+          className="wb-products-sort-button"
+          type="button"
+          onClick={() => handleLocalSortToggle(localKey)}
+        >
+          <span>{label}</span>
+          <SortArrow active={isLocalActive} direction={localSortDir} />
+        </button>
       );
 
       const content = (() => {
@@ -669,6 +713,10 @@ export const DashboardCatalogProductsSection = memo(
             return renderSheetHeader("Себестоимость", "cost", props.onOpenCostPriceSheet, "Открыть лист себестоимости");
           case "price":
             return renderSheetHeader("Цена", "price", props.onOpenPricesSheet, "Открыть ретроспективу цен");
+          case "commission":
+            return renderSortOnlyHeader("Комиссия", "commission");
+          case "acquiring":
+            return renderSortOnlyHeader("Эквайринг", "acquiring");
           case "orders":
             return renderSheetHeader("Заказы", "orders", props.onOpenOrdersSheet, "Открыть ретроспективу заказов");
           case "buyout":
@@ -736,6 +784,18 @@ export const DashboardCatalogProductsSection = memo(
           return (
             <th key={key} className="wb-table-cell--numeric">
               {totalStocks !== null ? String(totalStocks) : "—"}
+            </th>
+          );
+        case "commission":
+          return (
+            <th key={key} className="wb-table-cell--numeric">
+              {totalCommission !== null ? formatMoney(totalCommission) : "—"}
+            </th>
+          );
+        case "acquiring":
+          return (
+            <th key={key} className="wb-table-cell--numeric">
+              {totalAcquiring !== null ? formatMoney(totalAcquiring) : "—"}
             </th>
           );
         case "ordersSum":
@@ -857,6 +917,26 @@ export const DashboardCatalogProductsSection = memo(
               )}
             </td>
           );
+        case "commission": {
+          const commission = nmId !== null ? props.commissionValues.get(nmId) : undefined;
+          return (
+            <td key={key} className="wb-table-cell--numeric">
+              {commission !== undefined
+                ? formatMoney(commission)
+                : <span style={{ opacity: 0.3 }}>—</span>}
+            </td>
+          );
+        }
+        case "acquiring": {
+          const acquiring = nmId !== null ? props.acquiringValues.get(nmId) : undefined;
+          return (
+            <td key={key} className="wb-table-cell--numeric">
+              {acquiring !== undefined
+                ? formatMoney(acquiring)
+                : <span style={{ opacity: 0.3 }}>—</span>}
+            </td>
+          );
+        }
         case "orders":
           return (
             <td key={key} className="wb-table-cell--numeric wb-table-cell--orders">

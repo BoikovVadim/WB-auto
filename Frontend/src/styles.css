@@ -223,6 +223,116 @@ input {
   text-align: center;
 }
 
+/* ── Раскрывающийся пункт сайдбара (Юнит Экономика → вкладки) ─────────────── */
+.wb-cabinet-menu-group {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.wb-cabinet-menu-chevron {
+  font-size: 8px;
+  line-height: 1;
+  color: var(--wb-gold-mid);
+  transition: transform 0.2s ease;
+}
+
+.wb-cabinet-menu-chevron.open {
+  transform: rotate(180deg);
+}
+
+.wb-cabinet-submenu {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-bottom: 2px;
+}
+
+.wb-cabinet-submenu-item {
+  position: relative;
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 4px;
+  border: none;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--wb-gold-mid);
+  font-size: 8px;
+  line-height: 1.1;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.wb-cabinet-submenu-item:hover,
+.wb-cabinet-submenu-item.active {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(232, 197, 71, 0.14) 100%
+  );
+  color: #fff;
+  transform: translateX(3px);
+}
+
+.wb-cabinet-submenu-item.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--wb-gold-gradient);
+}
+
+/* ── Страница настроек юнит-экономики ─────────────────────────────────────── */
+.wb-unit-econ-block {
+  margin-top: 18px;
+}
+
+.wb-unit-econ-block-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.wb-unit-econ-table {
+  max-width: 520px;
+}
+
+.wb-unit-econ-percent {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.wb-unit-econ-percent-input {
+  width: 90px;
+  text-align: right;
+}
+
+.wb-unit-econ-percent-suffix {
+  color: var(--wb-text-muted);
+  font-size: 12px;
+}
+
+.wb-unit-econ-acquiring-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wb-unit-econ-acquiring-label {
+  font-size: 13px;
+}
+
 .wb-cabinet-main-wrap {
   margin-left: clamp(72px, 3vw + 36px, 88px);
   width: calc(100% - clamp(72px, 3vw + 36px, 88px));

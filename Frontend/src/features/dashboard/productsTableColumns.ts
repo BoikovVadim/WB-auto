@@ -13,6 +13,8 @@ export type ProductsColumnKey =
   | "subject"
   | "cost"
   | "price"
+  | "commission"
+  | "acquiring"
   | "orders"
   | "buyout"
   | "spp"
@@ -27,10 +29,11 @@ export type ProductColumnDefinition = {
   defaultWidth: number;
 };
 
-// v4: добавлена колонка «Реклама, ₽» в конец (после «С/с продаж») — бамп сбрасывает
-// сохранённый порядок к дефолту, чтобы новая колонка встала на нужное место (не уехала
-// в конец у тех, кто уже двигал колонки). Ширины хранятся отдельно и не теряются.
-export const PRODUCTS_COLUMN_STORAGE_KEY = "wb-products-column-order-v4";
+// v5: добавлены колонки «Комиссия, ₽» и «Эквайринг, ₽» (после «Цена», только в
+// «Юнит Экономике»; в «Товарах» скрыты) — бамп сбрасывает сохранённый порядок к
+// дефолту, чтобы новые колонки встали на нужное место (не уехали в конец у тех,
+// кто уже двигал колонки). Ширины хранятся отдельно и не теряются.
+export const PRODUCTS_COLUMN_STORAGE_KEY = "wb-products-column-order-v5";
 
 export const productsTableColumnDefs: ProductColumnDefinition[] = [
   { key: "index",     defaultWidth: 48  },
@@ -40,6 +43,8 @@ export const productsTableColumnDefs: ProductColumnDefinition[] = [
   { key: "subject",   defaultWidth: 120 },
   { key: "cost",      defaultWidth: 140 },
   { key: "price",     defaultWidth: 130 },
+  { key: "commission", defaultWidth: 130 },
+  { key: "acquiring", defaultWidth: 130 },
   { key: "orders",    defaultWidth: 110 },
   { key: "buyout",    defaultWidth: 110 },
   { key: "spp",       defaultWidth: 110 },
@@ -61,6 +66,14 @@ export const UNIT_ECONOMICS_HIDDEN_COLUMNS: ProductsColumnKey[] = [
   "revenue",
   "costSum",
   "adSpend",
+];
+
+// Колонки, специфичные для «Юнит Экономики» (комиссия/эквайринг) — скрыты в обычном
+// разделе «Товары». Так одни и те же определения колонок (порядок/ширины общие)
+// показываются по-разному в двух секциях.
+export const CATALOG_PRODUCTS_HIDDEN_COLUMNS: ProductsColumnKey[] = [
+  "commission",
+  "acquiring",
 ];
 
 export function readStoredProductsColumnOrder(): ProductsColumnKey[] {

@@ -7,6 +7,7 @@ import { WbCabinetPrivateApiClient } from "./wb-cabinet-private-api.client";
 import { WbCmpSafariClient } from "./wb-cmp-safari.client";
 import { WbSellerPortalPlaywrightClient } from "./wb-seller-portal-playwright.client";
 import { WbClustersController } from "./wb-clusters.controller";
+import { UnitEconomicsController } from "./unit-economics.controller";
 import { WbClustersActionQueueService } from "./wb-clusters-action-queue.service";
 import { WbClustersBidQueueService } from "./wb-clusters-bid-queue.service";
 import { WbClustersRepository } from "./wb-clusters.repository";
@@ -21,6 +22,7 @@ import { ProductAdvertisingSnapshotMaterializer } from "./product-advertising-sn
 import { ProductAdvertisingSnapshotRepository } from "./product-advertising-snapshot.repository";
 import { ProductAdvertisingSnapshotResolver } from "./product-advertising-snapshot.resolver";
 import { ProductCatalogService } from "./product-catalog.service";
+import { UnitEconomicsService } from "./unit-economics.service";
 import { ProductAdvertisingWorkspaceReadService } from "./product-advertising-workspace-read.service";
 import { ProductWorkspaceRepository } from "./product-workspace.repository";
 import { ProductWorkspaceSnapshotBackfillService } from "./product-workspace-snapshot.backfill.service";
@@ -33,7 +35,7 @@ import { WbPromotionApiClient } from "./wb-promotion-api.client";
 
 @Module({
   imports: [WbRuntimeConfigModule],
-  controllers: [WbClustersController],
+  controllers: [WbClustersController, UnitEconomicsController],
   providers: [
     WbCabinetPrivateApiClient,
     WbCmpSafariClient,
@@ -56,6 +58,7 @@ import { WbPromotionApiClient } from "./wb-promotion-api.client";
     ProductAdvertisingSnapshotJobService,
     ProductAdvertisingSnapshotBackfillService,
     ProductCatalogService,
+    UnitEconomicsService,
     ProductAdvertisingWorkspaceReadService,
     ProductWorkspaceRepository,
     ProductWorkspaceSnapshotMaterializer,
@@ -64,6 +67,6 @@ import { WbPromotionApiClient } from "./wb-promotion-api.client";
     WbApiClient,
     WbPromotionApiClient,
   ],
-  exports: [WbClustersService, ProductCatalogService],
+  exports: [WbClustersService, ProductCatalogService, UnitEconomicsService],
 })
 export class WbClustersModule {}
