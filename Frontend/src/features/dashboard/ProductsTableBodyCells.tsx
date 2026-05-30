@@ -6,9 +6,9 @@ import type { TodayOrderCount } from "../../api/syncClientOrders";
 import type { PriceChangeStatus } from "../../api/syncClientPrices";
 import { formatMoney, formatPercent } from "../../formatters";
 import { CalcInputCell, CostInputCell, PriceInputCell } from "./ProductsTableCells";
-import { cellKey, type EditableColumnKey, type EditingCell } from "./useProductsTableSelection";
+import type { EditableColumnKey, EditingCell } from "./useProductsTableSelection";
 import type { CurrentPriceEntry } from "./useCurrentPrices";
-import type { ProductColumnDefinition } from "./productsTableColumns";
+import type { ProductColumnDefinition, ProductsColumnKey } from "./productsTableColumns";
 import { getDisplayVendorCode } from "./productsTableHelpers";
 import type { ProductListItem } from "./useDashboardProductsWorkspace";
 
@@ -55,11 +55,11 @@ export type ProductsBodyRenderCtx = {
   onCellMouseDown: (
     nmId: number,
     rowIndex: number,
-    colKey: EditableColumnKey,
+    colKey: ProductsColumnKey,
     event: React.MouseEvent,
   ) => void;
-  onCellMouseEnter: (nmId: number, rowIndex: number, colKey: EditableColumnKey) => void;
-  onCellDoubleClick: (nmId: number, colKey: EditableColumnKey) => void;
+  onCellMouseEnter: (nmId: number, rowIndex: number, colKey: ProductsColumnKey) => void;
+  onCellDoubleClick: (nmId: number, colKey: ProductsColumnKey) => void;
   onCostSaved: (nmId: number, value: number) => Promise<void>;
   onCommitEdit: () => void;
   onStartEditCost: (nmId: number) => void;
@@ -93,8 +93,8 @@ export function renderProductsBodyCell(
 ): GridCell | undefined {
   const key = col.key;
   const nmId = product.nmId;
-  const isCellSelected = (colKey: EditableColumnKey): boolean =>
-    nmId !== null && ctx.selectedCells.has(cellKey(nmId, colKey));
+  // Выделение ячеек и его подсветка навешиваются обобщённо на уровне клонирования
+  // (ProductsGridRows), здесь — только режим правки редактируемых ячеек.
   const isCellEditing = (colKey: EditableColumnKey): boolean =>
     nmId !== null && ctx.editing?.nmId === nmId && ctx.editing.colKey === colKey;
 
@@ -124,16 +124,9 @@ export function renderProductsBodyCell(
         </div>
       );
     case "cost": {
-      const selected = ctx.editable && isCellSelected("cost");
       const editingThis = isCellEditing("cost");
       return (
-        <div
-          key={key}
-          className={`wb-pg-cell wb-pg-cell--num wb-pg-cell--cost${selected ? " wb-pg-cell--cell-selected" : ""}`}
-          onMouseDown={ctx.editable && nmId !== null ? (e) => ctx.onCellMouseDown(nmId, index, "cost", e) : undefined}
-          onMouseEnter={ctx.editable && nmId !== null ? () => ctx.onCellMouseEnter(nmId, index, "cost") : undefined}
-          onDoubleClick={ctx.editable && nmId !== null ? () => ctx.onCellDoubleClick(nmId, "cost") : undefined}
-        >
+        <div key={key} className="wb-pg-cell wb-pg-cell--num wb-pg-cell--cost">
           {nmId !== null ? (
             <CostInputCell
               nmId={nmId}
@@ -206,16 +199,9 @@ export function renderProductsBodyCell(
       );
     }
     case "targetMargin": {
-      const selected = isCellSelected("targetMargin");
       const editingThis = isCellEditing("targetMargin");
       return (
-        <div
-          key={key}
-          className={`wb-pg-cell wb-pg-cell--num wb-pg-cell--cost${selected ? " wb-pg-cell--cell-selected" : ""}`}
-          onMouseDown={nmId !== null ? (e) => ctx.onCellMouseDown(nmId, index, "targetMargin", e) : undefined}
-          onMouseEnter={nmId !== null ? () => ctx.onCellMouseEnter(nmId, index, "targetMargin") : undefined}
-          onDoubleClick={nmId !== null ? () => ctx.onCellDoubleClick(nmId, "targetMargin") : undefined}
-        >
+        <div key={key} className="wb-pg-cell wb-pg-cell--num wb-pg-cell--cost">
           {nmId !== null ? (
             <CalcInputCell
               nmId={nmId}
@@ -249,16 +235,9 @@ export function renderProductsBodyCell(
       return <div key={key} className="wb-pg-cell wb-pg-cell--num wb-pg-cell--calc">{formatMoney(r)}</div>;
     }
     case "priceInput": {
-      const selected = isCellSelected("priceInput");
       const editingThis = isCellEditing("priceInput");
       return (
-        <div
-          key={key}
-          className={`wb-pg-cell wb-pg-cell--num wb-pg-cell--cost${selected ? " wb-pg-cell--cell-selected" : ""}`}
-          onMouseDown={nmId !== null ? (e) => ctx.onCellMouseDown(nmId, index, "priceInput", e) : undefined}
-          onMouseEnter={nmId !== null ? () => ctx.onCellMouseEnter(nmId, index, "priceInput") : undefined}
-          onDoubleClick={nmId !== null ? () => ctx.onCellDoubleClick(nmId, "priceInput") : undefined}
-        >
+        <div key={key} className="wb-pg-cell wb-pg-cell--num wb-pg-cell--cost">
           {nmId !== null ? (
             <CalcInputCell
               nmId={nmId}
@@ -331,5 +310,126 @@ export function renderProductsBodyCell(
       return moneyCell(key, nmId !== null ? ctx.costSumValues.get(nmId) : undefined, true);
     case "adSpend":
       return moneyCell(key, nmId !== null ? ctx.adSpendValues.get(nmId) : undefined, true);
+  }
+}
+
+/** Источники значений для копирования ячеек в буфер (TSV) — подмножество данных ctx. */
+export type ProductCellCopyCtx = Pick<
+  ProductsBodyRenderCtx,
+  | "costPrices"
+  | "priceCounts"
+  | "priceChangeStatuses"
+  | "commissionValues"
+  | "taxValues"
+  | "acquiringValues"
+  | "acquiringPercentValues"
+  | "drrValues"
+  | "marginRubValues"
+  | "marginPercentValues"
+  | "targetMarginInputs"
+  | "priceCalcInputs"
+  | "priceForMarginValues"
+  | "marginForPriceValues"
+  | "orderCounts"
+  | "rollingBuyoutCounts"
+  | "sppValues"
+  | "stockCounts"
+  | "ordersSumValues"
+  | "revenueValues"
+  | "costSumValues"
+  | "adSpendValues"
+>;
+
+const money2 = (v: number | null | undefined): string =>
+  v === null || v === undefined ? "" : v.toFixed(2);
+
+/**
+ * Значение ячейки «как есть» для буфера обмена (Ctrl/Cmd+C → TSV в Excel/Sheets):
+ * деньги/проценты — числом без ₽/% и без пробелов в тысячах (2 знака), целые — String,
+ * текст — как в ячейке. Отдельно от display-рендера (там форматирование для UI).
+ */
+export function productCellCopyValue(
+  colKey: ProductsColumnKey,
+  product: ProductListItem,
+  rowIndex: number,
+  ctx: ProductCellCopyCtx,
+): string {
+  const nmId = product.nmId;
+  if (nmId === null) {
+    if (colKey === "index") return String(rowIndex + 1);
+    if (colKey === "vendorCode") return getDisplayVendorCode(product);
+    if (colKey === "category") return product.categoryName ?? "";
+    if (colKey === "subject") return product.subjectName ?? "";
+    return "";
+  }
+  switch (colKey) {
+    case "index":
+      return String(rowIndex + 1);
+    case "nmId":
+      return String(nmId);
+    case "vendorCode":
+      return getDisplayVendorCode(product);
+    case "category":
+      return product.categoryName ?? "";
+    case "subject":
+      return product.subjectName ?? "";
+    case "cost":
+      return money2(ctx.costPrices.get(nmId)?.costValue ?? null);
+    case "price": {
+      const overlay = ctx.priceChangeStatuses.get(nmId);
+      return money2(overlay ? overlay.desiredFinal : ctx.priceCounts.get(nmId)?.priceWithDiscount ?? null);
+    }
+    case "commission":
+      return money2(ctx.commissionValues.get(nmId));
+    case "tax":
+      return money2(ctx.taxValues.get(nmId));
+    case "acquiring":
+      return money2(ctx.acquiringValues.get(nmId));
+    case "acquiringPercent":
+      return money2(ctx.acquiringPercentValues.get(nmId));
+    case "drr":
+      return money2(ctx.drrValues.get(nmId));
+    case "marginRub":
+      return money2(ctx.marginRubValues.get(nmId));
+    case "marginPercent":
+      return money2(ctx.marginPercentValues.get(nmId));
+    case "targetMargin": {
+      const v = ctx.targetMarginInputs.get(nmId);
+      return v === undefined ? "" : String(v);
+    }
+    case "priceForMargin":
+      return money2(ctx.priceForMarginValues.get(nmId) ?? null);
+    case "priceInput": {
+      const v = ctx.priceCalcInputs.get(nmId);
+      return v === undefined ? "" : String(v);
+    }
+    case "marginForPrice":
+      return money2(ctx.marginForPriceValues.get(nmId) ?? null);
+    case "orders": {
+      const o = ctx.orderCounts.get(nmId);
+      return o && o.ordersCount > 0 ? String(o.ordersCount) : "";
+    }
+    case "buyout": {
+      const b = ctx.rollingBuyoutCounts.get(nmId);
+      return b && b.ordersCount > 0 && b.buyoutsCount > 0
+        ? ((b.buyoutsCount / b.ordersCount) * 100).toFixed(2)
+        : "";
+    }
+    case "spp": {
+      const v = ctx.sppValues.get(nmId);
+      return v === undefined ? "" : v.toFixed(2);
+    }
+    case "stock": {
+      const v = ctx.stockCounts.get(nmId);
+      return v === undefined ? "" : String(v);
+    }
+    case "ordersSum":
+      return money2(ctx.ordersSumValues.get(nmId));
+    case "revenue":
+      return money2(ctx.revenueValues.get(nmId));
+    case "costSum":
+      return money2(ctx.costSumValues.get(nmId));
+    case "adSpend":
+      return money2(ctx.adSpendValues.get(nmId));
   }
 }

@@ -1,8 +1,9 @@
-import { cloneElement, memo, type CSSProperties } from "react";
+import { cloneElement, memo, type CSSProperties, type MouseEvent, type ReactElement } from "react";
 
 import { renderProductsBodyCell, type ProductsBodyRenderCtx } from "./ProductsTableBodyCells";
 import { PRODUCTS_GRID_ROW_H } from "./productsGridConstants";
 import type { ProductColumnDefinition } from "./productsTableColumns";
+import { cellKey } from "./useProductsTableSelection";
 import type { ProductListItem } from "./useDashboardProductsWorkspace";
 
 /** Колонка с уже посчитанным left-офсетом и шириной внутри своей зоны. */
@@ -35,6 +36,7 @@ export const ProductsGridBodyRow = memo(function ProductsGridBodyRow({
   regionWidth,
   bodyCtx,
 }: ProductsGridBodyRowProps) {
+  const nmId = product.nmId;
   return (
     <div style={{ position: "absolute", top, left: 0, width: regionWidth, height: PRODUCTS_GRID_ROW_H }}>
       {layout.map(({ col, left, width }) => {
@@ -48,7 +50,20 @@ export const ProductsGridBodyRow = memo(function ProductsGridBodyRow({
           width,
           height: PRODUCTS_GRID_ROW_H,
         };
-        return cloneElement(cell, { key: col.key, style: posStyle });
+        // Выделение ячеек (как в Sheets) — обобщённо для ЛЮБОЙ колонки: подсветка + хендлеры
+        // на корневой div ячейки. Редактируемые ячейки внутри stopPropagation'ят свой ввод.
+        const colKey = col.key;
+        const selected = nmId !== null && bodyCtx.selectedCells.has(cellKey(nmId, colKey));
+        const className = `${cell.props.className ?? ""}${selected ? " wb-pg-cell--cell-selected" : ""}`;
+        return cloneElement(cell as ReactElement<Record<string, unknown>>, {
+          key: colKey,
+          style: posStyle,
+          className,
+          onMouseDown:
+            nmId !== null ? (e: MouseEvent) => bodyCtx.onCellMouseDown(nmId, index, colKey, e) : undefined,
+          onMouseEnter: nmId !== null ? () => bodyCtx.onCellMouseEnter(nmId, index, colKey) : undefined,
+          onDoubleClick: nmId !== null ? () => bodyCtx.onCellDoubleClick(nmId, colKey) : undefined,
+        });
       })}
     </div>
   );

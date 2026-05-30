@@ -12,11 +12,8 @@ import type { ProductListItem, ProductListSortKey } from "./useDashboardProducts
 import { PriceConfirmModal } from "./ProductsTableCells";
 import { getDisplayVendorCode } from "./productsTableHelpers";
 import { sortProductsByLocalKey, type LocalSortKey } from "./productsTableSort";
-import {
-  EDITABLE_COLUMN_KEYS,
-  useProductsTableSelection,
-  type EditableColumnKey,
-} from "./useProductsTableSelection";
+import { useProductsTableSelection } from "./useProductsTableSelection";
+import { productCellCopyValue, type ProductCellCopyCtx } from "./ProductsTableBodyCells";
 import { useProductsTableTotals } from "./useProductsTableTotals";
 import { useUnitEconomicsCalc } from "./useUnitEconomicsCalc";
 import type { ProductsHeaderRenderCtx } from "./ProductsTableHeadCells";
@@ -173,19 +170,8 @@ export const DashboardCatalogProductsSection = memo(
       [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costSumValues, props.adSpendValues, props.sppValues, props.commissionValues, props.taxValues, props.acquiringValues, props.acquiringPercentValues, props.drrValues, props.marginRubValues, props.marginPercentValues, props.costPrices, props.priceCounts, calc.priceResults, calc.marginResults],
     );
 
-    // Редактируемые колонки в текущем порядке — для прямоугольного выделения ячеек.
-    // В «Товарах» (editable=false) с/с read-only, поля калькулятора скрыты → выделять нечего.
-    const clearableColumns = useMemo<EditableColumnKey[]>(
-      () =>
-        props.editable
-          ? orderedColumns.flatMap((c) =>
-              EDITABLE_COLUMN_KEYS.includes(c.key as EditableColumnKey)
-                ? [c.key as EditableColumnKey]
-                : [],
-            )
-          : [],
-      [props.editable, orderedColumns],
-    );
+    // Все видимые колонки в текущем порядке — для прямоугольного выделения и TSV-копирования.
+    const allColumns = useMemo(() => orderedColumns.map((c) => c.key), [orderedColumns]);
 
     // Массовая очистка полей калькулятора (Delete по выделенным ячейкам). Каждый setInput
     // дёргает один дебаунс-коммит (схлопывается), отдельный батч-метод не нужен.
@@ -199,12 +185,64 @@ export const DashboardCatalogProductsSection = memo(
       [setPriceInput],
     );
 
-    // Выделение ЯЧЕЕК + inline-редактирование (с/с, поля калькулятора, цена) — как в Sheets.
+    // Источник значений «как есть» для копирования (Ctrl/Cmd+C → TSV).
+    const copyCtx = useMemo<ProductCellCopyCtx>(
+      () => ({
+        costPrices: props.costPrices,
+        priceCounts: props.priceCounts,
+        priceChangeStatuses: props.priceChangeStatuses,
+        commissionValues: props.commissionValues,
+        taxValues: props.taxValues,
+        acquiringValues: props.acquiringValues,
+        acquiringPercentValues: props.acquiringPercentValues,
+        drrValues: props.drrValues,
+        marginRubValues: props.marginRubValues,
+        marginPercentValues: props.marginPercentValues,
+        targetMarginInputs: calc.marginInputs,
+        priceCalcInputs: calc.priceInputs,
+        priceForMarginValues: calc.priceResults,
+        marginForPriceValues: calc.marginResults,
+        orderCounts: props.orderCounts,
+        rollingBuyoutCounts: props.rollingBuyoutCounts,
+        sppValues: props.sppValues,
+        stockCounts: props.stockCounts,
+        ordersSumValues: props.ordersSumValues,
+        revenueValues: props.revenueValues,
+        costSumValues: props.costSumValues,
+        adSpendValues: props.adSpendValues,
+      }),
+      [
+        props.costPrices, props.priceCounts, props.priceChangeStatuses, props.commissionValues,
+        props.taxValues, props.acquiringValues, props.acquiringPercentValues, props.drrValues,
+        props.marginRubValues, props.marginPercentValues, calc.marginInputs, calc.priceInputs,
+        calc.priceResults, calc.marginResults, props.orderCounts, props.rollingBuyoutCounts,
+        props.sppValues, props.stockCounts, props.ordersSumValues, props.revenueValues,
+        props.costSumValues, props.adSpendValues,
+      ],
+    );
+    const rowByNmId = useMemo(() => {
+      const map = new Map<number, { product: ProductListItem; rowIndex: number }>();
+      displayProducts.forEach((p, i) => {
+        if (p.nmId !== null) map.set(p.nmId, { product: p, rowIndex: i });
+      });
+      return map;
+    }, [displayProducts]);
+    const getCopyValue = useCallback(
+      (nmId: number, colKey: ProductsColumnKey): string => {
+        const entry = rowByNmId.get(nmId);
+        return entry ? productCellCopyValue(colKey, entry.product, entry.rowIndex, copyCtx) : "";
+      },
+      [rowByNmId, copyCtx],
+    );
+
+    // Выделение ЛЮБЫХ ячеек + копирование (Ctrl/Cmd+C) + правка/очистка редактируемых — как в Sheets.
     // Объект целиком передаём в useProductsBodyCtx; отдельные поля нужны только модалке цены.
     const selection = useProductsTableSelection({
       displayProducts,
-      clearableColumns,
+      allColumns,
+      editable: props.editable,
       tableRef: containerRef,
+      getCopyValue,
       onCostCleared: props.onCostCleared,
       onClearTargetMargins,
       onClearPriceInputs,
