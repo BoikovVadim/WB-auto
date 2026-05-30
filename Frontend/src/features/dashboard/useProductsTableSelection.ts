@@ -83,6 +83,10 @@ export function useProductsTableSelection({
   const onCellMouseDown = useCallback(
     (nmId: number, row: number, colKey: EditableColumnKey, event: React.MouseEvent) => {
       if (event.button !== 0) return;
+      // Не даём браузеру начать ВЫДЕЛЕНИЕ ТЕКСТА соседних (read-only) ячеек при
+      // перетаскивании рамки — иначе при выделении столбца «подсвечивается всё остальное».
+      event.preventDefault();
+      if (tableRef.current) tableRef.current.style.userSelect = "none";
       if (event.shiftKey && anchorRef.current) {
         setSelectedCells(
           rectCells(anchorRef.current, { row, colKey }, displayProducts, clearableColumns),
@@ -109,7 +113,7 @@ export function useProductsTableSelection({
       setEditing(null);
       setEditingPriceNmId(null);
     },
-    [displayProducts, clearableColumns],
+    [displayProducts, clearableColumns, tableRef],
   );
 
   const onCellMouseEnter = useCallback((_nmId: number, row: number, colKey: EditableColumnKey) => {
@@ -121,10 +125,13 @@ export function useProductsTableSelection({
   useEffect(() => {
     const onUp = () => {
       draggingRef.current = false;
+      // Возвращаем выделение текста после перетаскивания (чтобы read-only значения
+      // по-прежнему можно было выделить/скопировать обычным образом).
+      if (tableRef.current) tableRef.current.style.userSelect = "";
     };
     document.addEventListener("mouseup", onUp);
     return () => document.removeEventListener("mouseup", onUp);
-  }, []);
+  }, [tableRef]);
 
   // ── Вход в правку ────────────────────────────────────────────────────────────
   const onCellDoubleClick = useCallback((nmId: number, colKey: EditableColumnKey) => {
