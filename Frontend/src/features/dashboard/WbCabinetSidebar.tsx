@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ui } from "./copy";
 import type { WbDashboardShellProps } from "./WbDashboardShellTypes";
@@ -29,14 +29,43 @@ export function WbCabinetSidebar({
   onOpenDashboardSection,
   onOpenChangeHistorySection,
 }: WbCabinetSidebarProps) {
-  // «Юнит Экономика» — раскрывающийся пункт с двумя вкладками (таблица / настройка).
+  // «Юнит Экономика» открывает всплывающий столбик-поповер (не модалка) с двумя
+  // вкладками. Поповер позиционируем fixed по координатам кнопки — сайдбар с
+  // overflow-y:auto обрезал бы обычный absolute.
   const isUnitEconomicsActive =
     activeSection === "unit-economics" || activeSection === "unit-economics-settings";
-  const [unitEconomicsOpen, setUnitEconomicsOpen] = useState(isUnitEconomicsActive);
-  // Держим подменю раскрытым, пока активна любая из вкладок (в т.ч. после перезагрузки).
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const flyoutRef = useRef<HTMLDivElement | null>(null);
+  const [flyoutPos, setFlyoutPos] = useState<{ top: number; left: number } | null>(null);
+  const isFlyoutOpen = flyoutPos !== null;
+
+  const closeFlyout = () => setFlyoutPos(null);
+  const toggleFlyout = () => {
+    if (isFlyoutOpen) {
+      closeFlyout();
+      return;
+    }
+    const rect = buttonRef.current?.getBoundingClientRect();
+    if (rect) setFlyoutPos({ top: rect.top, left: rect.right + 8 });
+  };
+
   useEffect(() => {
-    if (isUnitEconomicsActive) setUnitEconomicsOpen(true);
-  }, [isUnitEconomicsActive]);
+    if (!isFlyoutOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (buttonRef.current?.contains(target) || flyoutRef.current?.contains(target)) return;
+      closeFlyout();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeFlyout();
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isFlyoutOpen]);
 
   return (
     <aside className="wb-cabinet-sidebar">
@@ -72,35 +101,17 @@ export function WbCabinetSidebar({
           <span className="wb-cabinet-menu-label">{ui.viewCatalogProducts}</span>
         </button>
 
-        <div className="wb-cabinet-menu-group">
-          <button
-            className={`wb-cabinet-menu-item ${isUnitEconomicsActive ? "active" : ""}`}
-            onMouseEnter={onPrefetchCatalogProductsSection}
-            onFocus={onPrefetchCatalogProductsSection}
-            onClick={() => setUnitEconomicsOpen((open) => !open)}
-            aria-expanded={unitEconomicsOpen}
-          >
-            <span className="wb-cabinet-menu-icon">Ю</span>
-            <span className="wb-cabinet-menu-label">{ui.viewUnitEconomics}</span>
-            <span className={`wb-cabinet-menu-chevron ${unitEconomicsOpen ? "open" : ""}`}>▾</span>
-          </button>
-          {unitEconomicsOpen && (
-            <div className="wb-cabinet-submenu">
-              <button
-                className={`wb-cabinet-submenu-item ${activeSection === "unit-economics" ? "active" : ""}`}
-                onClick={onOpenUnitEconomicsSection}
-              >
-                {ui.viewUnitEconomicsTable}
-              </button>
-              <button
-                className={`wb-cabinet-submenu-item ${activeSection === "unit-economics-settings" ? "active" : ""}`}
-                onClick={onOpenUnitEconomicsSettingsSection}
-              >
-                {ui.viewUnitEconomicsSettings}
-              </button>
-            </div>
-          )}
-        </div>
+        <button
+          ref={buttonRef}
+          className={`wb-cabinet-menu-item ${isUnitEconomicsActive || isFlyoutOpen ? "active" : ""}`}
+          onMouseEnter={onPrefetchCatalogProductsSection}
+          onFocus={onPrefetchCatalogProductsSection}
+          onClick={toggleFlyout}
+          aria-expanded={isFlyoutOpen}
+        >
+          <span className="wb-cabinet-menu-icon">Ю</span>
+          <span className="wb-cabinet-menu-label">{ui.viewUnitEconomics}</span>
+        </button>
 
         <button
           className={`wb-cabinet-menu-item ${activeSection === "dashboard" || activeSection === "dashboard-tech" || activeSection === "dashboard-cabinet" ? "active" : ""}`}
@@ -117,6 +128,39 @@ export function WbCabinetSidebar({
           <span className="wb-cabinet-menu-label">История</span>
         </button>
       </nav>
+
+      {flyoutPos && (
+        <div
+          ref={flyoutRef}
+          className="wb-cabinet-flyout"
+          style={{ top: flyoutPos.top, left: flyoutPos.left }}
+          role="menu"
+        >
+          <span className="wb-cabinet-flyout-title">{ui.viewUnitEconomics}</span>
+          <button
+            className={`wb-cabinet-flyout-item ${activeSection === "unit-economics" ? "active" : ""}`}
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onOpenUnitEconomicsSection();
+              closeFlyout();
+            }}
+          >
+            {ui.viewUnitEconomicsTable}
+          </button>
+          <button
+            className={`wb-cabinet-flyout-item ${activeSection === "unit-economics-settings" ? "active" : ""}`}
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onOpenUnitEconomicsSettingsSection();
+              closeFlyout();
+            }}
+          >
+            {ui.viewUnitEconomicsSettings}
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

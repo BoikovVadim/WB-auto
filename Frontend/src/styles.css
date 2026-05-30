@@ -223,75 +223,64 @@ input {
   text-align: center;
 }
 
-/* ── Раскрывающийся пункт сайдбара (Юнит Экономика → вкладки) ─────────────── */
-.wb-cabinet-menu-group {
-  width: 100%;
+/* ── Всплывающий столбик сайдбара (Юнит Экономика → вкладки) ──────────────── */
+/* position: fixed по координатам кнопки — сайдбар с overflow-y:auto обрезал бы
+   обычный absolute-поповер. */
+.wb-cabinet-flyout {
+  position: fixed;
+  z-index: 60;
+  min-width: 168px;
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 4px;
+  padding: 8px;
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 12px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
 }
 
-.wb-cabinet-menu-chevron {
-  font-size: 8px;
-  line-height: 1;
+.wb-cabinet-flyout-title {
+  padding: 2px 10px 6px;
   color: var(--wb-gold-mid);
-  transition: transform 0.2s ease;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
-.wb-cabinet-menu-chevron.open {
-  transform: rotate(180deg);
-}
-
-.wb-cabinet-submenu {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding-bottom: 2px;
-}
-
-.wb-cabinet-submenu-item {
-  position: relative;
-  width: 100%;
-  min-height: 34px;
+.wb-cabinet-flyout-item {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 5px 4px;
+  padding: 9px 12px;
   border: none;
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--wb-gold-mid);
-  font-size: 8px;
-  line-height: 1.1;
-  text-align: center;
+  border-radius: 8px;
+  background: transparent;
+  color: #fff;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
-.wb-cabinet-submenu-item:hover,
-.wb-cabinet-submenu-item.active {
+.wb-cabinet-flyout-item:hover,
+.wb-cabinet-flyout-item.active {
   background: linear-gradient(
     180deg,
     rgba(255, 255, 255, 0.06) 0%,
-    rgba(232, 197, 71, 0.14) 100%
+    rgba(232, 197, 71, 0.18) 100%
   );
   color: #fff;
-  transform: translateX(3px);
-}
-
-.wb-cabinet-submenu-item.active::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  border-radius: 0 2px 2px 0;
-  background: var(--wb-gold-gradient);
 }
 
 /* ── Страница настроек юнит-экономики ─────────────────────────────────────── */
+.wb-unit-econ-blocks {
+  display: flex;
+  gap: 40px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
 .wb-unit-econ-block {
   margin-top: 18px;
 }

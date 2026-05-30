@@ -19,6 +19,12 @@ export type UseUnitEconomicsSettingsResult = {
 
 const EMPTY: UnitEconomicsSettings = { categories: [], acquiringPercent: null };
 
+// Список категорий обновляем с той же периодичностью, что и каталог товаров
+// (productCatalogRefreshTtlMs = 5 мин): добавился новый товар → его категория
+// появляется здесь сама, без перезагрузки. Значения комиссии берутся с бэка,
+// поля в фокусе не перетираются (см. PercentInput).
+const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
 export function useUnitEconomicsSettings(
   onSaved?: () => void,
 ): UseUnitEconomicsSettingsResult {
@@ -26,23 +32,31 @@ export function useUnitEconomicsSettings(
   const [isLoading, setIsLoading] = useState(false);
   const isMountedRef = useRef(true);
 
-  useEffect(() => {
-    isMountedRef.current = true;
-    setIsLoading(true);
+  const load = useCallback(() => {
     fetchUnitEconomicsSettings()
       .then((data) => {
         if (isMountedRef.current) setSettings(data);
       })
       .catch(() => {
-        /* оставляем пусто — пользователь увидит загрузку без данных */
+        /* оставляем прежние данные */
       })
       .finally(() => {
         if (isMountedRef.current) setIsLoading(false);
       });
+  }, []);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    setIsLoading(true);
+    load();
+    const interval = setInterval(() => {
+      if (!document.hidden) load();
+    }, REFRESH_INTERVAL_MS);
     return () => {
       isMountedRef.current = false;
+      clearInterval(interval);
     };
-  }, []);
+  }, [load]);
 
   const saveCommission = useCallback(
     async (category: string, commissionPercent: number | null) => {

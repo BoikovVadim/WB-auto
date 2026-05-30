@@ -112,47 +112,49 @@ export function DashboardUnitEconomicsSettingsSection({
           </div>
         </div>
 
-        <div className="wb-unit-econ-block">
-          <h3 className="wb-unit-econ-block-title">Комиссия по категориям</h3>
-          {isLoading && settings.categories.length === 0 ? (
-            <p className="wb-card-meta">Загрузка…</p>
-          ) : settings.categories.length === 0 ? (
-            <p className="wb-card-meta">Категории появятся после синхронизации каталога.</p>
-          ) : (
-            <table className="wb-data-table wb-unit-econ-table">
-              <thead>
-                <tr>
-                  <th style={{ textAlign: "left" }}>Категория</th>
-                  <th style={{ textAlign: "right", width: 170 }}>Комиссия, %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {settings.categories.map((c) => (
-                  <tr key={c.category}>
-                    <td>{c.category}</td>
-                    <td style={{ textAlign: "right" }}>
-                      <PercentInput
-                        value={c.commissionPercent}
-                        ariaLabel={`Комиссия для категории ${c.category}`}
-                        onCommit={(next) => saveCommission(c.category, next)}
-                      />
-                    </td>
+        <div className="wb-unit-econ-blocks">
+          <div className="wb-unit-econ-block">
+            <h3 className="wb-unit-econ-block-title">Комиссия по категориям</h3>
+            {isLoading && settings.categories.length === 0 ? (
+              <p className="wb-card-meta">Загрузка…</p>
+            ) : settings.categories.length === 0 ? (
+              <p className="wb-card-meta">Категории появятся после синхронизации каталога.</p>
+            ) : (
+              <table className="wb-data-table wb-unit-econ-table">
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left" }}>Категория</th>
+                    <th style={{ textAlign: "right", width: 170 }}>Комиссия, %</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+                </thead>
+                <tbody>
+                  {settings.categories.map((c) => (
+                    <tr key={c.category}>
+                      <td>{c.category}</td>
+                      <td style={{ textAlign: "right" }}>
+                        <PercentInput
+                          value={c.commissionPercent}
+                          ariaLabel={`Комиссия для категории ${c.category}`}
+                          onCommit={(next) => saveCommission(c.category, next)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
 
-        <div className="wb-unit-econ-block">
-          <h3 className="wb-unit-econ-block-title">Эквайринг</h3>
-          <div className="wb-unit-econ-acquiring-row">
-            <span className="wb-unit-econ-acquiring-label">Эквайринг, %</span>
-            <PercentInput
-              value={settings.acquiringPercent}
-              ariaLabel="Эквайринг"
-              onCommit={(next) => saveAcquiring(next)}
-            />
+          <div className="wb-unit-econ-block">
+            <h3 className="wb-unit-econ-block-title">Эквайринг</h3>
+            <div className="wb-unit-econ-acquiring-row">
+              <span className="wb-unit-econ-acquiring-label">Эквайринг, %</span>
+              <PercentInput
+                value={settings.acquiringPercent}
+                ariaLabel="Эквайринг"
+                onCommit={(next) => saveAcquiring(next)}
+              />
+            </div>
           </div>
         </div>
       </section>
