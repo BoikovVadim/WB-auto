@@ -141,16 +141,20 @@ export function DashboardPricesDetailSection({ products, priceCounts, onBack }: 
     [matrix.products],
   );
 
-  // Закреплённая колонка = последний РЕАЛЬНЫЙ снапшот цен, с его настоящей датой
-  // (а не синтетическое «Сегодня»: цены снапшотятся раз в сутки, и подпись «Сегодня»
-  // вводила в заблуждение, когда сегодняшнего снапшота ещё нет). Не дублируем её в истории.
+  // Закреплённая колонка = сегодня, когда есть live-цены (поллятся каждые 10 мин), иначе
+  // последний реальный снапшот. Заголовок показывает настоящую дату (formatDateWithWeekday),
+  // т.е. сегодняшнюю, а вчера съезжает в историю. Цена за сегодня берётся из поллинга
+  // (priceCounts) — реальная текущая. Раньше закрепляли только дату последнего снапшота
+  // (matrix.dates[0]); снапшот пишется ночью, поэтому почти весь день показывалась вчерашняя
+  // дата — это и был баг ретроспективы цен. Зеркалит остатки.
+  const hasLive = priceCounts.size > 0;
   const latestSnapshotDate = matrix.dates[0] ?? null;
-  const pinnedKey = latestSnapshotDate;
+  const pinnedKey = hasLive ? today : latestSnapshotDate;
 
-  const pastDates = useMemo(() => {
-    if (!pinnedKey) return matrix.dates;
-    return matrix.dates.filter((d) => d !== pinnedKey);
-  }, [matrix.dates, pinnedKey]);
+  const pastDates = useMemo(
+    () => matrix.dates.filter((d) => d !== today && d !== pinnedKey),
+    [matrix.dates, today, pinnedKey],
+  );
 
   const matrixIdxByDate = useMemo(() => {
     const m = new Map<string, number>();
