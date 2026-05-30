@@ -13,6 +13,13 @@ function moscowDateStr(offsetDays = 0): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** День недели в МСК: 0=воскресенье … 6=суббота. */
+function moscowDow(): number {
+  return new Date(Date.now() + 3 * 60 * 60 * 1000).getUTCDay();
+}
+
+const WEEKS_PER_CHUNK = 4;
+
 /**
  * Синк фактического эквайринга из отчёта о реализации WB (reportDetailByPeriod).
  *
@@ -41,11 +48,19 @@ export class AcquiringSyncService {
   ) {}
 
   /**
-   * Тянет отчёт о реализации за последние `daysBack` дней, агрегирует эквайринг по
-   * nm_id × отчётной неделе и пишет в wb_product_acquiring_weekly ПОЧАНКОВО.
+   * Тянет отчёт о реализации за последние ~`daysBack` дней (округляется до недель),
+   * агрегирует эквайринг по nm_id × отчётной неделе и пишет в wb_product_acquiring_weekly.
    *
-   * daysBack = 21 (крон) с запасом покрывает последнюю закрытую отчётную неделю; для
-   * истории ретроспективы запускают бэкфилл с большим daysBack (например 180).
+   * Чанки выровнены по границам недель (Пн–Вс) и идут от свежих к старым:
+   *   - неделя целиком попадает в один чанк → нет стыковых частей, перезапись идемпотентна;
+   *   - каждый чанк пишется в БД сразу (рестарт-устойчивость: завершённые чанки переживают
+   *     частые перезапуски процесса);
+   *   - самый свежий чанк тянется всегда (WB доуточняет недавние отчёты), а старые чанки с
+   *     уже залитыми данными ПРОПУСКАЮТСЯ без запроса → бэкфилл возобновляемый: повторный
+   *     запуск за секунды доходит до первого незалитого месяца.
+   *
+   * daysBack = 21 (крон) с запасом покрывает последнюю закрытую неделю; для истории
+   * ретроспективы запускают бэкфилл с большим daysBack (например 180).
    */
   async syncAcquiringFromRealization(daysBack = 21): Promise<void> {
     if (this.running) {
@@ -62,38 +77,28 @@ export class AcquiringSyncService {
 
     this.running = true;
     try {
-      this.logger.log(
-        `Acquiring sync: ${moscowDateStr(-daysBack)}..${moscowDateStr(0)} (Moscow), daysBack=${daysBack}`,
-      );
+      const daysSinceMonday = (moscowDow() + 6) % 7; // дней назад до понедельника этой недели
+      const weeksToFetch = Math.max(1, Math.ceil(daysBack / 7));
+      const numChunks = Math.ceil(weeksToFetch / WEEKS_PER_CHUNK);
+      this.logger.log(`Acquiring sync: ${weeksToFetch} недель назад, ${numChunks} чанков по ${WEEKS_PER_CHUNK}`);
 
-      // Тянем окно чанками <=30 дней, без перекрытия, и пишем КАЖДЫЙ чанк в БД сразу
-      // (а не одним upsert'ом в конце). Зачем почанково: бэкенд периодически
-      // перезапускается, и запись в конце теряла весь прогон при рестарте; почанковая
-      // запись делает бэкфилл рестарт-устойчивым. Неделю чистим один раз за прогон
-      // (clearedWeeks), дальше копим через addAcquiringWeekly (+=) — неделя на стыке
-      // чанков складывается из частей, пере-синк не двоит.
-      const CHUNK_DAYS = 30;
-      const clearedWeeks = new Set<string>();
       let totalRows = 0;
-
-      for (let toOffset = 0; toOffset < daysBack; ) {
-        const fromOffset = Math.min(daysBack, toOffset + CHUNK_DAYS - 1);
+      for (let c = 0; c < numChunks; c++) {
+        const newestWeek = c * WEEKS_PER_CHUNK; // 0 = текущая неделя
+        const oldestWeek = Math.min(weeksToFetch - 1, newestWeek + WEEKS_PER_CHUNK - 1);
+        const fromOffset = daysSinceMonday + oldestWeek * 7; // понедельник самой старой недели чанка
+        const toOffset = Math.max(0, daysSinceMonday + newestWeek * 7 - 6); // воскресенье самой свежей (≤ сегодня)
         const chunkFrom = moscowDateStr(-fromOffset);
         const chunkTo = moscowDateStr(-toOffset);
 
-        // Самый свежий чанк (toOffset === 0) ВСЕГДА тянем — WB доуточняет недавние
-        // отчёты, нужно освежать последнюю неделю. Старые чанки, по которым данные уже
-        // есть, ПРОПУСКАЕМ (без запроса/throttle): это делает бэкфилл возобновляемым —
-        // повторный запуск за секунды доходит до первого незалитого месяца, переживая
-        // частые перезапуски процесса.
-        if (toOffset > 0 && (await this.repository.hasAcquiringDataInRange(chunkFrom, chunkTo))) {
+        // Старый чанк с уже залитыми данными пропускаем без запроса (без throttle).
+        if (c > 0 && (await this.repository.hasAcquiringDataInRange(chunkFrom, chunkTo))) {
           this.logger.log(`Acquiring sync chunk ${chunkFrom}..${chunkTo}: уже есть, пропуск`);
-          toOffset = fromOffset + 1;
           continue;
         }
 
         // Агрегат ТОЛЬКО этого чанка (память ограничена одним окном). acquiring_fee и
-        // retail_amount суммируем со знаком (возвраты отрицательны) -> net за неделю.
+        // retail_amount суммируем со знаком (возвраты отрицательны) → net за неделю.
         const chunkAgg = new Map<
           string,
           { nmId: number; weekStart: string; weekEnd: string; fee: number; retail: number }
@@ -122,16 +127,6 @@ export class AcquiringSyncService {
           return;
         }
 
-        // Чистим каждую затронутую неделю один раз за прогон, затем накапливаем чанк.
-        const weeksInChunk = new Set<string>();
-        for (const e of chunkAgg.values()) weeksInChunk.add(e.weekStart);
-        for (const w of weeksInChunk) {
-          if (!clearedWeeks.has(w)) {
-            await this.repository.clearAcquiringWeek(w);
-            clearedWeeks.add(w);
-          }
-        }
-
         const chunkRows = Array.from(chunkAgg.values()).map((a) => ({
           nmId: a.nmId,
           weekStart: a.weekStart,
@@ -139,13 +134,14 @@ export class AcquiringSyncService {
           acquiringFeeSum: round2(a.fee),
           retailAmountSum: round2(a.retail),
         }));
-        await this.repository.addAcquiringWeekly(chunkRows);
+        // Чистим недели чанка (убрать строки товаров, которых больше нет в отчёте), затем
+        // перезаписываем. Чанки не делят недель, поэтому чистка по диапазону точна.
+        await this.repository.clearAcquiringRange(chunkFrom, chunkTo);
+        await this.repository.upsertAcquiringWeekly(chunkRows);
         totalRows += chunkRows.length;
         this.logger.log(
           `Acquiring sync chunk ${chunkFrom}..${chunkTo}: ${chunkRows.length} product-week rows`,
         );
-
-        toOffset = fromOffset + 1;
       }
 
       this.logger.log(`Acquiring sync done: ${totalRows} product-week rows total`);
