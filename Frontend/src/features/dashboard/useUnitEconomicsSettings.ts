@@ -3,21 +3,28 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   clearCategoryCommission,
   fetchUnitEconomicsSettings,
-  saveAcquiringPercent,
   saveCategoryCommission,
+  saveGlobalPercent,
+  type GlobalPercentMetric,
   type UnitEconomicsSettings,
 } from "../../api/syncClientUnitEconomics";
+
+// Метрика → поле в settings (для оптимистичного обновления локального состояния).
+const GLOBAL_METRIC_FIELD: Record<GlobalPercentMetric, "acquiringPercent" | "drrPercent"> = {
+  acquiring: "acquiringPercent",
+  drr: "drrPercent",
+};
 
 export type UseUnitEconomicsSettingsResult = {
   settings: UnitEconomicsSettings;
   isLoading: boolean;
   /** Сохраняет комиссию категории (null — очистить). Оптимистично + persist на бэке. */
   saveCommission: (category: string, commissionPercent: number | null) => Promise<void>;
-  /** Сохраняет глобальный эквайринг (null — очистить). */
-  saveAcquiring: (acquiringPercent: number | null) => Promise<void>;
+  /** Сохраняет глобальную %-метрику (эквайринг/ДРР; null — очистить). */
+  saveGlobalMetric: (metric: GlobalPercentMetric, value: number | null) => Promise<void>;
 };
 
-const EMPTY: UnitEconomicsSettings = { categories: [], acquiringPercent: null };
+const EMPTY: UnitEconomicsSettings = { categories: [], acquiringPercent: null, drrPercent: null };
 
 // Список категорий обновляем с той же периодичностью, что и каталог товаров
 // (productCatalogRefreshTtlMs = 5 мин): добавился новый товар → его категория
@@ -76,14 +83,14 @@ export function useUnitEconomicsSettings(
     [onSaved],
   );
 
-  const saveAcquiring = useCallback(
-    async (acquiringPercent: number | null) => {
-      await saveAcquiringPercent(acquiringPercent);
-      setSettings((prev) => ({ ...prev, acquiringPercent }));
+  const saveGlobalMetric = useCallback(
+    async (metric: GlobalPercentMetric, value: number | null) => {
+      await saveGlobalPercent(metric, value);
+      setSettings((prev) => ({ ...prev, [GLOBAL_METRIC_FIELD[metric]]: value }));
       onSaved?.();
     },
     [onSaved],
   );
 
-  return { settings, isLoading, saveCommission, saveAcquiring };
+  return { settings, isLoading, saveCommission, saveGlobalMetric };
 }

@@ -11,12 +11,15 @@ export type UseUnitEconomicsChargesResult = {
   commissionValues: Map<number, number>;
   /** Эквайринг в ₽ на товар (глобальный % × цена со скидкой). Считается на бэке. */
   acquiringValues: Map<number, number>;
+  /** ДРР в ₽ на товар (глобальный % × цена со скидкой). Считается на бэке. */
+  drrValues: Map<number, number>;
   refreshCharges: () => void;
 };
 
 export function useUnitEconomicsCharges(): UseUnitEconomicsChargesResult {
   const [commissionValues, setCommissionValues] = useState<Map<number, number>>(new Map());
   const [acquiringValues, setAcquiringValues] = useState<Map<number, number>>(new Map());
+  const [drrValues, setDrrValues] = useState<Map<number, number>>(new Map());
   const isMountedRef = useRef(true);
 
   const load = useCallback(() => {
@@ -25,12 +28,15 @@ export function useUnitEconomicsCharges(): UseUnitEconomicsChargesResult {
         if (!isMountedRef.current) return;
         const commission = new Map<number, number>();
         const acquiring = new Map<number, number>();
+        const drr = new Map<number, number>();
         for (const item of items) {
           if (item.commissionRub !== null) commission.set(item.nmId, item.commissionRub);
           if (item.acquiringRub !== null) acquiring.set(item.nmId, item.acquiringRub);
+          if (item.drrRub !== null) drr.set(item.nmId, item.drrRub);
         }
         setCommissionValues(commission);
         setAcquiringValues(acquiring);
+        setDrrValues(drr);
       })
       .catch(() => {
         /* keep previous values */
@@ -49,5 +55,5 @@ export function useUnitEconomicsCharges(): UseUnitEconomicsChargesResult {
     };
   }, [load]);
 
-  return { commissionValues, acquiringValues, refreshCharges: load };
+  return { commissionValues, acquiringValues, drrValues, refreshCharges: load };
 }

@@ -293,6 +293,12 @@ input {
 
 .wb-unit-econ-table {
   max-width: 520px;
+  font-size: var(--wb-table-font-size);
+}
+
+.wb-unit-econ-table th,
+.wb-unit-econ-table td {
+  padding: 4px 10px;
 }
 
 .wb-unit-econ-percent {
@@ -302,24 +308,30 @@ input {
   justify-content: flex-end;
 }
 
+/* Компактный инпут — как ячейки таблицы товаров (.wb-cost-price-input), не крупный .wb-input. */
 .wb-unit-econ-percent-input {
-  width: 90px;
+  width: 72px;
+  box-sizing: border-box;
+  padding: 2px 6px;
+  border: 1.5px solid var(--wb-gold-mid);
+  border-radius: 6px;
+  font-size: var(--wb-table-font-size);
+  font-family: inherit;
+  color: var(--wb-text-main);
+  background: rgba(232, 197, 71, 0.06);
   text-align: right;
+  outline: none;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.wb-unit-econ-percent-input:focus {
+  border-color: var(--wb-gold-dark);
+  background: rgba(232, 197, 71, 0.12);
 }
 
 .wb-unit-econ-percent-suffix {
   color: var(--wb-text-muted);
   font-size: 12px;
-}
-
-.wb-unit-econ-acquiring-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.wb-unit-econ-acquiring-label {
-  font-size: 13px;
 }
 
 .wb-cabinet-main-wrap {

@@ -164,6 +164,7 @@ export function WbDashboard() {
     sppMatrix,
     commissionValues,
     acquiringValues,
+    drrValues,
     refreshUnitEconomicsCharges,
     priceChangeStatuses,
     handlePriceSaved,
@@ -540,6 +541,7 @@ export function WbDashboard() {
       sppMatrix={sppMatrix}
       commissionValues={commissionValues}
       acquiringValues={acquiringValues}
+      drrValues={drrValues}
       priceChangeStatuses={priceChangeStatuses}
       isCostPricesLoading={isCostPricesLoading}
       costPrices={costPrices}

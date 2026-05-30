@@ -1,14 +1,27 @@
 import { useEffect, useState } from "react";
 
+import type { GlobalPercentMetric } from "../../api/syncClientUnitEconomics";
 import { ui } from "./copy";
 import { useUnitEconomicsSettings } from "./useUnitEconomicsSettings";
 
 type DashboardUnitEconomicsSettingsSectionProps = {
   /** Возврат к таблице юнит-экономики. */
   onBack: () => void;
-  /** Сообщить таблице, что комиссия/эквайринг изменились (пересчитать колонки ₽). */
+  /** Сообщить таблице, что настройки изменились (пересчитать колонки ₽). */
   onChargesInvalidate: () => void;
 };
+
+// Глобальные %-метрики (применяются ко всем товарам). Новая метрика = строка здесь
+// + колонка в БД + ключ в GLOBAL_PERCENT_COLUMNS бэка + ₽-колонка в таблице.
+const GLOBAL_METRICS: {
+  key: GlobalPercentMetric;
+  label: string;
+  field: "acquiringPercent" | "drrPercent";
+  hint?: string;
+}[] = [
+  { key: "acquiring", label: "Эквайринг", field: "acquiringPercent" },
+  { key: "drr", label: "ДРР", field: "drrPercent", hint: "Доля рекламных расходов" },
+];
 
 // ─── Ячейка ввода процента ───────────────────────────────────────────────────
 // Контролируемый инпут: коммит по blur/Enter (2 знака после запятой), revert по
@@ -58,7 +71,7 @@ function PercentInput({ value, ariaLabel, onCommit }: PercentInputProps) {
   return (
     <span className="wb-unit-econ-percent">
       <input
-        className="wb-input wb-unit-econ-percent-input"
+        className="wb-unit-econ-percent-input"
         type="text"
         inputMode="decimal"
         aria-label={ariaLabel}
@@ -91,7 +104,7 @@ export function DashboardUnitEconomicsSettingsSection({
   onBack,
   onChargesInvalidate,
 }: DashboardUnitEconomicsSettingsSectionProps) {
-  const { settings, isLoading, saveCommission, saveAcquiring } =
+  const { settings, isLoading, saveCommission, saveGlobalMetric } =
     useUnitEconomicsSettings(onChargesInvalidate);
 
   return (
@@ -107,7 +120,8 @@ export function DashboardUnitEconomicsSettingsSection({
           <div>
             <h2>{ui.viewUnitEconomicsTitle}</h2>
             <p className="wb-card-meta">
-              Комиссия применяется по категории товара, эквайринг — ко всем товарам.
+              Комиссия применяется по категории товара; общие метрики (эквайринг, ДРР) — ко всем
+              товарам. Все значения в % считаются от цены со скидкой.
             </p>
           </div>
         </div>
@@ -146,15 +160,29 @@ export function DashboardUnitEconomicsSettingsSection({
           </div>
 
           <div className="wb-unit-econ-block">
-            <h3 className="wb-unit-econ-block-title">Эквайринг</h3>
-            <div className="wb-unit-econ-acquiring-row">
-              <span className="wb-unit-econ-acquiring-label">Эквайринг, %</span>
-              <PercentInput
-                value={settings.acquiringPercent}
-                ariaLabel="Эквайринг"
-                onCommit={(next) => saveAcquiring(next)}
-              />
-            </div>
+            <h3 className="wb-unit-econ-block-title">Общие метрики</h3>
+            <table className="wb-data-table wb-unit-econ-table">
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left" }}>Метрика</th>
+                  <th style={{ textAlign: "right", width: 170 }}>Значение, %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {GLOBAL_METRICS.map((m) => (
+                  <tr key={m.key}>
+                    <td title={m.hint}>{m.label}</td>
+                    <td style={{ textAlign: "right" }}>
+                      <PercentInput
+                        value={settings[m.field]}
+                        ariaLabel={m.label}
+                        onCommit={(next) => saveGlobalMetric(m.key, next)}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </section>

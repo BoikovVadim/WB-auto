@@ -53,7 +53,7 @@ export function useDashboardMetrics(input: {
   const { adSpendMatrix } = useAdSpendMatrix(input.isAdSpendSheetOpen);
   const { sppValues } = useSpp();
   const { sppMatrix } = useSppMatrix(input.isSppSheetOpen);
-  const { commissionValues, acquiringValues, refreshCharges } = useUnitEconomicsCharges();
+  const { commissionValues, acquiringValues, drrValues, refreshCharges } = useUnitEconomicsCharges();
   const { priceChangeStatuses, refreshPriceChangeStatuses, upsertPriceChangeStatus } =
     usePriceChangeStatuses();
 
@@ -108,6 +108,7 @@ export function useDashboardMetrics(input: {
     sppMatrix,
     commissionValues,
     acquiringValues,
+    drrValues,
     refreshUnitEconomicsCharges: refreshCharges,
     priceChangeStatuses,
     handlePriceSaved,

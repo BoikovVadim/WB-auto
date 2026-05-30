@@ -7,9 +7,13 @@ export type UnitEconomicsCategorySetting = {
   commissionPercent: number | null;
 };
 
+/** Глобальные %-метрики юнит-экономики (применяются ко всем товарам). */
+export type GlobalPercentMetric = "acquiring" | "drr";
+
 export type UnitEconomicsSettings = {
   categories: UnitEconomicsCategorySetting[];
   acquiringPercent: number | null;
+  drrPercent: number | null;
 };
 
 export async function fetchUnitEconomicsSettings(): Promise<UnitEconomicsSettings> {
@@ -37,10 +41,13 @@ export async function clearCategoryCommission(category: string): Promise<void> {
   });
 }
 
-export async function saveAcquiringPercent(acquiringPercent: number | null): Promise<void> {
+export async function saveGlobalPercent(
+  metric: GlobalPercentMetric,
+  value: number | null,
+): Promise<void> {
   await apiClient.put(
-    "/wb-clusters/unit-economics/acquiring",
-    { acquiringPercent },
+    `/wb-clusters/unit-economics/global-percent/${metric}`,
+    { value },
     { headers: buildWbClustersWriteHeaders() },
   );
 }
@@ -51,6 +58,7 @@ export type UnitEconomicsChargeItem = {
   nmId: number;
   commissionRub: number | null;
   acquiringRub: number | null;
+  drrRub: number | null;
 };
 
 export async function fetchUnitEconomicsCharges(): Promise<UnitEconomicsChargeItem[]> {

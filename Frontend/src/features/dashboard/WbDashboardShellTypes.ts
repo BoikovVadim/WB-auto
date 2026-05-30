@@ -91,6 +91,7 @@ export type WbDashboardShellProps = {
   sppMatrix: import("./useSppMatrix").SppMatrix;
   commissionValues: Map<number, number>;
   acquiringValues: Map<number, number>;
+  drrValues: Map<number, number>;
   priceChangeStatuses: Map<number, import("../../api/syncClientPrices").PriceChangeStatus>;
   isOrdersSheetOpen: boolean;
   isBuyoutSheetOpen: boolean;

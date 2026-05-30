@@ -5,6 +5,20 @@ export type CategoryCommissionRow = {
   commissionPercent: number;
 };
 
+/** Глобальные %-метрики юнит-экономики (применяются ко всем товарам). */
+export type GlobalPercentMetric = "acquiring" | "drr";
+
+export type GlobalSettings = {
+  acquiringPercent: number | null;
+  drrPercent: number | null;
+};
+
+// Метрика → колонка единственной строки настроек. Хардкод (никакой инъекции).
+const GLOBAL_PERCENT_COLUMN: Record<GlobalPercentMetric, string> = {
+  acquiring: "acquiring_percent",
+  drr: "drr_percent",
+};
+
 /**
  * Настройки юнит-экономики: комиссия по категориям (category_name → %) и единый
  * эквайринг (% в единственной строке настроек). Из них считается комиссия/эквайринг
@@ -55,27 +69,38 @@ export abstract class WbClustersRepositoryUnitEconomics extends WbClustersReposi
     );
   }
 
-  /** Глобальный эквайринг (%) или null, если не задан. */
-  async getAcquiringPercent(): Promise<number | null> {
-    const result = await this.getPool().query<{ acquiring_percent: string | null }>(
-      `SELECT acquiring_percent::text AS acquiring_percent
+  /** Глобальные %-метрики (эквайринг, ДРР); null — не задано. */
+  async getGlobalSettings(): Promise<GlobalSettings> {
+    const result = await this.getPool().query<{
+      acquiring_percent: string | null;
+      drr_percent: string | null;
+    }>(
+      `SELECT acquiring_percent::text AS acquiring_percent,
+              drr_percent::text       AS drr_percent
        FROM ${this.tableName("wb_unit_economics_settings")} WHERE id = 1`,
     );
     const row = result.rows[0];
-    if (!row || row.acquiring_percent === null) return null;
-    const value = Number(row.acquiring_percent);
-    return Number.isFinite(value) ? value : null;
+    const parse = (raw: string | null | undefined): number | null => {
+      if (raw === null || raw === undefined) return null;
+      const value = Number(raw);
+      return Number.isFinite(value) ? value : null;
+    };
+    return {
+      acquiringPercent: parse(row?.acquiring_percent),
+      drrPercent: parse(row?.drr_percent),
+    };
   }
 
-  /** Запись глобального эквайринга (%); null очищает значение. */
-  async setAcquiringPercent(acquiringPercent: number | null): Promise<void> {
+  /** Запись глобальной %-метрики; null очищает значение. */
+  async setGlobalPercent(metric: GlobalPercentMetric, value: number | null): Promise<void> {
+    const column = GLOBAL_PERCENT_COLUMN[metric];
     await this.getPool().query(
-      `INSERT INTO ${this.tableName("wb_unit_economics_settings")} (id, acquiring_percent, updated_at)
+      `INSERT INTO ${this.tableName("wb_unit_economics_settings")} (id, ${column}, updated_at)
        VALUES (1, $1, NOW())
        ON CONFLICT (id) DO UPDATE SET
-         acquiring_percent = EXCLUDED.acquiring_percent,
+         ${column} = EXCLUDED.${column},
          updated_at = NOW()`,
-      [acquiringPercent],
+      [value],
     );
   }
 }

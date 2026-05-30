@@ -1,8 +1,8 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Put, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Put, Query, UseGuards } from "@nestjs/common";
 
 import { WbClustersWriteGuard } from "../common/guards/wb-clusters-write.guard";
-import { SetAcquiringDto } from "./dto/set-acquiring.dto";
 import { SetCategoryCommissionDto } from "./dto/set-category-commission.dto";
+import { SetGlobalPercentDto } from "./dto/set-global-percent.dto";
 import { UnitEconomicsService } from "./unit-economics.service";
 
 /**
@@ -41,9 +41,10 @@ export class UnitEconomicsController {
     await this.unitEconomicsService.clearCategoryCommission(category);
   }
 
-  @Put("acquiring")
+  /** Глобальная %-метрика юнит-экономики (acquiring/drr): value=null очищает. */
+  @Put("global-percent/:metric")
   @UseGuards(WbClustersWriteGuard)
-  setAcquiringPercent(@Body() body: SetAcquiringDto) {
-    return this.unitEconomicsService.setAcquiringPercent(body.acquiringPercent);
+  setGlobalPercent(@Param("metric") metric: string, @Body() body: SetGlobalPercentDto) {
+    return this.unitEconomicsService.setGlobalPercent(metric, body.value);
   }
 }

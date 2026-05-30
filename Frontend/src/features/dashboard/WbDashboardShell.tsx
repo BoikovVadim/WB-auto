@@ -102,6 +102,7 @@ export function WbDashboardShell({
   sppMatrix,
   commissionValues,
   acquiringValues,
+  drrValues,
   priceChangeStatuses,
   isOrdersSheetOpen,
   isBuyoutSheetOpen,
@@ -299,6 +300,7 @@ export function WbDashboardShell({
                 sppValues={sppValues}
                 commissionValues={commissionValues}
                 acquiringValues={acquiringValues}
+                drrValues={drrValues}
                 priceChangeStatuses={priceChangeStatuses}
                 onProductsSearchChange={onProductsSearchChange}
                 onProductsSortToggle={onProductsSortToggle}
