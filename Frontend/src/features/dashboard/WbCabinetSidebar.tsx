@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { ui } from "./copy";
 import type { WbDashboardShellProps } from "./WbDashboardShellTypes";
@@ -129,38 +130,40 @@ export function WbCabinetSidebar({
         </button>
       </nav>
 
-      {flyoutPos && (
-        <div
-          ref={flyoutRef}
-          className="wb-cabinet-flyout"
-          style={{ top: flyoutPos.top, left: flyoutPos.left }}
-          role="menu"
-        >
-          <span className="wb-cabinet-flyout-title">{ui.viewUnitEconomics}</span>
-          <button
-            className={`wb-cabinet-flyout-item ${activeSection === "unit-economics" ? "active" : ""}`}
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              onOpenUnitEconomicsSection();
-              closeFlyout();
-            }}
+      {flyoutPos &&
+        createPortal(
+          <div
+            ref={flyoutRef}
+            className="wb-cabinet-flyout"
+            style={{ top: flyoutPos.top, left: flyoutPos.left }}
+            role="menu"
           >
-            {ui.viewUnitEconomicsTable}
-          </button>
-          <button
-            className={`wb-cabinet-flyout-item ${activeSection === "unit-economics-settings" ? "active" : ""}`}
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              onOpenUnitEconomicsSettingsSection();
-              closeFlyout();
-            }}
-          >
-            {ui.viewUnitEconomicsSettings}
-          </button>
-        </div>
-      )}
+            <span className="wb-cabinet-flyout-title">{ui.viewUnitEconomics}</span>
+            <button
+              className={`wb-cabinet-flyout-item ${activeSection === "unit-economics" ? "active" : ""}`}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onOpenUnitEconomicsSection();
+                closeFlyout();
+              }}
+            >
+              {ui.viewUnitEconomicsTable}
+            </button>
+            <button
+              className={`wb-cabinet-flyout-item ${activeSection === "unit-economics-settings" ? "active" : ""}`}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onOpenUnitEconomicsSettingsSection();
+                closeFlyout();
+              }}
+            >
+              {ui.viewUnitEconomicsSettings}
+            </button>
+          </div>,
+          document.body,
+        )}
     </aside>
   );
 }

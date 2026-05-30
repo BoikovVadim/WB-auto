@@ -228,7 +228,7 @@ input {
    обычный absolute-поповер. */
 .wb-cabinet-flyout {
   position: fixed;
-  z-index: 60;
+  z-index: 1000;
   min-width: 168px;
   display: flex;
   flex-direction: column;
