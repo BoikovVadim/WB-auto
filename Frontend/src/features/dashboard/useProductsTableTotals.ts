@@ -16,6 +16,7 @@ export type ProductsTableTotals = {
   totalCommission: number | null;
   totalTax: number | null;
   totalAcquiring: number | null;
+  totalAcquiringPercent: number | null;
   totalDrr: number | null;
   totalMarginRub: number | null;
   totalMarginPercent: number | null;
@@ -149,6 +150,26 @@ export function useProductsTableTotals(input: Input): ProductsTableTotals {
     [filteredProducts, acquiringValues],
   );
 
+  // Эквайринг «Итого, %» — взвешенный: Σэквайринг₽ / Σцены-со-скидкой × 100 (по тем же
+  // товарам, у кого есть эквайринг и база цены). Простое среднее % исказило бы итог
+  // при разных ценах — та же логика, что у «Маржа, %».
+  const totalAcquiringPercent = useMemo(() => {
+    let acquiringSum = 0;
+    let baseSum = 0;
+    let hasAny = false;
+    for (const p of filteredProducts) {
+      if (p.nmId === null) continue;
+      const acquiring = acquiringValues.get(p.nmId);
+      const base = priceCounts.get(p.nmId)?.priceWithDiscount;
+      if (acquiring !== undefined && base !== undefined && base > 0) {
+        acquiringSum += acquiring;
+        baseSum += base;
+        hasAny = true;
+      }
+    }
+    return hasAny && baseSum > 0 ? (acquiringSum / baseSum) * 100 : null;
+  }, [filteredProducts, acquiringValues, priceCounts]);
+
   const totalDrr = useMemo(
     () => sumOverProducts(filteredProducts, drrValues, false),
     [filteredProducts, drrValues],
@@ -205,6 +226,7 @@ export function useProductsTableTotals(input: Input): ProductsTableTotals {
     totalCommission,
     totalTax,
     totalAcquiring,
+    totalAcquiringPercent,
     totalDrr,
     totalMarginRub,
     totalMarginPercent,

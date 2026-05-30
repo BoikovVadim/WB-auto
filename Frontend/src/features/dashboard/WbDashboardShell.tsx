@@ -103,6 +103,8 @@ export function WbDashboardShell({
   taxValues,
   commissionValues,
   acquiringValues,
+  acquiringPercentValues,
+  acquiringFactualSet,
   drrValues,
   marginRubValues,
   marginPercentValues,
@@ -304,6 +306,8 @@ export function WbDashboardShell({
                 taxValues={taxValues}
                 commissionValues={commissionValues}
                 acquiringValues={acquiringValues}
+                acquiringPercentValues={acquiringPercentValues}
+                acquiringFactualSet={acquiringFactualSet}
                 drrValues={drrValues}
                 marginRubValues={marginRubValues}
                 marginPercentValues={marginPercentValues}

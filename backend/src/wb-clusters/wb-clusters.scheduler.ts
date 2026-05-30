@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 
 import { appEnv } from "../common/env";
+import { AcquiringSyncService } from "./acquiring-sync.service";
 import { ProductCatalogService } from "./product-catalog.service";
 import { WbClustersService } from "./wb-clusters.service";
 
@@ -12,6 +13,7 @@ export class WbClustersScheduler implements OnModuleInit {
   constructor(
     private readonly wbClustersService: WbClustersService,
     private readonly productCatalogService: ProductCatalogService,
+    private readonly acquiringSyncService: AcquiringSyncService,
   ) {}
 
   async onModuleInit() {
@@ -309,6 +311,20 @@ export class WbClustersScheduler implements OnModuleInit {
     await this.wbClustersService
       .syncPricesFromWb()
       .catch((err: Error) => this.logger.warn(`Prices snapshot error: ${err.message}`));
+  }
+
+  // ─── Acquiring (отчёт о реализации — фактический эквайринг по товару) ─────────
+  //
+  // Раз в сутки в 05:07 МСК тянем эквайринг из WB /api/v5/supplier/reportDetailByPeriod
+  // в wb_product_acquiring_weekly (агрегат по nm_id × отчётной неделе). Юнит-экономика
+  // берёт последнюю закрытую неделю как фактический % эквайринга по товару.
+  // Время 05:07 «тихое»: orders идут :00/:15/:30/:45, spp — в :00, stocks/prices ночью,
+  // поэтому не делим лимит statistics-api (1 req/min) с другими синками.
+  @Cron("0 7 5 * * *")
+  async handleAcquiringSync() {
+    await this.acquiringSyncService
+      .syncAcquiringFromRealization()
+      .catch((err: Error) => this.logger.warn(`Acquiring sync error: ${err.message}`));
   }
 
 }

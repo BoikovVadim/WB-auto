@@ -12,6 +12,7 @@ export type LocalSortKey =
   | "commission"
   | "tax"
   | "acquiring"
+  | "acquiringPercent"
   | "drr"
   | "marginRub"
   | "marginPercent"
@@ -38,6 +39,7 @@ type SortMaps = {
   commissionValues: Map<number, number>;
   taxValues: Map<number, number>;
   acquiringValues: Map<number, number>;
+  acquiringPercentValues: Map<number, number>;
   drrValues: Map<number, number>;
   marginRubValues: Map<number, number>;
   marginPercentValues: Map<number, number>;
@@ -50,7 +52,7 @@ function localSortValue(product: ProductListItem, key: LocalSortKey, maps: SortM
   const nmId = product.nmId;
   if (nmId === null) {
     if (key === "marginRub" || key === "marginPercent") return Number.NEGATIVE_INFINITY;
-    return key === "buyout" || key === "spp" || key === "commission" || key === "tax" || key === "acquiring" || key === "drr"
+    return key === "buyout" || key === "spp" || key === "commission" || key === "tax" || key === "acquiring" || key === "acquiringPercent" || key === "drr"
       ? -1
       : 0;
   }
@@ -80,6 +82,8 @@ function localSortValue(product: ProductListItem, key: LocalSortKey, maps: SortM
       return maps.taxValues.get(nmId) ?? -1;
     case "acquiring":
       return maps.acquiringValues.get(nmId) ?? -1;
+    case "acquiringPercent":
+      return maps.acquiringPercentValues.get(nmId) ?? -1;
     case "drr":
       return maps.drrValues.get(nmId) ?? -1;
     case "marginRub":

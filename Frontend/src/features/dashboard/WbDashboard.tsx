@@ -24,12 +24,12 @@ import {
   formatCalendarDateValue,
   type AdvertisingDateRange,
 } from "./advertising/date";
-import { ProductAdvertisingWorkspacePane } from "./advertising/ProductAdvertisingWorkspacePane";
 import {
   initialProductAdvertisingDetailRevisions,
   type ProductAdvertisingDetailInvalidationTarget,
   invalidateProductAdvertisingDetailRevisions,
 } from "./advertising/productAdvertisingDetailInvalidation";
+import { useDetailWorkspacePane } from "./useDetailWorkspacePane";
 import {
   advertisingUxBudgetsMs,
   startAdvertisingUxBudget,
@@ -153,6 +153,8 @@ export function WbDashboard() {
     taxValues,
     commissionValues,
     acquiringValues,
+    acquiringPercentValues,
+    acquiringFactualSet,
     drrValues,
     marginRubValues,
     marginPercentValues,
@@ -369,35 +371,19 @@ export function WbDashboard() {
     closeSheet,
   });
 
-  const detailWorkspace = useMemo(
-    () => (
-      <ProductAdvertisingWorkspacePane
-        nmId={resolvedCatalogProduct?.nmId ?? null}
-        vendorCode={resolvedCatalogProduct?.vendorCode ?? ""}
-        detailRevisions={productAdvertisingDetailRevisions}
-        workspace={productAdvertisingWorkspace}
-        dateRange={productAdvertisingDateRange}
-        onDateRangeChange={setProductAdvertisingDateRange}
-        loadError={productAdvertisingWorkspaceError}
-        isWorkspaceLoading={isProductAdvertisingWorkspaceLoading}
-        isAdvertisingSyncStarting={isAdvertisingSyncStarting}
-        onRunAdvertisingSync={handleRunAdvertisingSync}
-        onReloadSheet={handleReloadSelectedProductAdvertising}
-      />
-    ),
-    [
-      handleReloadSelectedProductAdvertising,
-      handleRunAdvertisingSync,
-      isAdvertisingSyncStarting,
-      isProductAdvertisingWorkspaceLoading,
-      productAdvertisingDateRange,
-      productAdvertisingWorkspace,
-      productAdvertisingWorkspaceError,
-      productAdvertisingDetailRevisions,
-      resolvedCatalogProduct,
-      setProductAdvertisingDateRange,
-    ],
-  );
+  const detailWorkspace = useDetailWorkspacePane({
+    nmId: resolvedCatalogProduct?.nmId ?? null,
+    vendorCode: resolvedCatalogProduct?.vendorCode ?? "",
+    detailRevisions: productAdvertisingDetailRevisions,
+    workspace: productAdvertisingWorkspace,
+    dateRange: productAdvertisingDateRange,
+    onDateRangeChange: setProductAdvertisingDateRange,
+    loadError: productAdvertisingWorkspaceError,
+    isWorkspaceLoading: isProductAdvertisingWorkspaceLoading,
+    isAdvertisingSyncStarting,
+    onRunAdvertisingSync: handleRunAdvertisingSync,
+    onReloadSheet: handleReloadSelectedProductAdvertising,
+  });
 
   return (
     <WbDashboardShell
@@ -462,6 +448,8 @@ export function WbDashboard() {
       taxValues={taxValues}
       commissionValues={commissionValues}
       acquiringValues={acquiringValues}
+      acquiringPercentValues={acquiringPercentValues}
+      acquiringFactualSet={acquiringFactualSet}
       drrValues={drrValues}
       marginRubValues={marginRubValues}
       marginPercentValues={marginPercentValues}

@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 
 import { WbClustersWriteGuard } from "../common/guards/wb-clusters-write.guard";
 import { WbRuntimeConfigModule } from "../wb-runtime-config/wb-runtime-config.module";
+import { AcquiringSyncService } from "./acquiring-sync.service";
 import { WbApiClient } from "../wb-sync/wb-api.client";
 import { WbCabinetPrivateApiClient } from "./wb-cabinet-private-api.client";
 import { WbCmpSafariClient } from "./wb-cmp-safari.client";
@@ -50,6 +51,7 @@ import { WbPromotionApiClient } from "./wb-promotion-api.client";
     WbClustersScheduler,
     WbClustersSyncOrchestratorService,
     WbClustersService,
+    AcquiringSyncService,
     ProductAdvertisingReadRepository,
     PromotionSyncRepository,
     ProductAdvertisingSnapshotRepository,

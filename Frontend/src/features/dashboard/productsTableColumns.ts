@@ -16,6 +16,7 @@ export type ProductsColumnKey =
   | "commission"
   | "tax"
   | "acquiring"
+  | "acquiringPercent"
   | "drr"
   | "marginRub"
   | "marginPercent"
@@ -33,13 +34,15 @@ export type ProductColumnDefinition = {
   defaultWidth: number;
 };
 
+// v9: добавлена колонка «Эквайринг, %» (после «Эквайринг, ₽», только в «Юнит Экономике»);
+//     фактический эквайринг из отчёта реализации, ₽-колонка теперь тоже по факту.
 // v8: добавлена колонка «Налог, ₽» (после «Комиссия», только в «Юнит Экономике»).
 // v7: добавлены «Маржа, ₽»/«Маржа, %» (после «ДРР», только в «Юнит Экономике»).
 // v6: добавлена колонка «ДРР, ₽» (после «Эквайринг», только в «Юнит Экономике»).
 // v5: добавлены «Комиссия, ₽»/«Эквайринг, ₽». Бамп сбрасывает сохранённый порядок к
 // дефолту, чтобы новые колонки встали на нужное место (не уехали в конец у тех,
 // кто уже двигал колонки). Ширины хранятся отдельно и не теряются.
-export const PRODUCTS_COLUMN_STORAGE_KEY = "wb-products-column-order-v8";
+export const PRODUCTS_COLUMN_STORAGE_KEY = "wb-products-column-order-v9";
 
 export const productsTableColumnDefs: ProductColumnDefinition[] = [
   { key: "index",     defaultWidth: 48  },
@@ -52,6 +55,7 @@ export const productsTableColumnDefs: ProductColumnDefinition[] = [
   { key: "commission", defaultWidth: 130 },
   { key: "tax",       defaultWidth: 130 },
   { key: "acquiring", defaultWidth: 130 },
+  { key: "acquiringPercent", defaultWidth: 120 },
   { key: "drr",       defaultWidth: 130 },
   { key: "marginRub", defaultWidth: 130 },
   { key: "marginPercent", defaultWidth: 110 },
@@ -85,6 +89,7 @@ export const CATALOG_PRODUCTS_HIDDEN_COLUMNS: ProductsColumnKey[] = [
   "commission",
   "tax",
   "acquiring",
+  "acquiringPercent",
   "drr",
   "marginRub",
   "marginPercent",

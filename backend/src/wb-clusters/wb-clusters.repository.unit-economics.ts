@@ -1,4 +1,4 @@
-import { WbClustersRepositoryPrices } from "./wb-clusters.repository.prices";
+import { WbClustersRepositoryAcquiring } from "./wb-clusters.repository.acquiring";
 
 export type SubjectCommissionRow = {
   subjectName: string;
@@ -27,7 +27,7 @@ const GLOBAL_PERCENT_COLUMN: Record<GlobalPercentMetric, string> = {
  * в ₽ на каждый товар (см. сервис getUnitEconomicsCharges) — фронт только рисует.
  * Список предметов берётся из каталога (getDistinctSubjectNames).
  */
-export abstract class WbClustersRepositoryUnitEconomics extends WbClustersRepositoryPrices {
+export abstract class WbClustersRepositoryUnitEconomics extends WbClustersRepositoryAcquiring {
   /** Сохранённые комиссии по предметам. */
   async getSubjectCommissions(): Promise<SubjectCommissionRow[]> {
     const result = await this.getPool().query<{ subject_name: string; commission_percent: string }>(

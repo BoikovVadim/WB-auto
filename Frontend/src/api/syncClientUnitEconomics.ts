@@ -60,6 +60,10 @@ export type UnitEconomicsChargeItem = {
   taxRub: number | null;
   commissionRub: number | null;
   acquiringRub: number | null;
+  /** Применённый % эквайринга: факт за последнюю закрытую неделю или ручной глобальный %. */
+  acquiringPercent: number | null;
+  /** true — % из отчёта реализации (факт); false — подставлен ручной глобальный %. */
+  acquiringIsFactual: boolean;
   drrRub: number | null;
   /** Маржа в ₽ на единицу (цена со скидкой − себестоимость − комиссия − эквайринг − ДРР). */
   marginRub: number | null;

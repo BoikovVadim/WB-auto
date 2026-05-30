@@ -25,6 +25,8 @@ export type ProductsBodyRenderCtx = {
   commissionValues: Map<number, number>;
   taxValues: Map<number, number>;
   acquiringValues: Map<number, number>;
+  acquiringPercentValues: Map<number, number>;
+  acquiringFactualSet: Set<number>;
   drrValues: Map<number, number>;
   marginRubValues: Map<number, number>;
   marginPercentValues: Map<number, number>;
@@ -132,6 +134,26 @@ export function renderProductsBodyCell(
       return moneyCell(key, nmId !== null ? ctx.taxValues.get(nmId) : undefined, false);
     case "acquiring":
       return moneyCell(key, nmId !== null ? ctx.acquiringValues.get(nmId) : undefined, false);
+    case "acquiringPercent": {
+      // % эквайринга: факт за последнюю закрытую неделю или подставленный ручной %.
+      // Fallback (продаж за неделю не было) рисуем приглушённо + подсказка, чтобы факт
+      // и ручную подстановку было видно глазом.
+      const pct = nmId !== null ? ctx.acquiringPercentValues.get(nmId) : undefined;
+      if (pct === undefined) {
+        return <td key={key} className="wb-table-cell--numeric">{dash}</td>;
+      }
+      const isFactual = nmId !== null && ctx.acquiringFactualSet.has(nmId);
+      return (
+        <td
+          key={key}
+          className="wb-table-cell--numeric"
+          title={isFactual ? "Факт за последнюю закрытую неделю" : "Ручной % — продаж за неделю не было"}
+          style={isFactual ? undefined : { opacity: 0.5 }}
+        >
+          {formatPercent(pct)}
+        </td>
+      );
+    }
     case "drr":
       return moneyCell(key, nmId !== null ? ctx.drrValues.get(nmId) : undefined, false);
     case "marginRub":

@@ -61,8 +61,12 @@ type DashboardCatalogProductsSectionProps = {
   taxValues: Map<number, number>;
   /** Комиссия в ₽ на товар (по категории) — только «Юнит Экономика». Считается на бэке. */
   commissionValues: Map<number, number>;
-  /** Эквайринг в ₽ на товар (глобальный %) — только «Юнит Экономика». Считается на бэке. */
+  /** Эквайринг в ₽ на товар (применённый %) — только «Юнит Экономика». Считается на бэке. */
   acquiringValues: Map<number, number>;
+  /** Применённый % эквайринга на товар (факт за неделю или ручной) — только «Юнит Экономика». */
+  acquiringPercentValues: Map<number, number>;
+  /** nmId с фактическим % эквайринга (остальные — ручной fallback, рисуются приглушённо). */
+  acquiringFactualSet: Set<number>;
   /** ДРР в ₽ на товар (глобальный %) — только «Юнит Экономика». Считается на бэке. */
   drrValues: Map<number, number>;
   /** Маржа в ₽ на единицу — только «Юнит Экономика». Считается на бэке. */
@@ -160,11 +164,12 @@ export const DashboardCatalogProductsSection = memo(
           commissionValues: props.commissionValues,
           taxValues: props.taxValues,
           acquiringValues: props.acquiringValues,
+          acquiringPercentValues: props.acquiringPercentValues,
           drrValues: props.drrValues,
           marginRubValues: props.marginRubValues,
           marginPercentValues: props.marginPercentValues,
         }),
-      [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costSumValues, props.adSpendValues, props.sppValues, props.commissionValues, props.taxValues, props.acquiringValues, props.drrValues, props.marginRubValues, props.marginPercentValues, props.costPrices, props.priceCounts],
+      [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costSumValues, props.adSpendValues, props.sppValues, props.commissionValues, props.taxValues, props.acquiringValues, props.acquiringPercentValues, props.drrValues, props.marginRubValues, props.marginPercentValues, props.costPrices, props.priceCounts],
     );
 
     // Выделение строк + inline-редактирование (себестоимость/цена) — см. useProductsTableSelection.
@@ -347,6 +352,8 @@ export const DashboardCatalogProductsSection = memo(
       commissionValues: props.commissionValues,
       taxValues: props.taxValues,
       acquiringValues: props.acquiringValues,
+      acquiringPercentValues: props.acquiringPercentValues,
+      acquiringFactualSet: props.acquiringFactualSet,
       drrValues: props.drrValues,
       marginRubValues: props.marginRubValues,
       marginPercentValues: props.marginPercentValues,

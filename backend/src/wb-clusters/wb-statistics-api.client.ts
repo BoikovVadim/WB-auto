@@ -81,10 +81,96 @@ export type WbSaleRow = {
   srid: string;
 };
 
+/**
+ * Строка отчёта о реализации (/api/v5/supplier/reportDetailByPeriod) — он же
+ * «финансовый отчёт» WB. Одна строка = одна операция реализации (продажа/возврат)
+ * по товару внутри отчётной недели (date_from..date_to, обычно пн–вс).
+ * Здесь объявлены только поля, нужные для фактического эквайринга по товару:
+ *   acquiring_fee  — эквайринг (комиссия за приём платежа) в ₽ по операции,
+ *   retail_amount  — розничная стоимость операции (база, к которой WB применил эквайринг),
+ *   rrd_id         — курсор пагинации (передаётся как rrdid в следующий запрос).
+ * Возвраты приходят с отрицательными суммами → суммирование даёт net-эквайринг за неделю.
+ */
+export type WbReportDetailRow = {
+  realizationreport_id: number;
+  date_from: string;   // ISO — начало отчётной недели
+  date_to: string;     // ISO — конец отчётной недели
+  rrd_id: number;      // курсор пагинации
+  nm_id: number;
+  retail_amount: number;
+  acquiring_fee: number;
+  doc_type_name?: string;       // "Продажа" / "Возврат"
+  supplier_oper_name?: string;
+};
+
 export class WbStatisticsApiClient {
   private lastRequestAt = 0;
 
   constructor(private readonly getToken: () => string) {}
+
+  /**
+   * Скачивает отчёт о реализации за период [dateFrom, dateTo] (даты "YYYY-MM-DD",
+   * границы трактуются WB как отчётные даты). Пагинация по курсору rrdid: на каждой
+   * странице берём последний rrd_id и шлём его как rrdid, пока WB не вернёт пустую
+   * страницу или меньше лимита. Тот же лимит statistics-api (1 req/min) — каждый
+   * запрос проходит через общий throttle инстанса.
+   */
+  async fetchReportDetailByPeriod(dateFrom: string, dateTo: string): Promise<WbReportDetailRow[]> {
+    const LIMIT = 100000;
+    const all: WbReportDetailRow[] = [];
+    let rrdid = 0;
+
+    for (;;) {
+      await this.throttle();
+      const page = await this.fetchReportDetailPage(dateFrom, dateTo, rrdid, LIMIT);
+      if (page.length === 0) break;
+      all.push(...page);
+      const last = page[page.length - 1];
+      if (!last || typeof last.rrd_id !== "number") break;
+      if (last.rrd_id <= rrdid) break; // защита от зацикливания
+      if (page.length < LIMIT) break;
+      rrdid = last.rrd_id;
+    }
+
+    return all;
+  }
+
+  private async fetchReportDetailPage(
+    dateFrom: string,
+    dateTo: string,
+    rrdid: number,
+    limit: number,
+  ): Promise<WbReportDetailRow[]> {
+    const token = this.getToken();
+    if (!token) throw new Error("WB Statistics API token not configured (WB_API_TOKEN)");
+
+    const url = new URL(`${appEnv.wbStatisticsApiBaseUrl}/api/v5/supplier/reportDetailByPeriod`);
+    url.searchParams.set("dateFrom", dateFrom);
+    url.searchParams.set("dateTo", dateTo);
+    url.searchParams.set("rrdid", String(rrdid));
+    url.searchParams.set("limit", String(limit));
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => { controller.abort(); }, appEnv.wbStatisticsApiTimeoutMs);
+
+    try {
+      const response = await fetch(url.toString(), {
+        method: "GET",
+        headers: { Authorization: token, "Content-Type": "application/json" },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(`WB Statistics reportDetailByPeriod ${response.status}: ${body}`);
+      }
+      const data = await response.json() as WbReportDetailRow[];
+      return Array.isArray(data) ? data : [];
+    } catch (err) {
+      clearTimeout(timeoutId);
+      throw err;
+    }
+  }
 
   /**
    * Downloads ALL orders changed since `dateFrom` using flag=0 (lastChangeDate cursor).

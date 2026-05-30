@@ -11,8 +11,12 @@ export type UseUnitEconomicsChargesResult = {
   taxValues: Map<number, number>;
   /** Комиссия в ₽ на товар (по категории × цена со скидкой). Считается на бэке. */
   commissionValues: Map<number, number>;
-  /** Эквайринг в ₽ на товар (глобальный % × цена со скидкой). Считается на бэке. */
+  /** Эквайринг в ₽ на товар (применённый % × цена со скидкой). Считается на бэке. */
   acquiringValues: Map<number, number>;
+  /** Применённый % эквайринга на товар (факт за неделю или ручной глобальный). Считается на бэке. */
+  acquiringPercentValues: Map<number, number>;
+  /** nmId, у которых % эквайринга — фактический из отчёта (а не подставленный ручной). */
+  acquiringFactualSet: Set<number>;
   /** ДРР в ₽ на товар (глобальный % × цена со скидкой). Считается на бэке. */
   drrValues: Map<number, number>;
   /** Маржа в ₽ на единицу (цена со скидкой − с/с − комиссия − эквайринг − ДРР). Считается на бэке. */
@@ -26,6 +30,8 @@ export function useUnitEconomicsCharges(): UseUnitEconomicsChargesResult {
   const [taxValues, setTaxValues] = useState<Map<number, number>>(new Map());
   const [commissionValues, setCommissionValues] = useState<Map<number, number>>(new Map());
   const [acquiringValues, setAcquiringValues] = useState<Map<number, number>>(new Map());
+  const [acquiringPercentValues, setAcquiringPercentValues] = useState<Map<number, number>>(new Map());
+  const [acquiringFactualSet, setAcquiringFactualSet] = useState<Set<number>>(new Set());
   const [drrValues, setDrrValues] = useState<Map<number, number>>(new Map());
   const [marginRubValues, setMarginRubValues] = useState<Map<number, number>>(new Map());
   const [marginPercentValues, setMarginPercentValues] = useState<Map<number, number>>(new Map());
@@ -38,6 +44,8 @@ export function useUnitEconomicsCharges(): UseUnitEconomicsChargesResult {
         const tax = new Map<number, number>();
         const commission = new Map<number, number>();
         const acquiring = new Map<number, number>();
+        const acquiringPercent = new Map<number, number>();
+        const acquiringFactual = new Set<number>();
         const drr = new Map<number, number>();
         const marginRub = new Map<number, number>();
         const marginPercent = new Map<number, number>();
@@ -45,6 +53,8 @@ export function useUnitEconomicsCharges(): UseUnitEconomicsChargesResult {
           if (item.taxRub !== null) tax.set(item.nmId, item.taxRub);
           if (item.commissionRub !== null) commission.set(item.nmId, item.commissionRub);
           if (item.acquiringRub !== null) acquiring.set(item.nmId, item.acquiringRub);
+          if (item.acquiringPercent !== null) acquiringPercent.set(item.nmId, item.acquiringPercent);
+          if (item.acquiringIsFactual) acquiringFactual.add(item.nmId);
           if (item.drrRub !== null) drr.set(item.nmId, item.drrRub);
           if (item.marginRub !== null) marginRub.set(item.nmId, item.marginRub);
           if (item.marginPercent !== null) marginPercent.set(item.nmId, item.marginPercent);
@@ -52,6 +62,8 @@ export function useUnitEconomicsCharges(): UseUnitEconomicsChargesResult {
         setTaxValues(tax);
         setCommissionValues(commission);
         setAcquiringValues(acquiring);
+        setAcquiringPercentValues(acquiringPercent);
+        setAcquiringFactualSet(acquiringFactual);
         setDrrValues(drr);
         setMarginRubValues(marginRub);
         setMarginPercentValues(marginPercent);
@@ -77,6 +89,8 @@ export function useUnitEconomicsCharges(): UseUnitEconomicsChargesResult {
     taxValues,
     commissionValues,
     acquiringValues,
+    acquiringPercentValues,
+    acquiringFactualSet,
     drrValues,
     marginRubValues,
     marginPercentValues,

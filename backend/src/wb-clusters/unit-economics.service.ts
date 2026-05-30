@@ -20,6 +20,14 @@ export type UnitEconomicsChargeItem = {
   taxRub: number | null;
   commissionRub: number | null;
   acquiringRub: number | null;
+  /**
+   * Применённый % эквайринга по товару: фактический средневзвешенный за последнюю
+   * закрытую неделю (если были продажи), иначе — ручной глобальный %. null, если ни
+   * того, ни другого нет.
+   */
+  acquiringPercent: number | null;
+  /** true — % взят из отчёта о реализации (факт); false — подставлен ручной глобальный %. */
+  acquiringIsFactual: boolean;
   drrRub: number | null;
   /** Маржа в ₽ на единицу: цена со скидкой − себестоимость − комиссия − эквайринг − ДРР. */
   marginRub: number | null;
@@ -110,16 +118,20 @@ export class UnitEconomicsService {
   async getCharges(): Promise<{ items: UnitEconomicsChargeItem[] }> {
     if (!this.repository.isConfigured()) return { items: [] };
     await this.repository.ensureSchema();
-    const [catalog, latestPrices, commissions, global, costPrices] = await Promise.all([
-      this.repository.listProductCatalogItems(),
-      this.repository.getLatestPrices(),
-      this.repository.getSubjectCommissions(),
-      this.repository.getGlobalSettings(),
-      this.repository.getAllCurrentCostPrices(),
-    ]);
+    const [catalog, latestPrices, commissions, global, costPrices, acquiringWeekly] =
+      await Promise.all([
+        this.repository.listProductCatalogItems(),
+        this.repository.getLatestPrices(),
+        this.repository.getSubjectCommissions(),
+        this.repository.getGlobalSettings(),
+        this.repository.getAllCurrentCostPrices(),
+        this.repository.getLatestWeekAcquiring(),
+      ]);
     const commissionBySubject = new Map(commissions.map((c) => [c.subjectName, c.commissionPercent]));
     const priceByNmId = new Map(latestPrices.map((p) => [p.nmId, p]));
     const costByNmId = new Map(costPrices.map((c) => [c.nmId, c.costValue]));
+    // nmId → фактический эквайринг за последнюю закрытую неделю (суммы fee/retail).
+    const acquiringByNmId = new Map(acquiringWeekly.map((a) => [a.nmId, a]));
     const applyPercent = (base: number, percent: number | null): number | null =>
       percent != null ? round2(base * (percent / 100)) : null;
 
@@ -131,7 +143,17 @@ export class UnitEconomicsService {
       const commissionPercent =
         product.subjectName != null ? commissionBySubject.get(product.subjectName) ?? null : null;
       const commissionRub = applyPercent(priceWithDiscount, commissionPercent);
-      const acquiringRub = applyPercent(priceWithDiscount, global.acquiringPercent);
+      // Эквайринг: фактический средневзвешенный % за последнюю закрытую неделю
+      // (Σ acquiring_fee / Σ retail_amount × 100), если по товару были продажи;
+      // иначе fallback на ручной глобальный %. Маржа считается по применённому %.
+      const acquiringFact = acquiringByNmId.get(product.nmId);
+      const factualAcquiringPercent =
+        acquiringFact && acquiringFact.retailAmountSum > 0
+          ? round2((acquiringFact.acquiringFeeSum / acquiringFact.retailAmountSum) * 100)
+          : null;
+      const acquiringIsFactual = factualAcquiringPercent != null;
+      const acquiringPercent = factualAcquiringPercent ?? global.acquiringPercent;
+      const acquiringRub = applyPercent(priceWithDiscount, acquiringPercent);
       const drrRub = applyPercent(priceWithDiscount, global.drrPercent);
       const taxRub = applyPercent(priceWithDiscount, global.taxPercent);
 
@@ -155,7 +177,17 @@ export class UnitEconomicsService {
       ) {
         continue;
       }
-      items.push({ nmId: product.nmId, taxRub, commissionRub, acquiringRub, drrRub, marginRub, marginPercent });
+      items.push({
+        nmId: product.nmId,
+        taxRub,
+        commissionRub,
+        acquiringRub,
+        acquiringPercent,
+        acquiringIsFactual,
+        drrRub,
+        marginRub,
+        marginPercent,
+      });
     }
     return { items };
   }

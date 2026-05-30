@@ -92,6 +92,8 @@ export type WbDashboardShellProps = {
   taxValues: Map<number, number>;
   commissionValues: Map<number, number>;
   acquiringValues: Map<number, number>;
+  acquiringPercentValues: Map<number, number>;
+  acquiringFactualSet: Set<number>;
   drrValues: Map<number, number>;
   marginRubValues: Map<number, number>;
   marginPercentValues: Map<number, number>;
