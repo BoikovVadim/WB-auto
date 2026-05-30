@@ -102,7 +102,7 @@ export async function runAdSpendFullstatsSync(self: WbClustersService): Promise<
         const statDate = String(day.date).slice(0, 10);
         if (statDate.length !== 10) continue;
         for (const app of day.apps ?? []) {
-          for (const nm of app.nm ?? []) {
+          for (const nm of app.nms ?? []) {
             const nmId = Number(nm.nmId);
             const sum = Number(nm.sum);
             if (!Number.isFinite(nmId) || !Number.isFinite(sum)) continue;

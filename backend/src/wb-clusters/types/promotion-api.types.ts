@@ -150,7 +150,8 @@ export type PromotionFullstatsResponse = Array<{
     date: string;
     apps?: Array<{
       appType?: number;
-      nm?: Array<{
+      // v3: товары лежат в поле `nms` (в v2 было `nm`).
+      nms?: Array<{
         nmId: number;
         sum?: number;
         name?: string;
