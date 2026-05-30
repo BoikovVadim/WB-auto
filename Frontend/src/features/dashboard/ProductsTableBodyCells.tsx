@@ -22,6 +22,8 @@ export type ProductsBodyRenderCtx = {
   revenueValues: Map<number, number>;
   costSumValues: Map<number, number>;
   adSpendValues: Map<number, number>;
+  /** Фактический ДРР % на товар (расход / выручка) — только «Товары». Считается на бэке. */
+  drrPercentValues: Map<number, number>;
   sppValues: Map<number, number>;
   commissionValues: Map<number, number>;
   taxValues: Map<number, number>;
@@ -318,6 +320,15 @@ export function renderProductsBodyCell(
       return moneyCell(key, nmId !== null ? ctx.costSumValues.get(nmId) : undefined, true);
     case "adSpend":
       return moneyCell(key, nmId !== null ? ctx.adSpendValues.get(nmId) : undefined, true);
+    case "drrPercent": {
+      // ДРР приходит с бэка только при наличии расхода и выручки (>0) → есть значение = показываем.
+      const drr = nmId !== null ? ctx.drrPercentValues.get(nmId) : undefined;
+      return (
+        <div key={key} className="wb-pg-cell wb-pg-cell--num">
+          {drr !== undefined ? formatPercent(drr) : dash}
+        </div>
+      );
+    }
   }
 }
 
@@ -346,6 +357,7 @@ export type ProductCellCopyCtx = Pick<
   | "revenueValues"
   | "costSumValues"
   | "adSpendValues"
+  | "drrPercentValues"
 >;
 
 const money2 = (v: number | null | undefined): string =>
@@ -439,5 +451,7 @@ export function productCellCopyValue(
       return money2(ctx.costSumValues.get(nmId));
     case "adSpend":
       return money2(ctx.adSpendValues.get(nmId));
+    case "drrPercent":
+      return money2(ctx.drrPercentValues.get(nmId));
   }
 }

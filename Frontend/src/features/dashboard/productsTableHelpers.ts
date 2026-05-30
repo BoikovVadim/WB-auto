@@ -44,6 +44,7 @@ export function getColLabel(key: ProductsColumnKey): string {
     case "revenue":   return "Выручка";
     case "costSum":   return "С/с продаж";
     case "adSpend":   return "Реклама";
+    case "drrPercent": return "ДРР, %";
   }
 }
 

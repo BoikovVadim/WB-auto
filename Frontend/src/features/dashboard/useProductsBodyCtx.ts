@@ -14,6 +14,7 @@ export type ProductsBodyData = Pick<
   | "revenueValues"
   | "costSumValues"
   | "adSpendValues"
+  | "drrPercentValues"
   | "sppValues"
   | "commissionValues"
   | "taxValues"
@@ -84,6 +85,7 @@ export function useProductsBodyCtx(
       revenueValues: data.revenueValues,
       costSumValues: data.costSumValues,
       adSpendValues: data.adSpendValues,
+      drrPercentValues: data.drrPercentValues,
       sppValues: data.sppValues,
       commissionValues: data.commissionValues,
       taxValues: data.taxValues,
@@ -126,6 +128,7 @@ export function useProductsBodyCtx(
       data.revenueValues,
       data.costSumValues,
       data.adSpendValues,
+      data.drrPercentValues,
       data.sppValues,
       data.commissionValues,
       data.taxValues,

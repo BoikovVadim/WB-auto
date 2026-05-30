@@ -13,6 +13,7 @@ import { DashboardOrdersSumDetailSection } from "./DashboardOrdersSumDetailSecti
 import { DashboardRevenueDetailSection } from "./DashboardRevenueDetailSection";
 import { DashboardCostSumDetailSection } from "./DashboardCostSumDetailSection";
 import { DashboardAdSpendDetailSection } from "./DashboardAdSpendDetailSection";
+import { DashboardDrrPercentDetailSection } from "./DashboardDrrPercentDetailSection";
 import { DashboardSppDetailSection } from "./DashboardSppDetailSection";
 import { DashboardAcquiringDetailSection } from "./DashboardAcquiringDetailSection";
 import { DashboardMarginDetailSection } from "./DashboardMarginDetailSection";
@@ -100,6 +101,8 @@ export function WbDashboardShell({
   costSumMatrix,
   adSpendValues,
   adSpendMatrix,
+  drrPercentValues,
+  drrMatrix,
   sppValues,
   sppMatrix,
   taxValues,
@@ -119,6 +122,7 @@ export function WbDashboardShell({
   isRevenueSheetOpen,
   isCostSumSheetOpen,
   isAdSpendSheetOpen,
+  isDrrPercentSheetOpen,
   isSppSheetOpen,
   isAcquiringSheetOpen,
   isMarginRubSheetOpen,
@@ -141,6 +145,8 @@ export function WbDashboardShell({
   onCloseCostSumSheet,
   onOpenAdSpendSheet,
   onCloseAdSpendSheet,
+  onOpenDrrPercentSheet,
+  onCloseDrrPercentSheet,
   onOpenSppSheet,
   onCloseSppSheet,
   onOpenAcquiringSheet,
@@ -286,6 +292,15 @@ export function WbDashboardShell({
                 adSpendMatrix={adSpendMatrix}
                 onBack={onCloseAdSpendSheet}
               />
+            ) : isDrrPercentSheetOpen ? (
+              <DashboardDrrPercentDetailSection
+                products={filteredProducts}
+                drrPercentValues={drrPercentValues}
+                adSpendValues={adSpendValues}
+                revenueValues={revenueValues}
+                drrMatrix={drrMatrix}
+                onBack={onCloseDrrPercentSheet}
+              />
             ) : isSppSheetOpen ? (
               <DashboardSppDetailSection
                 products={filteredProducts}
@@ -331,6 +346,7 @@ export function WbDashboardShell({
                 revenueValues={revenueValues}
                 costSumValues={costSumValues}
                 adSpendValues={adSpendValues}
+                drrPercentValues={drrPercentValues}
                 sppValues={sppValues}
                 taxValues={taxValues}
                 commissionValues={commissionValues}
@@ -352,6 +368,7 @@ export function WbDashboardShell({
                 onOpenRevenueSheet={onOpenRevenueSheet}
                 onOpenCostSumSheet={onOpenCostSumSheet}
                 onOpenAdSpendSheet={onOpenAdSpendSheet}
+                onOpenDrrPercentSheet={onOpenDrrPercentSheet}
                 onOpenSppSheet={onOpenSppSheet}
                 onOpenAcquiringSheet={onOpenAcquiringSheet}
                 onOpenMarginRubSheet={onOpenMarginRubSheet}

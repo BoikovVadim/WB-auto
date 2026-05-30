@@ -13,6 +13,7 @@ export type ProductsTableTotals = {
   totalRevenue: number | null;
   totalCostSum: number | null;
   totalAdSpend: number | null;
+  totalDrrPercent: number | null;
   totalCommission: number | null;
   totalTax: number | null;
   totalAcquiring: number | null;
@@ -135,6 +136,24 @@ export function useProductsTableTotals(input: Input): ProductsTableTotals {
     [filteredProducts, adSpendValues],
   );
 
+  // ДРР «Итого» — взвешенный: Σ расход / Σ выручка × 100 (по товарам, у кого есть и
+  // расход, и выручка >0). Простое среднее % исказило бы итог при разных масштабах —
+  // та же логика, что у «% выкупа»/«Маржа, %». Источник тот же, что и у колонки.
+  const totalDrrPercent = useMemo(() => {
+    let spendSum = 0;
+    let revenueSum = 0;
+    for (const p of filteredProducts) {
+      if (p.nmId === null) continue;
+      const spend = adSpendValues.get(p.nmId);
+      const revenue = revenueValues.get(p.nmId);
+      if (spend !== undefined && spend > 0 && revenue !== undefined && revenue > 0) {
+        spendSum += spend;
+        revenueSum += revenue;
+      }
+    }
+    return revenueSum > 0 ? (spendSum / revenueSum) * 100 : null;
+  }, [filteredProducts, adSpendValues, revenueValues]);
+
   const totalCommission = useMemo(
     () => sumOverProducts(filteredProducts, commissionValues, false),
     [filteredProducts, commissionValues],
@@ -223,6 +242,7 @@ export function useProductsTableTotals(input: Input): ProductsTableTotals {
     totalRevenue,
     totalCostSum,
     totalAdSpend,
+    totalDrrPercent,
     totalCommission,
     totalTax,
     totalAcquiring,

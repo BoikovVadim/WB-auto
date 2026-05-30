@@ -31,6 +31,7 @@ export type ProductsHeaderRenderCtx = {
     revenue: () => void;
     costSum: () => void;
     adSpend: () => void;
+    drrPercent: () => void;
     acquiring: () => void;
     marginRub: () => void;
     marginPercent: () => void;
@@ -176,6 +177,8 @@ export function renderProductsHeaderCell(
         return renderSheetHeader("С/с продаж", "costSum", ctx.sheets.costSum, "Открыть ретроспективу С/с продаж");
       case "adSpend":
         return renderSheetHeader("Реклама", "adSpend", ctx.sheets.adSpend, "Открыть ретроспективу расходов на рекламу");
+      case "drrPercent":
+        return renderSheetHeader("ДРР, %", "drrPercent", ctx.sheets.drrPercent, "Открыть ретроспективу ДРР (расход / выручка)");
     }
   })();
 
@@ -255,6 +258,12 @@ export function renderProductsTotalsCell(
       return moneyCell(totals.totalCostSum);
     case "adSpend":
       return moneyCell(totals.totalAdSpend);
+    case "drrPercent":
+      return (
+        <div key={key} className="wb-pg-total wb-pg-total--num">
+          {totals.totalDrrPercent !== null ? formatPercent(totals.totalDrrPercent) : "—"}
+        </div>
+      );
     default:
       return <div key={key} className="wb-pg-total" />;
   }

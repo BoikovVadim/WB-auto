@@ -119,6 +119,7 @@ export function WbDashboard() {
     isRevenueSheetOpen,
     isCostSumSheetOpen,
     isAdSpendSheetOpen,
+    isDrrPercentSheetOpen,
     isSppSheetOpen,
     isAcquiringSheetOpen,
     isMarginRubSheetOpen,
@@ -132,45 +133,24 @@ export function WbDashboard() {
     persistedActiveSection: persistedViewState.activeSection,
     persistedActiveSheet: persistedViewState.activeSheet,
   });
+  // Метрики товаров: «сегодня»-значения + ретро-матрицы + хелперы записи. Все поля,
+  // кроме перечисленных (нужны по имени для shellHandlers и обработчиков сохранения),
+  // прокидываются в Shell как есть через `{...metrics}` — это поля-данные с теми же
+  // именами, что и у WbDashboardShellProps (TS проверяет совместимость спреда).
   const {
-    costPrices,
-    isCostPricesLoading,
     prefetchCostPrices,
     handleCostSaved,
     handleCostCleared,
-    orderCounts,
-    ordersMatrix,
-    buyoutCounts,
-    rollingBuyoutCounts,
-    stockCounts,
-    priceCounts,
-    ordersSumValues,
-    ordersSumMatrix,
-    revenueValues,
-    revenueMatrix,
-    costSumValues,
-    costSumMatrix,
-    adSpendValues,
-    adSpendMatrix,
-    sppValues,
-    sppMatrix,
-    taxValues,
-    commissionValues,
-    acquiringValues,
-    acquiringPercentValues,
-    acquiringFactualSet,
-    drrValues,
-    marginRubValues,
-    marginPercentValues,
-    refreshUnitEconomicsCharges,
-    priceChangeStatuses,
     handlePriceSaved,
+    refreshUnitEconomicsCharges,
+    ...metrics
   } = useDashboardMetrics({
     isOrdersSheetOpen,
     isOrdersSumSheetOpen,
     isRevenueSheetOpen,
     isCostSumSheetOpen,
     isAdSpendSheetOpen,
+    isDrrPercentSheetOpen,
     isSppSheetOpen,
     inProductsWorkspace,
     inCatalogProducts: activeSection === "catalog-products",
@@ -435,37 +415,12 @@ export function WbDashboard() {
       isRevenueSheetOpen={isRevenueSheetOpen}
       isCostSumSheetOpen={isCostSumSheetOpen}
       isAdSpendSheetOpen={isAdSpendSheetOpen}
+      isDrrPercentSheetOpen={isDrrPercentSheetOpen}
       isSppSheetOpen={isSppSheetOpen}
       isAcquiringSheetOpen={isAcquiringSheetOpen}
       isMarginRubSheetOpen={isMarginRubSheetOpen}
       isMarginPercentSheetOpen={isMarginPercentSheetOpen}
-      orderCounts={orderCounts}
-      ordersMatrix={ordersMatrix}
-      buyoutCounts={buyoutCounts}
-      rollingBuyoutCounts={rollingBuyoutCounts}
-      stockCounts={stockCounts}
-      priceCounts={priceCounts}
-      ordersSumValues={ordersSumValues}
-      ordersSumMatrix={ordersSumMatrix}
-      revenueValues={revenueValues}
-      revenueMatrix={revenueMatrix}
-      costSumValues={costSumValues}
-      costSumMatrix={costSumMatrix}
-      adSpendValues={adSpendValues}
-      adSpendMatrix={adSpendMatrix}
-      sppValues={sppValues}
-      sppMatrix={sppMatrix}
-      taxValues={taxValues}
-      commissionValues={commissionValues}
-      acquiringValues={acquiringValues}
-      acquiringPercentValues={acquiringPercentValues}
-      acquiringFactualSet={acquiringFactualSet}
-      drrValues={drrValues}
-      marginRubValues={marginRubValues}
-      marginPercentValues={marginPercentValues}
-      priceChangeStatuses={priceChangeStatuses}
-      isCostPricesLoading={isCostPricesLoading}
-      costPrices={costPrices}
+      {...metrics}
       onCostSaved={handleCostSaved}
       onCostCleared={handleCostCleared}
       onPriceSaved={handlePriceSaved}

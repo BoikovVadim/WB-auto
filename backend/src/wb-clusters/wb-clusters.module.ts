@@ -9,6 +9,8 @@ import { WbCmpSafariClient } from "./wb-cmp-safari.client";
 import { WbSellerPortalPlaywrightClient } from "./wb-seller-portal-playwright.client";
 import { WbClustersController } from "./wb-clusters.controller";
 import { UnitEconomicsController } from "./unit-economics.controller";
+import { ProductDrrController } from "./product-drr.controller";
+import { ProductDrrService } from "./product-drr.service";
 import { WbClustersActionQueueService } from "./wb-clusters-action-queue.service";
 import { WbClustersBidQueueService } from "./wb-clusters-bid-queue.service";
 import { WbClustersRepository } from "./wb-clusters.repository";
@@ -36,7 +38,7 @@ import { WbPromotionApiClient } from "./wb-promotion-api.client";
 
 @Module({
   imports: [WbRuntimeConfigModule],
-  controllers: [WbClustersController, UnitEconomicsController],
+  controllers: [WbClustersController, UnitEconomicsController, ProductDrrController],
   providers: [
     WbCabinetPrivateApiClient,
     WbCmpSafariClient,
@@ -51,6 +53,7 @@ import { WbPromotionApiClient } from "./wb-promotion-api.client";
     WbClustersScheduler,
     WbClustersSyncOrchestratorService,
     WbClustersService,
+    ProductDrrService,
     AcquiringSyncService,
     ProductAdvertisingReadRepository,
     PromotionSyncRepository,

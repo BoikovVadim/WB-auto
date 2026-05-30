@@ -93,6 +93,8 @@ export function useDashboardShellHandlers(input: Input) {
     onCloseCostSumSheet: closeSheet,
     onOpenAdSpendSheet: () => openSheet("ad-spend"),
     onCloseAdSpendSheet: closeSheet,
+    onOpenDrrPercentSheet: () => openSheet("drr-percent"),
+    onCloseDrrPercentSheet: closeSheet,
     onOpenSppSheet: () => openSheet("spp"),
     onCloseSppSheet: closeSheet,
     onOpenAcquiringSheet: () => openSheet("acquiring"),

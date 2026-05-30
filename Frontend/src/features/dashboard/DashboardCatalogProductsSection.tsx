@@ -41,6 +41,8 @@ type DashboardCatalogProductsSectionProps = {
   revenueValues: Map<number, number>;
   costSumValues: Map<number, number>;
   adSpendValues: Map<number, number>;
+  /** Фактический ДРР % на товар (расход / выручка) — только «Товары». Считается на бэке. */
+  drrPercentValues: Map<number, number>;
   sppValues: Map<number, number>;
   /** Налог в ₽ на товар (глобальный %) — только «Юнит Экономика». Считается на бэке. */
   taxValues: Map<number, number>;
@@ -76,6 +78,7 @@ type DashboardCatalogProductsSectionProps = {
   onOpenRevenueSheet: () => void;
   onOpenCostSumSheet: () => void;
   onOpenAdSpendSheet: () => void;
+  onOpenDrrPercentSheet: () => void;
   onOpenSppSheet: () => void;
   onOpenAcquiringSheet: () => void;
   onOpenMarginRubSheet: () => void;
@@ -158,6 +161,7 @@ export const DashboardCatalogProductsSection = memo(
           revenueValues: props.revenueValues,
           costSumValues: props.costSumValues,
           adSpendValues: props.adSpendValues,
+          drrPercentValues: props.drrPercentValues,
           sppValues: props.sppValues,
           commissionValues: props.commissionValues,
           taxValues: props.taxValues,
@@ -169,7 +173,7 @@ export const DashboardCatalogProductsSection = memo(
           priceForMarginValues: calc.priceResults,
           marginForPriceValues: calc.marginResults,
         }),
-      [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costSumValues, props.adSpendValues, props.sppValues, props.commissionValues, props.taxValues, props.acquiringValues, props.acquiringPercentValues, props.drrValues, props.marginRubValues, props.marginPercentValues, props.costPrices, props.priceCounts, calc.priceResults, calc.marginResults],
+      [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costSumValues, props.adSpendValues, props.drrPercentValues, props.sppValues, props.commissionValues, props.taxValues, props.acquiringValues, props.acquiringPercentValues, props.drrValues, props.marginRubValues, props.marginPercentValues, props.costPrices, props.priceCounts, calc.priceResults, calc.marginResults],
     );
 
     // Все видимые колонки в текущем порядке — для прямоугольного выделения и TSV-копирования.
@@ -212,6 +216,7 @@ export const DashboardCatalogProductsSection = memo(
         revenueValues: props.revenueValues,
         costSumValues: props.costSumValues,
         adSpendValues: props.adSpendValues,
+        drrPercentValues: props.drrPercentValues,
       }),
       [
         props.costPrices, props.priceCounts, props.priceChangeStatuses, props.commissionValues,
@@ -219,7 +224,7 @@ export const DashboardCatalogProductsSection = memo(
         props.marginRubValues, props.marginPercentValues, calc.marginInputs, calc.priceInputs,
         calc.priceResults, calc.marginResults, props.orderCounts, props.rollingBuyoutCounts,
         props.sppValues, props.stockCounts, props.ordersSumValues, props.revenueValues,
-        props.costSumValues, props.adSpendValues,
+        props.costSumValues, props.adSpendValues, props.drrPercentValues,
       ],
     );
     const rowByNmId = useMemo(() => {
@@ -318,6 +323,7 @@ export const DashboardCatalogProductsSection = memo(
           revenue: props.onOpenRevenueSheet,
           costSum: props.onOpenCostSumSheet,
           adSpend: props.onOpenAdSpendSheet,
+          drrPercent: props.onOpenDrrPercentSheet,
           acquiring: props.onOpenAcquiringSheet,
           marginRub: props.onOpenMarginRubSheet,
           marginPercent: props.onOpenMarginPercentSheet,
@@ -344,6 +350,7 @@ export const DashboardCatalogProductsSection = memo(
         props.onOpenRevenueSheet,
         props.onOpenCostSumSheet,
         props.onOpenAdSpendSheet,
+        props.onOpenDrrPercentSheet,
         props.onOpenAcquiringSheet,
         props.onOpenMarginRubSheet,
         props.onOpenMarginPercentSheet,
