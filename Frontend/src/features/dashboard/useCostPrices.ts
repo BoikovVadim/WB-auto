@@ -15,6 +15,12 @@ export type UseCostPricesResult = {
 const CACHE_KEY     = "wb_cost_prices_v2";
 const CACHE_TS_KEY  = "wb_cost_prices_v2_ts";
 const MAX_CACHE_AGE = 24 * 60 * 60 * 1000; // 24 hours
+// Транзиентный сбой загрузки (напр. 502 в окне рестарта после деплоя) раньше оставлял
+// себестоимость пустой до remount — маржа/калькулятор «Юнит Экономики» не считались.
+// Ретраим с backoff, пока не загрузим (≈2 мин суммарно).
+const COST_MAX_RETRIES   = 8;
+const COST_RETRY_BASE_MS = 2_000;
+const COST_RETRY_MAX_MS  = 30_000;
 
 function readCache(): Map<number, CostPriceCurrent> {
   try {
@@ -46,6 +52,11 @@ export function useCostPrices(): UseCostPricesResult {
   const [isCostPricesLoading, setIsCostPricesLoading] = useState(false);
   const fetchedRef = useRef(false);
   const fetchingRef = useRef(false);
+  const retryAttemptsRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Ссылка на сам загрузчик — чтобы ретрай в setTimeout не обращался к функции до её
+  // объявления (стабильна, useCallback []).
+  const loadRef = useRef<() => void>(() => {});
 
   const loadCostPrices = useCallback(() => {
     if (fetchingRef.current) return;
@@ -58,13 +69,29 @@ export function useCostPrices(): UseCostPricesResult {
         setCostPrices(map);
         writeCache(map);
         fetchedRef.current = true;
+        retryAttemptsRef.current = 0;
       })
-      .catch(() => {/* non-critical, cached values remain visible */})
+      .catch(() => {
+        // Транзиентный сбой: ретраим с backoff (кэш остаётся виден всё это время).
+        if (retryAttemptsRef.current < COST_MAX_RETRIES) {
+          const delay = Math.min(
+            COST_RETRY_MAX_MS,
+            COST_RETRY_BASE_MS * 2 ** retryAttemptsRef.current,
+          );
+          retryAttemptsRef.current += 1;
+          if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+          retryTimerRef.current = setTimeout(() => loadRef.current(), delay);
+        }
+      })
       .finally(() => {
         fetchingRef.current = false;
         setIsCostPricesLoading(false);
       });
   }, []);
+
+  useEffect(() => {
+    loadRef.current = loadCostPrices;
+  }, [loadCostPrices]);
 
   const prefetchCostPrices = useCallback(() => {
     if (!fetchedRef.current && !fetchingRef.current) {
@@ -75,6 +102,9 @@ export function useCostPrices(): UseCostPricesResult {
   // Always load on mount to keep cache fresh
   useEffect(() => {
     loadCostPrices();
+    return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
   }, [loadCostPrices]);
 
   const handleCostSaved = useCallback(async (nmId: number, value: number) => {
