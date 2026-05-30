@@ -1383,6 +1383,16 @@ input {
   cursor: pointer;
 }
 
+/* Заголовок-метка без сортировки (колонки-вводы калькулятора). */
+.wb-products-plain-header {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  font: inherit;
+  font-weight: 700;
+}
+
 /* Заголовок столбца с ретроспективой: название = ссылка на лист, стрелка = сортировка */
 .wb-products-header-sheet-btn {
   flex: 1;
@@ -3702,6 +3712,13 @@ input {
 
 .wb-pg-cell--cost-selected {
   background: rgba(66, 133, 244, 0.08);
+}
+
+/* Колонки-результаты калькуляторов («Юнит Экономика»): лёгкий золотой фон, чтобы
+   расчётное значение отличалось от исходных метрик и от полей ввода. */
+.wb-pg-cell--calc {
+  background: rgba(232, 197, 71, 0.07);
+  font-weight: 600;
 }
 
 .wb-pg-ellipsis {

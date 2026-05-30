@@ -4,6 +4,7 @@ import { WbClustersWriteGuard } from "../common/guards/wb-clusters-write.guard";
 import { AcquiringSyncService } from "./acquiring-sync.service";
 import { SetSubjectCommissionDto } from "./dto/set-subject-commission.dto";
 import { SetGlobalPercentDto } from "./dto/set-global-percent.dto";
+import { UnitEconomicsCalcDto } from "./dto/unit-economics-calc.dto";
 import { UnitEconomicsService } from "./unit-economics.service";
 
 /**
@@ -35,6 +36,17 @@ export class UnitEconomicsController {
   @Get("acquiring-matrix")
   getAcquiringMatrix() {
     return this.unitEconomicsService.getAcquiringMatrix();
+  }
+
+  /**
+   * Калькуляторы маржи/цены: по введённым per-товар целевой марже и/или цене сервер
+   * считает обратную величину на том же базисе, что и колонка маржи. Read-only расчёт
+   * (без записи в БД) → без write-guard.
+   */
+  @Post("calc")
+  @HttpCode(200)
+  computeCalc(@Body() body: UnitEconomicsCalcDto) {
+    return this.unitEconomicsService.computeCalc(body);
   }
 
   /**

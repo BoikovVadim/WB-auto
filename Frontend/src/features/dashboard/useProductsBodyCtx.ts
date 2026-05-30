@@ -28,6 +28,17 @@ export type ProductsBodyData = Pick<
   | "onCostSaved"
 >;
 
+/** Калькуляторы маржи/цены («Юнит Экономика»): вводы + расчёт обратной величины (бэк). */
+export type ProductsCalcCtx = Pick<
+  ProductsBodyRenderCtx,
+  | "targetMarginInputs"
+  | "priceCalcInputs"
+  | "priceForMarginValues"
+  | "marginForPriceValues"
+  | "onTargetMarginChange"
+  | "onPriceCalcChange"
+>;
+
 /**
  * Состояние выделения/редактирования + хендлеры (имена как у useProductsTableSelection,
  * чтобы её возвращаемое значение передавалось сюда без переименований).
@@ -56,6 +67,7 @@ export type ProductsBodySelection = {
 export function useProductsBodyCtx(
   data: ProductsBodyData,
   selection: ProductsBodySelection,
+  calc: ProductsCalcCtx,
 ): ProductsBodyRenderCtx {
   return useMemo(
     () => ({
@@ -77,6 +89,12 @@ export function useProductsBodyCtx(
       drrValues: data.drrValues,
       marginRubValues: data.marginRubValues,
       marginPercentValues: data.marginPercentValues,
+      targetMarginInputs: calc.targetMarginInputs,
+      priceCalcInputs: calc.priceCalcInputs,
+      priceForMarginValues: calc.priceForMarginValues,
+      marginForPriceValues: calc.marginForPriceValues,
+      onTargetMarginChange: calc.onTargetMarginChange,
+      onPriceCalcChange: calc.onPriceCalcChange,
       priceChangeStatuses: data.priceChangeStatuses,
       editable: data.editable,
       onCostSaved: data.onCostSaved,
@@ -110,6 +128,12 @@ export function useProductsBodyCtx(
       data.drrValues,
       data.marginRubValues,
       data.marginPercentValues,
+      calc.targetMarginInputs,
+      calc.priceCalcInputs,
+      calc.priceForMarginValues,
+      calc.marginForPriceValues,
+      calc.onTargetMarginChange,
+      calc.onPriceCalcChange,
       data.priceChangeStatuses,
       data.editable,
       data.onCostSaved,

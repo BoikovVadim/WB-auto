@@ -98,6 +98,12 @@ export function renderProductsHeaderCell(
     </button>
   );
 
+  // Заголовок-метка без сортировки (колонки-вводы калькулятора): сортировать по своему
+  // же черновику смысла нет — только подпись (drag/reorder работает через внешний div).
+  const renderPlainHeader = (label: string) => (
+    <span className="wb-products-plain-header">{label}</span>
+  );
+
   const renderParentHeader = (parentKey: ProductListSortKey, withResize: boolean) => (
     <>
       <button className="wb-products-sort-button" type="button" onClick={() => ctx.onParentSort(parentKey)}>
@@ -144,6 +150,14 @@ export function renderProductsHeaderCell(
         return renderSortOnlyHeader("Маржа, ₽", "marginRub");
       case "marginPercent":
         return renderSortOnlyHeader("Маржа, %", "marginPercent");
+      case "targetMargin":
+        return renderPlainHeader("Целевая маржа, %");
+      case "priceForMargin":
+        return renderSortOnlyHeader("Цена для маржи, ₽", "priceForMargin");
+      case "priceInput":
+        return renderPlainHeader("Цена, ₽");
+      case "marginForPrice":
+        return renderSortOnlyHeader("Маржа при цене, %", "marginForPrice");
       case "orders":
         return renderSheetHeader("Заказы", "orders", ctx.sheets.orders, "Открыть ретроспективу заказов");
       case "buyout":

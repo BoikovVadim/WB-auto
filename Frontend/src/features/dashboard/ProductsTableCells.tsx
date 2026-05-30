@@ -154,6 +154,67 @@ export const CostInputCell = memo(function CostInputCell({
   );
 });
 
+// ─── Калькулятор: всегда-редактируемый инпут (целевая маржа % / гипотетическая цена) ──
+// В отличие от cost/price это не «правка значения с сохранением», а ввод «что если»:
+// всегда инпут (без карандаша), локальный draft (набор не дёргает ре-рендер таблицы),
+// родитель дебаунсит и считает обратную величину на бэке. Расчёт рисует соседняя
+// read-only колонка. Во время фокуса проп игнорируется (как PercentInput в настройках).
+
+export const CalcInputCell = memo(function CalcInputCell({
+  nmId,
+  savedValue,
+  onChange,
+  ariaLabel,
+}: {
+  nmId: number;
+  savedValue: number | null;
+  onChange: (nmId: number, value: number | null) => void;
+  ariaLabel: string;
+}) {
+  const [draft, setDraft] = useState(savedValue !== null ? String(savedValue) : "");
+  const focusedRef = useRef(false);
+
+  // Перечитываем проп только вне фокуса (скролл-возврат / внешнее изменение); во время
+  // набора локальный draft — источник истины.
+  useEffect(() => {
+    if (!focusedRef.current) setDraft(savedValue !== null ? String(savedValue) : "");
+  }, [savedValue]);
+
+  const emit = useCallback(
+    (raw: string) => {
+      setDraft(raw);
+      const trimmed = raw.trim().replace(",", ".");
+      if (trimmed === "") {
+        onChange(nmId, null);
+        return;
+      }
+      const parsed = Number(trimmed);
+      onChange(nmId, Number.isFinite(parsed) ? parsed : null);
+    },
+    [nmId, onChange],
+  );
+
+  return (
+    <input
+      className="wb-cost-price-input"
+      type="text"
+      inputMode="decimal"
+      value={draft}
+      placeholder="—"
+      onChange={(e) => emit(e.target.value)}
+      onFocus={() => { focusedRef.current = true; }}
+      onBlur={() => { focusedRef.current = false; }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") (e.target as HTMLInputElement).blur();
+        e.stopPropagation();
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      aria-label={ariaLabel}
+    />
+  );
+});
+
 // ─── Price edit cell (запись на маркетплейс WB) ───────────────────────────────
 // Клик по числу или карандашу → инлайн-ввод. Enter → модалка подтверждения
 // (подтверждение/отмена живут в родителе). Без статусов и без readback: значение

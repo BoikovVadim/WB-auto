@@ -20,6 +20,10 @@ export type ProductsColumnKey =
   | "drr"
   | "marginRub"
   | "marginPercent"
+  | "targetMargin"
+  | "priceForMargin"
+  | "priceInput"
+  | "marginForPrice"
   | "orders"
   | "buyout"
   | "spp"
@@ -34,6 +38,9 @@ export type ProductColumnDefinition = {
   defaultWidth: number;
 };
 
+// v10: добавлены колонки-калькуляторы (после «Маржа, %», только в «Юнит Экономике»):
+//      «Целевая маржа, %» (ввод) → «Цена для маржи, ₽» (расчёт) и «Цена, ₽» (ввод) →
+//      «Маржа при цене, %» (расчёт). Все вычисления на бэке (POST .../calc).
 // v9: добавлена колонка «Эквайринг, %» (после «Эквайринг, ₽», только в «Юнит Экономике»);
 //     фактический эквайринг из отчёта реализации, ₽-колонка теперь тоже по факту.
 // v8: добавлена колонка «Налог, ₽» (после «Комиссия», только в «Юнит Экономике»).
@@ -42,7 +49,7 @@ export type ProductColumnDefinition = {
 // v5: добавлены «Комиссия, ₽»/«Эквайринг, ₽». Бамп сбрасывает сохранённый порядок к
 // дефолту, чтобы новые колонки встали на нужное место (не уехали в конец у тех,
 // кто уже двигал колонки). Ширины хранятся отдельно и не теряются.
-export const PRODUCTS_COLUMN_STORAGE_KEY = "wb-products-column-order-v9";
+export const PRODUCTS_COLUMN_STORAGE_KEY = "wb-products-column-order-v10";
 
 export const productsTableColumnDefs: ProductColumnDefinition[] = [
   { key: "index",     defaultWidth: 48  },
@@ -59,6 +66,10 @@ export const productsTableColumnDefs: ProductColumnDefinition[] = [
   { key: "drr",       defaultWidth: 130 },
   { key: "marginRub", defaultWidth: 130 },
   { key: "marginPercent", defaultWidth: 110 },
+  { key: "targetMargin", defaultWidth: 130 },
+  { key: "priceForMargin", defaultWidth: 140 },
+  { key: "priceInput", defaultWidth: 130 },
+  { key: "marginForPrice", defaultWidth: 140 },
   { key: "orders",    defaultWidth: 110 },
   { key: "buyout",    defaultWidth: 110 },
   { key: "spp",       defaultWidth: 110 },
@@ -93,6 +104,10 @@ export const CATALOG_PRODUCTS_HIDDEN_COLUMNS: ProductsColumnKey[] = [
   "drr",
   "marginRub",
   "marginPercent",
+  "targetMargin",
+  "priceForMargin",
+  "priceInput",
+  "marginForPrice",
 ];
 
 export function readStoredProductsColumnOrder(): ProductsColumnKey[] {

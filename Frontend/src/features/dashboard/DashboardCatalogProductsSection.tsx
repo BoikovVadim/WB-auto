@@ -14,6 +14,7 @@ import { getDisplayVendorCode } from "./productsTableHelpers";
 import { sortProductsByLocalKey, type LocalSortKey } from "./productsTableSort";
 import { useProductsTableSelection } from "./useProductsTableSelection";
 import { useProductsTableTotals } from "./useProductsTableTotals";
+import { useUnitEconomicsCalc } from "./useUnitEconomicsCalc";
 import type { ProductsHeaderRenderCtx } from "./ProductsTableHeadCells";
 import { ProductsTableGrid } from "./ProductsTableGrid";
 import { useProductsBodyCtx } from "./useProductsBodyCtx";
@@ -102,6 +103,11 @@ export const DashboardCatalogProductsSection = memo(
       [allOrderedColumns, hiddenColumns],
     );
 
+    // Калькуляторы маржи/цены («Юнит Экономика», editable): вводы локальны в секции,
+    // обратная величина считается на бэке (см. useUnitEconomicsCalc). В «Товарах» (editable=false)
+    // колонки скрыты, хук не грузит/не считает.
+    const calc = useUnitEconomicsCalc(props.editable);
+
     // ── Local sort (for cost/orders/stock columns) ──────────────────────────────
     const [localSortKey, setLocalSortKey] = useState<LocalSortKey | null>(null);
     const [localSortDir, setLocalSortDir] = useState<"asc" | "desc">("desc");
@@ -157,8 +163,10 @@ export const DashboardCatalogProductsSection = memo(
           drrValues: props.drrValues,
           marginRubValues: props.marginRubValues,
           marginPercentValues: props.marginPercentValues,
+          priceForMarginValues: calc.priceResults,
+          marginForPriceValues: calc.marginResults,
         }),
-      [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costSumValues, props.adSpendValues, props.sppValues, props.commissionValues, props.taxValues, props.acquiringValues, props.acquiringPercentValues, props.drrValues, props.marginRubValues, props.marginPercentValues, props.costPrices, props.priceCounts],
+      [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costSumValues, props.adSpendValues, props.sppValues, props.commissionValues, props.taxValues, props.acquiringValues, props.acquiringPercentValues, props.drrValues, props.marginRubValues, props.marginPercentValues, props.costPrices, props.priceCounts, calc.priceResults, calc.marginResults],
     );
 
     // Выделение строк + inline-редактирование (себестоимость/цена) — см. useProductsTableSelection.
@@ -266,7 +274,14 @@ export const DashboardCatalogProductsSection = memo(
     );
 
     // Стабильный (memo) контекст рендера ячеек — см. useProductsBodyCtx.
-    const bodyCtx = useProductsBodyCtx(props, selection);
+    const bodyCtx = useProductsBodyCtx(props, selection, {
+      targetMarginInputs: calc.marginInputs,
+      priceCalcInputs: calc.priceInputs,
+      priceForMarginValues: calc.priceResults,
+      marginForPriceValues: calc.marginResults,
+      onTargetMarginChange: calc.setMarginInput,
+      onPriceCalcChange: calc.setPriceInput,
+    });
 
     // ── Render ─────────────────────────────────────────────────────────────────
 

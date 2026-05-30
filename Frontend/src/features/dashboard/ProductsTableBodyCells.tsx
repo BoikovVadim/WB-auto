@@ -5,7 +5,7 @@ import type { TodayBuyoutCount } from "../../api/syncClientBuyouts";
 import type { TodayOrderCount } from "../../api/syncClientOrders";
 import type { PriceChangeStatus } from "../../api/syncClientPrices";
 import { formatMoney, formatPercent } from "../../formatters";
-import { CostInputCell, PriceInputCell } from "./ProductsTableCells";
+import { CalcInputCell, CostInputCell, PriceInputCell } from "./ProductsTableCells";
 import type { CurrentPriceEntry } from "./useCurrentPrices";
 import type { ProductColumnDefinition } from "./productsTableColumns";
 import { getDisplayVendorCode } from "./productsTableHelpers";
@@ -30,6 +30,15 @@ export type ProductsBodyRenderCtx = {
   drrValues: Map<number, number>;
   marginRubValues: Map<number, number>;
   marginPercentValues: Map<number, number>;
+  /** Калькуляторы (только «Юнит Экономика»): вводы по nmId + расчёт обратной величины (бэк). */
+  targetMarginInputs: Map<number, number>;
+  priceCalcInputs: Map<number, number>;
+  /** Нужная цена под целевую маржу: number — ок, null — недостижима/нет с/с, undefined — считается. */
+  priceForMarginValues: Map<number, number | null>;
+  /** Итоговая маржа % при введённой цене: number — ок, null — нет с/с/цена ≤ 0, undefined — считается. */
+  marginForPriceValues: Map<number, number | null>;
+  onTargetMarginChange: (nmId: number, value: number | null) => void;
+  onPriceCalcChange: (nmId: number, value: number | null) => void;
   priceChangeStatuses: Map<number, PriceChangeStatus>;
   /** Редактирование себестоимости/цены доступно только в «Юнит Экономика».
    *  В «Товары» (editable=false) cost/price рендерятся read-only — те же значения,
@@ -178,6 +187,68 @@ export function renderProductsBodyCell(
           {margin !== undefined ? formatPercent(margin) : dash}
         </div>
       );
+    }
+    case "targetMargin":
+      return (
+        <div key={key} className="wb-pg-cell wb-pg-cell--num wb-pg-cell--cost">
+          {nmId !== null ? (
+            <CalcInputCell
+              nmId={nmId}
+              savedValue={ctx.targetMarginInputs.get(nmId) ?? null}
+              onChange={ctx.onTargetMarginChange}
+              ariaLabel="Целевая маржа, %"
+            />
+          ) : dash}
+        </div>
+      );
+    case "priceForMargin": {
+      // Расчёт нужной цены: пусто без ввода маржи; «—» если маржа недостижима/нет с/с.
+      if (nmId === null || !ctx.targetMarginInputs.has(nmId)) {
+        return <div key={key} className="wb-pg-cell wb-pg-cell--num">{dash}</div>;
+      }
+      const r = ctx.priceForMarginValues.get(nmId);
+      if (r === undefined) {
+        return <div key={key} className="wb-pg-cell wb-pg-cell--num" style={{ opacity: 0.4 }}>…</div>;
+      }
+      if (r === null) {
+        return (
+          <div key={key} className="wb-pg-cell wb-pg-cell--num" style={{ opacity: 0.5 }} title="Маржа недостижима или нет себестоимости">
+            —
+          </div>
+        );
+      }
+      return <div key={key} className="wb-pg-cell wb-pg-cell--num wb-pg-cell--calc">{formatMoney(r)}</div>;
+    }
+    case "priceInput":
+      return (
+        <div key={key} className="wb-pg-cell wb-pg-cell--num wb-pg-cell--cost">
+          {nmId !== null ? (
+            <CalcInputCell
+              nmId={nmId}
+              savedValue={ctx.priceCalcInputs.get(nmId) ?? null}
+              onChange={ctx.onPriceCalcChange}
+              ariaLabel="Цена для расчёта маржи, ₽"
+            />
+          ) : dash}
+        </div>
+      );
+    case "marginForPrice": {
+      // Расчёт маржи при введённой цене: пусто без ввода цены; «—» если нет с/с.
+      if (nmId === null || !ctx.priceCalcInputs.has(nmId)) {
+        return <div key={key} className="wb-pg-cell wb-pg-cell--num">{dash}</div>;
+      }
+      const r = ctx.marginForPriceValues.get(nmId);
+      if (r === undefined) {
+        return <div key={key} className="wb-pg-cell wb-pg-cell--num" style={{ opacity: 0.4 }}>…</div>;
+      }
+      if (r === null) {
+        return (
+          <div key={key} className="wb-pg-cell wb-pg-cell--num" style={{ opacity: 0.5 }} title="Нет себестоимости">
+            —
+          </div>
+        );
+      }
+      return <div key={key} className="wb-pg-cell wb-pg-cell--num wb-pg-cell--calc">{formatPercent(r)}</div>;
     }
     case "orders": {
       const orders = nmId !== null ? ctx.orderCounts.get(nmId) : undefined;

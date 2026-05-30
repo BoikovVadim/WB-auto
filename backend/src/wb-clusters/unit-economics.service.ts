@@ -46,6 +46,35 @@ export type UnitEconomicsChargeItem = {
   marginPercent: number | null;
 };
 
+/**
+ * Базис юнит-экономики на товар: цена со скидкой, себестоимость и применённые %-ставки
+ * вычетов (комиссия по предмету, эквайринг факт/ручной, ДРР, налог). Единый промежуточный
+ * слой для всех производных: и колонки charges, и калькуляторы маржи/цены отталкиваются
+ * от него (одна формула — один источник истины). Только товары с текущей ценой.
+ */
+type UnitEconomicsBase = {
+  priceWithDiscount: number;
+  cost: number | null;
+  commissionPercent: number | null;
+  acquiringPercent: number | null;
+  acquiringIsFactual: boolean;
+  drrPercent: number | null;
+  taxPercent: number | null;
+};
+
+/** Калькулятор «целевая маржа → нужная цена со скидкой». feasible=false — маржа недостижима/нет с/с. */
+export type MarginToPriceResult = { nmId: number; price: number | null; feasible: boolean };
+/** Калькулятор «цена со скидкой → маржа %». null — нет с/с или цена ≤ 0. */
+export type PriceToMarginResult = { nmId: number; marginPercent: number | null };
+export type UnitEconomicsCalcResult = {
+  marginToPrice: MarginToPriceResult[];
+  priceToMargin: PriceToMarginResult[];
+};
+export type UnitEconomicsCalcInput = {
+  marginToPrice: { nmId: number; targetMarginPercent: number }[];
+  priceToMargin: { nmId: number; price: number }[];
+};
+
 const GLOBAL_PERCENT_METRICS: readonly GlobalPercentMetric[] = ["tax", "acquiring", "drr"];
 
 function assertGlobalPercentMetric(metric: string): GlobalPercentMetric {
@@ -126,9 +155,13 @@ export class UnitEconomicsService {
    * логистики/хранения — этих данных пока нет). Незаданные вычеты считаются как 0; без
    * себестоимости маржа = null (прибыль без с/с не определить).
    */
-  async getCharges(): Promise<{ items: UnitEconomicsChargeItem[] }> {
-    if (!this.repository.isConfigured()) return { items: [] };
-    await this.repository.ensureSchema();
+  /**
+   * Базис юнит-экономики по каждому товару с текущей ценой: цена со скидкой, с/с и
+   * применённые %-ставки вычетов. Общий промежуточный слой для charges и калькуляторов
+   * (формула цены/ставок описана в одном месте). Эквайринг — факт за последнюю закрытую
+   * неделю (Σfee/Σretail), иначе ручной глобальный %.
+   */
+  private async loadUnitEconomicsBase(): Promise<Map<number, UnitEconomicsBase>> {
     const [catalog, latestPrices, commissions, global, costPrices, acquiringWeekly] =
       await Promise.all([
         this.repository.listProductCatalogItems(),
@@ -143,40 +176,57 @@ export class UnitEconomicsService {
     const costByNmId = new Map(costPrices.map((c) => [c.nmId, c.costValue]));
     // nmId → фактический эквайринг за последнюю закрытую неделю (суммы fee/retail).
     const acquiringByNmId = new Map(acquiringWeekly.map((a) => [a.nmId, a]));
-    const applyPercent = (base: number, percent: number | null): number | null =>
-      percent != null ? round2(base * (percent / 100)) : null;
 
-    const items: UnitEconomicsChargeItem[] = [];
+    const base = new Map<number, UnitEconomicsBase>();
     for (const product of catalog) {
       const price = priceByNmId.get(product.nmId);
       if (!price) continue;
       const priceWithDiscount = round2(price.price * (1 - price.discount / 100));
       const commissionPercent =
         product.subjectName != null ? commissionBySubject.get(product.subjectName) ?? null : null;
-      const commissionRub = applyPercent(priceWithDiscount, commissionPercent);
       // Эквайринг: фактический средневзвешенный % за последнюю закрытую неделю
       // (Σ acquiring_fee / Σ retail_amount × 100), если по товару были продажи;
-      // иначе fallback на ручной глобальный %. Маржа считается по применённому %.
+      // иначе fallback на ручной глобальный %.
       const acquiringFact = acquiringByNmId.get(product.nmId);
       const factualAcquiringPercent =
         acquiringFact && acquiringFact.retailAmountSum > 0
           ? round2((acquiringFact.acquiringFeeSum / acquiringFact.retailAmountSum) * 100)
           : null;
-      const acquiringIsFactual = factualAcquiringPercent != null;
-      const acquiringPercent = factualAcquiringPercent ?? global.acquiringPercent;
-      const acquiringRub = applyPercent(priceWithDiscount, acquiringPercent);
-      const drrRub = applyPercent(priceWithDiscount, global.drrPercent);
-      const taxRub = applyPercent(priceWithDiscount, global.taxPercent);
+      base.set(product.nmId, {
+        priceWithDiscount,
+        cost: costByNmId.get(product.nmId) ?? null,
+        commissionPercent,
+        acquiringPercent: factualAcquiringPercent ?? global.acquiringPercent,
+        acquiringIsFactual: factualAcquiringPercent != null,
+        drrPercent: global.drrPercent,
+        taxPercent: global.taxPercent,
+      });
+    }
+    return base;
+  }
 
-      const cost = costByNmId.get(product.nmId) ?? null;
+  async getCharges(): Promise<{ items: UnitEconomicsChargeItem[] }> {
+    if (!this.repository.isConfigured()) return { items: [] };
+    await this.repository.ensureSchema();
+    const base = await this.loadUnitEconomicsBase();
+    const applyPercent = (price: number, percent: number | null): number | null =>
+      percent != null ? round2(price * (percent / 100)) : null;
+
+    const items: UnitEconomicsChargeItem[] = [];
+    for (const [nmId, b] of base) {
+      const commissionRub = applyPercent(b.priceWithDiscount, b.commissionPercent);
+      const acquiringRub = applyPercent(b.priceWithDiscount, b.acquiringPercent);
+      const drrRub = applyPercent(b.priceWithDiscount, b.drrPercent);
+      const taxRub = applyPercent(b.priceWithDiscount, b.taxPercent);
+
       let marginRub: number | null = null;
       let marginPercent: number | null = null;
-      if (cost != null) {
+      if (b.cost != null) {
         const deductions =
           (commissionRub ?? 0) + (acquiringRub ?? 0) + (drrRub ?? 0) + (taxRub ?? 0);
-        marginRub = round2(priceWithDiscount - cost - deductions);
+        marginRub = round2(b.priceWithDiscount - b.cost - deductions);
         marginPercent =
-          priceWithDiscount > 0 ? round2((marginRub / priceWithDiscount) * 100) : null;
+          b.priceWithDiscount > 0 ? round2((marginRub / b.priceWithDiscount) * 100) : null;
       }
 
       if (
@@ -189,18 +239,58 @@ export class UnitEconomicsService {
         continue;
       }
       items.push({
-        nmId: product.nmId,
+        nmId,
         taxRub,
         commissionRub,
         acquiringRub,
-        acquiringPercent,
-        acquiringIsFactual,
+        acquiringPercent: b.acquiringPercent,
+        acquiringIsFactual: b.acquiringIsFactual,
         drrRub,
         marginRub,
         marginPercent,
       });
     }
     return { items };
+  }
+
+  /**
+   * Калькуляторы юнит-экономики на тех же значениях, что и колонка маржи (один базис).
+   * Маржа определена как marginRub / цена-со-скидкой × 100; все вычеты линейны по цене
+   * (комиссия/эквайринг/ДРР/налог — проценты от цены со скидкой), поэтому:
+   *   маржа% = (1 − k)·100 − с/с·100/цена,   где k = Σставок/100
+   *   цена   = с/с / (1 − k − маржа%/100)    (знаменатель ≤ 0 → маржа недостижима)
+   * Без себестоимости результат не определён (null/feasible=false), как и сама маржа.
+   */
+  async computeCalc(input: UnitEconomicsCalcInput): Promise<UnitEconomicsCalcResult> {
+    if (!this.repository.isConfigured()) return { marginToPrice: [], priceToMargin: [] };
+    await this.repository.ensureSchema();
+    const base = await this.loadUnitEconomicsBase();
+    // Доля вычетов от цены со скидкой (незаданная ставка = 0, как в формуле маржи).
+    const rate = (b: UnitEconomicsBase): number =>
+      ((b.commissionPercent ?? 0) +
+        (b.acquiringPercent ?? 0) +
+        (b.drrPercent ?? 0) +
+        (b.taxPercent ?? 0)) /
+      100;
+
+    const marginToPrice: MarginToPriceResult[] = input.marginToPrice.map(
+      ({ nmId, targetMarginPercent }) => {
+        const b = base.get(nmId);
+        if (!b || b.cost == null) return { nmId, price: null, feasible: false };
+        const denominator = 1 - rate(b) - targetMarginPercent / 100;
+        if (denominator <= 0) return { nmId, price: null, feasible: false };
+        return { nmId, price: round2(b.cost / denominator), feasible: true };
+      },
+    );
+
+    const priceToMargin: PriceToMarginResult[] = input.priceToMargin.map(({ nmId, price }) => {
+      const b = base.get(nmId);
+      if (!b || b.cost == null || price <= 0) return { nmId, marginPercent: null };
+      const marginRub = price * (1 - rate(b)) - b.cost;
+      return { nmId, marginPercent: round2((marginRub / price) * 100) };
+    });
+
+    return { marginToPrice, priceToMargin };
   }
 
   /**

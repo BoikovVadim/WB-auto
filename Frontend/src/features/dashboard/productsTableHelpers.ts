@@ -32,6 +32,10 @@ export function getColLabel(key: ProductsColumnKey): string {
     case "drr":       return "ДРР";
     case "marginRub": return "Маржа ₽";
     case "marginPercent": return "Маржа %";
+    case "targetMargin": return "Целевая маржа, %";
+    case "priceForMargin": return "Цена для маржи, ₽";
+    case "priceInput": return "Цена, ₽";
+    case "marginForPrice": return "Маржа при цене, %";
     case "orders":    return "Заказы";
     case "buyout":    return "% выкупа";
     case "spp":       return "СПП";

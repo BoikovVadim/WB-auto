@@ -100,6 +100,34 @@ export async function fetchAcquiringMatrix(): Promise<AcquiringMatrix> {
   return response.data ?? { weeks: [], products: [] };
 }
 
+// ─── Калькуляторы маржи/цены (на едином базисе колонки маржи, считает бэк) ─────
+
+export type UnitEconomicsCalcInput = {
+  /** Целевая маржа % → нужная цена со скидкой. */
+  marginToPrice: { nmId: number; targetMarginPercent: number }[];
+  /** Гипотетическая цена со скидкой → итоговая маржа %. */
+  priceToMargin: { nmId: number; price: number }[];
+};
+
+export type UnitEconomicsCalcResult = {
+  /** price — нужная цена со скидкой; feasible=false — маржа недостижима или нет с/с. */
+  marginToPrice: { nmId: number; price: number | null; feasible: boolean }[];
+  /** marginPercent — итоговая маржа %; null — нет с/с или цена ≤ 0. */
+  priceToMargin: { nmId: number; marginPercent: number | null }[];
+};
+
+const EMPTY_CALC_RESULT: UnitEconomicsCalcResult = { marginToPrice: [], priceToMargin: [] };
+
+export async function fetchUnitEconomicsCalc(
+  input: UnitEconomicsCalcInput,
+): Promise<UnitEconomicsCalcResult> {
+  const response = await apiClient.post<UnitEconomicsCalcResult>(
+    "/wb-clusters/unit-economics/calc",
+    input,
+  );
+  return response.data ?? EMPTY_CALC_RESULT;
+}
+
 /** Ручной запуск синка эквайринга (fire-and-forget). days — глубина бэкфилла. */
 export async function triggerAcquiringSync(days?: number): Promise<void> {
   await apiClient.post(
