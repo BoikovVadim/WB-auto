@@ -15,9 +15,7 @@ export interface PromotionRequestConfig {
   method: "GET" | "POST";
   path: string;
   query?: Record<string, string>;
-  // Большинство Promotion-эндпоинтов принимают объект, но /adv/v2/fullstats ждёт
-  // массив кампаний в корне тела — поэтому допускаем и массив.
-  body?: Record<string, unknown> | unknown[];
+  body?: Record<string, unknown>;
 }
 
 export interface PromotionRequestOptions {

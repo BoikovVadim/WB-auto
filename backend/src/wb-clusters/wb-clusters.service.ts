@@ -859,14 +859,14 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
   // ─── Расходы на рекламу (агрегат wb_advert_daily_spend по товару) ─────────────
   //
   // «Общий расход на товар» = SUM(spend) по всем кампаниям товара за день.
-  // Источник — ПОЛНЫЙ расход кампании из /adv/v2/fullstats (как в кабинете WB):
+  // Источник — ПОЛНЫЙ расход кампании из GET /adv/v3/fullstats (как в кабинете WB):
   // часовой крон syncAdSpendFromFullstats пишет (advert × товар × день), фронт
   // читает готовые строки. Раньше брали SUM(spend) из normquery/stats — там расход
   // только по поисковым запросам, показы вне поиска (каталог/карточки/рекомендации)
   // терялись, и суммы выходили заметно ниже кабинета.
 
   /**
-   * Часовой синк полного расхода рекламы из WB /adv/v2/fullstats →
+   * Часовой синк полного расхода рекламы из WB GET /adv/v3/fullstats →
    * wb_advert_daily_spend. Логика — в wb-clusters-ad-spend-fullstats.flow.ts.
    */
   async syncAdSpendFromFullstats(): Promise<void> {

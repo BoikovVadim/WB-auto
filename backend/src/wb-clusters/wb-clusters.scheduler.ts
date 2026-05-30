@@ -256,7 +256,7 @@ export class WbClustersScheduler implements OnModuleInit {
   private adSpendFullstatsSyncRunning = false;
 
   /**
-   * Раз в час (в начале часа МСК) тянем ПОЛНЫЙ расход рекламы из WB /adv/v2/fullstats
+   * Раз в час (в начале часа МСК) тянем ПОЛНЫЙ расход рекламы из WB GET /adv/v3/fullstats
    * (как в кабинете) в wb_advert_daily_spend. Отдельно от основного 10-мин синка:
    * у fullstats жёсткий лимит 1 запрос/мин, до 100 кампаний за запрос — в частый
    * цикл его ставить нельзя. Гард adSpendFullstatsSyncRunning страхует от наложения

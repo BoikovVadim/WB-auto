@@ -3,7 +3,7 @@ import { WbClustersRepositorySppDaily } from "./wb-clusters.repository.spp-daily
 /**
  * Расход на рекламу по товару — агрегат поверх wb_advert_daily_spend.
  *
- * Источник: ПОЛНЫЙ расход кампании из WB /adv/v2/fullstats (поле `sum`), как в
+ * Источник: ПОЛНЫЙ расход кампании из WB GET /adv/v3/fullstats (поле `sum`), как в
  * кабинете WB. В отличие от normquery/stats (там расход только в разрезе
  * поисковых запросов — показы вне поиска: каталог, карточки, рекомендации
  * теряются), fullstats отдаёт весь расход кампании с разбивкой по дням и товарам.

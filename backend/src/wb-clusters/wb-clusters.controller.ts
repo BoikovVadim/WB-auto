@@ -643,7 +643,7 @@ export class WbClustersController {
     return { status: "started" };
   }
 
-  /** Триггерит синк полного расхода рекламы из WB /adv/v2/fullstats. */
+  /** Триггерит синк полного расхода рекламы из WB GET /adv/v3/fullstats. */
   @Post("products/sync-ad-spend")
   @UseGuards(WbClustersWriteGuard)
   triggerAdSpendSync() {

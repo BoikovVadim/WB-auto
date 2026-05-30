@@ -11,10 +11,11 @@ type StoredCampaignInventoryEntry =
   Awaited<ReturnType<WbClustersRepository["getStoredCampaignInventory"]>>[number];
 
 /**
- * Тянет ПОЛНЫЙ расход рекламы из WB /adv/v2/fullstats (как в кабинете) и пишет
- * в wb_advert_daily_spend по (advert × товар × день). Запускается часовым кроном
- * отдельно от основного 10-мин синка: у fullstats жёсткий лимит 1 запрос/мин,
- * до 100 кампаний за запрос.
+ * Тянет ПОЛНЫЙ расход рекламы из WB GET /adv/v3/fullstats (как в кабинете) и
+ * пишет в wb_advert_daily_spend по (advert × товар × день). Запускается часовым
+ * кроном отдельно от основного 10-мин синка. Чтобы уложиться в суточный лимит
+ * запросов WB (~200/аккаунт), шлём в fullstats только кампании товаров с
+ * остатком > 0 (активный ассортимент), а не всю историю кампаний.
  */
 export async function runAdSpendFullstatsSync(self: WbClustersService): Promise<void> {
   if (!appEnv.wbPromotionSyncEnabled) return;
@@ -27,20 +28,39 @@ export async function runAdSpendFullstatsSync(self: WbClustersService): Promise<
 
   const inventory: StoredCampaignInventoryEntry[] =
     await self.wbClustersRepository.getStoredCampaignInventory();
+
+  // Шлём в fullstats только кампании, рекламирующие товары с остатком > 0:
+  // у WB /adv/v3/fullstats жёсткий суточный лимит (~200 запросов/аккаунт), а в
+  // инвентаре копятся все кампании за историю (включая завершённые). Товары без
+  // остатка сейчас не продаются — их расход для дашборда не интересен. Это режет
+  // 1000 кампаний до активного ассортимента и позволяет часовой крон.
+  const stocks: Array<{ nmId: number; quantity: number }> =
+    await self.wbClustersRepository.getLatestStocks();
+  const inStockNmIds = new Set<number>();
+  for (const s of stocks) {
+    if (s.quantity > 0) inStockNmIds.add(s.nmId);
+  }
+
   const currencyByAdvertId = new Map<number, string | null>();
   const advertIds: number[] = [];
   for (const item of inventory) {
+    const hasStockedProduct = (item.products as Array<{ nmId: number }>).some((p) =>
+      inStockNmIds.has(p.nmId),
+    );
+    if (!hasStockedProduct) continue;
     advertIds.push(item.advertId);
     currencyByAdvertId.set(item.advertId, item.currency);
   }
   if (advertIds.length === 0) {
-    self.logger.log("Ad-spend fullstats sync: нет кампаний в инвентаре, пропускаю.");
+    self.logger.log(
+      "Ad-spend fullstats sync: нет кампаний с товарами в наличии, пропускаю.",
+    );
     return;
   }
 
   const period = self.getStatsPeriod();
   self.logger.log(
-    `Ad-spend fullstats sync: ${advertIds.length} кампаний, период ${period.from} → ${period.to}`,
+    `Ad-spend fullstats sync: ${advertIds.length}/${inventory.length} кампаний (фильтр по остаткам), период ${period.from} → ${period.to}`,
   );
 
   // Накопитель расхода по (advert, nm, date). fullstats дробит расход по

@@ -34,7 +34,7 @@ export function getPromotionMinIntervalMs(path: string) {
   if (path === "/adv/v0/normquery/stats" || path === "/adv/v1/normquery/stats") {
     return appEnv.wbPromotionStatsMinIntervalMs;
   }
-  if (path === "/adv/v2/fullstats") return appEnv.wbPromotionFullstatsMinIntervalMs;
+  if (path === "/adv/v3/fullstats") return appEnv.wbPromotionFullstatsMinIntervalMs;
   return appEnv.wbPromotionApiMinIntervalMs;
 }
 
@@ -45,7 +45,7 @@ export function getPromotionThrottleLane(path: string): PromotionThrottleLane {
   if (path === "/adv/v0/normquery/get-minus") return "minus-read";
   if (path === "/api/advert/v2/adverts") return "details";
   if (path === "/adv/v0/normquery/stats" || path === "/adv/v1/normquery/stats") return "stats";
-  if (path === "/adv/v2/fullstats") return "fullstats";
+  if (path === "/adv/v3/fullstats") return "fullstats";
   return "default";
 }
 

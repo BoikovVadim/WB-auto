@@ -138,11 +138,11 @@ export interface PromotionDailyNormQueryStatsResponse {
 }
 
 /**
- * Ответ /adv/v2/fullstats — ПОЛНЫЙ расход кампании (как в кабинете WB),
+ * Ответ GET /adv/v3/fullstats — ПОЛНЫЙ расход кампании (как в кабинете WB),
  * с разбивкой по дням → площадкам (apps) → товарам (nm). В отличие от
  * normquery/stats (расход только в разрезе поисковых запросов), сюда входит
  * расход на показы вне поиска (каталог, карточки, рекомендации). Поле `sum` —
- * это расход в рублях. Тело запроса — массив { id, interval:{begin,end} }.
+ * это расход в рублях. Запрос: ids через запятую, beginDate/endDate (YYYY-MM-DD).
  */
 export type PromotionFullstatsResponse = Array<{
   advertId: number;

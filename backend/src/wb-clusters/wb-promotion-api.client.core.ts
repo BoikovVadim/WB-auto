@@ -196,12 +196,19 @@ export class WbPromotionApiClient {
     if (params.advertIds.length === 0) {
       return [] satisfies PromotionFullstatsResponse;
     }
-    const body = params.advertIds.map((id) => ({
-      id,
-      interval: { begin: params.from, end: params.to },
-    }));
+    // WB удалил POST /adv/v2/fullstats (дедлайн 23.10.2025). Актуальный метод —
+    // GET /adv/v3/fullstats: ids через запятую, beginDate/endDate в YYYY-MM-DD,
+    // макс. период 31 день. Структура ответа (days[].apps[].nm[].sum) та же.
     return this.request<PromotionFullstatsResponse>(
-      { method: "POST", path: "/adv/v2/fullstats", body },
+      {
+        method: "GET",
+        path: "/adv/v3/fullstats",
+        query: {
+          ids: params.advertIds.join(","),
+          beginDate: params.from,
+          endDate: params.to,
+        },
+      },
       { failFastOnTooManyRequests: false },
     );
   }
