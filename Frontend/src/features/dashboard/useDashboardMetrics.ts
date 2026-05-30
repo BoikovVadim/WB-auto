@@ -19,6 +19,7 @@ import { useSpp } from "./useSpp";
 import { useSppMatrix } from "./useSppMatrix";
 import { useUnitEconomicsCharges } from "./useUnitEconomicsCharges";
 import { usePriceChangeStatuses } from "./usePriceChangeStatuses";
+import { usePrefetchDetailSheets } from "./usePrefetchDetailSheets";
 
 /**
  * Бандл всех данных дашборда товаров: «сегодняшние» значения метрик (заказы, выкуп,
@@ -44,11 +45,20 @@ export function useDashboardMetrics(input: {
   /** Активна именно секция «Товары» — там видны заказы/суммы/выручка/с-с/реклама
    *  (в «Юнит Экономике» эти колонки скрыты, их листы не открыть → не префетчим). */
   inCatalogProducts: boolean;
+  /** Активна секция «Юнит Экономика» — там видны эквайринг/маржа (для префетча их листов). */
+  inUnitEconomics: boolean;
 }) {
   // Лист открыт ИЛИ метрика доступна в текущей секции → грузим матрицу (фоновый префетч).
   // catalog-only метрики (orders-семейство) префетчим только в «Товарах»; spp — в обеих.
   const ws = input.inProductsWorkspace;
   const cat = input.inCatalogProducts;
+  // Прогрев кэша «самозагружающихся» листов (выкуп/остатки/цены/себестоимость/эквайринг/
+  // маржа) — они читают кэш на маунте, поэтому прогретый кэш = мгновенное открытие.
+  usePrefetchDetailSheets({
+    inProductsWorkspace: ws,
+    inCatalogProducts: cat,
+    inUnitEconomics: input.inUnitEconomics,
+  });
   const { costPrices, isCostPricesLoading, prefetchCostPrices, handleCostSaved, handleCostCleared } =
     useCostPrices();
   const { orderCounts } = useOrders();

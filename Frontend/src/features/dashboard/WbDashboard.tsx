@@ -174,6 +174,7 @@ export function WbDashboard() {
     isSppSheetOpen,
     inProductsWorkspace,
     inCatalogProducts: activeSection === "catalog-products",
+    inUnitEconomics: activeSection === "unit-economics",
   });
   const invalidateProductAdvertisingDetail = useCallback(
     (target: ProductAdvertisingDetailInvalidationTarget = "all") => {

@@ -67,6 +67,15 @@ function costCell(value: number | null): CellContent {
   return { display: formatMoney(value), copy: value.toFixed(2) };
 }
 
+/** Фоновый прогрев кэша матрицы себестоимости (best-effort) — лист открывается мгновенно. */
+export async function prefetchCostPriceMatrix(): Promise<void> {
+  try {
+    writeMatrixCache(await fetchCostPriceMatrix());
+  } catch {
+    /* best-effort */
+  }
+}
+
 export function DashboardCatalogProductDetailSection({ products, costPrices, onBack }: Props) {
   const today = todayIso();
 

@@ -93,6 +93,15 @@ function priceCell(value: number | null): CellContent {
   return { display: formatMoney(value), copy: value.toFixed(2) };
 }
 
+/** Фоновый прогрев кэша матрицы цен (best-effort) — лист открывается мгновенно. */
+export async function prefetchPricesMatrix(): Promise<void> {
+  try {
+    writeMatrixCache(buildMatrix(await fetchPricesMatrix()));
+  } catch {
+    /* best-effort */
+  }
+}
+
 export function DashboardPricesDetailSection({ products, priceCounts, onBack }: Props) {
   const today = todayIso();
 

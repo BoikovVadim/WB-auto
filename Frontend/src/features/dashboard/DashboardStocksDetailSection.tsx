@@ -81,6 +81,15 @@ function numCell(value: number | null): CellContent {
   return { display: String(value), copy: String(value) };
 }
 
+/** Фоновый прогрев кэша матрицы остатков (best-effort) — лист открывается мгновенно. */
+export async function prefetchStocksMatrix(): Promise<void> {
+  try {
+    writeMatrixCache(buildMatrix(await fetchStocksMatrix()));
+  } catch {
+    /* best-effort */
+  }
+}
+
 export function DashboardStocksDetailSection({ products, stockCounts, onBack }: Props) {
   const today = todayIso();
 

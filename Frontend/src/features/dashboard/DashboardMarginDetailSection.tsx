@@ -66,6 +66,15 @@ function pctCell(value: number | null): CellContent {
 
 type SortCol = string | null;
 
+/** Фоновый прогрев кэша матрицы маржи (best-effort) — лист открывается мгновенно. */
+export async function prefetchMarginMatrix(): Promise<void> {
+  try {
+    writeCache(await fetchMarginMatrix());
+  } catch {
+    /* best-effort */
+  }
+}
+
 export function DashboardMarginDetailSection({ products, mode, onBack }: Props) {
   const [colNo, setColNo] = useState(48);
   const [colId, setColId] = useState(110);

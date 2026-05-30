@@ -93,6 +93,15 @@ function pctCell(value: number | null): CellContent {
   return { display: formatPercent(value), copy: value.toFixed(2) };
 }
 
+/** Фоновый прогрев кэша матрицы % выкупа (best-effort) — лист открывается мгновенно. */
+export async function prefetchBuyoutMatrix(): Promise<void> {
+  try {
+    writeCache(fromServer(await fetchBuyoutSnapshotMatrix()));
+  } catch {
+    /* best-effort: при ошибке просто не прогрели кэш */
+  }
+}
+
 export function DashboardBuyoutDetailSection({
   products,
   rollingBuyoutCounts,

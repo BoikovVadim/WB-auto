@@ -66,6 +66,15 @@ function pctCell(value: number | null): CellContent {
   return { display: formatPercent(value), copy: value.toFixed(2) };
 }
 
+/** Фоновый прогрев кэша матрицы эквайринга (best-effort) — лист открывается мгновенно. */
+export async function prefetchAcquiringMatrix(): Promise<void> {
+  try {
+    writeCache(await fetchAcquiringMatrix());
+  } catch {
+    /* best-effort */
+  }
+}
+
 export function DashboardAcquiringDetailSection({ products, onBack }: Props) {
   const [colNo, setColNo] = useState(48);
   const [colId, setColId] = useState(110);
