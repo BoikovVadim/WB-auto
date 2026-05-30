@@ -52,6 +52,17 @@ export const productsTableColumnDefs: ProductColumnDefinition[] = [
 
 const PRODUCTS_COLUMN_KEYS = productsTableColumnDefs.map((c) => c.key);
 
+// Колонки, скрытые в разделе «Юнит Экономика» (тот же вид товаров, но без
+// заказов/остатков/сумм/выручки/с-с продаж/рекламы — туда переносим юнит-экономику).
+export const UNIT_ECONOMICS_HIDDEN_COLUMNS: ProductsColumnKey[] = [
+  "orders",
+  "stock",
+  "ordersSum",
+  "revenue",
+  "costSum",
+  "adSpend",
+];
+
 export function readStoredProductsColumnOrder(): ProductsColumnKey[] {
   const stored = readStoredRawColumnOrder(PRODUCTS_COLUMN_STORAGE_KEY, PRODUCTS_COLUMN_KEYS);
   return stored.filter((v): v is ProductsColumnKey =>

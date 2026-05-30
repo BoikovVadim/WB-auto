@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { cloneElement, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 import type { CostPriceCurrent } from "../../api/syncClientCostPrice";
@@ -15,11 +15,24 @@ import {
 import type { ProductColumnDefinition, ProductsColumnKey } from "./productsTableColumns";
 import { useProductsColumnOrderState } from "./useProductsColumnOrderState";
 import type { ProductListItem, ProductListSortKey } from "./useDashboardProductsWorkspace";
+import {
+  CostInputCell,
+  PriceConfirmModal,
+  PriceInputCell,
+  SortArrow,
+} from "./ProductsTableCells";
+import { getColLabel, getColWidth, getParentSortKey } from "./productsTableHelpers";
 
 export type { CostPriceCurrent };
 export type { CurrentPriceEntry };
 
 const CATALOG_PRODUCTS_SCROLL_KEY = "catalog-products-list";
+
+// Левые колонки, закреплённые при горизонтальном скролле (как №/ID/Название в
+// ретроспективах). Закрепляем только ведущий непрерывный префикс из этого набора —
+// если пользователь перетащит между ними обычную колонку, закрепление аккуратно
+// прекратится, без визуальных нахлёстов.
+const PINNED_COLUMN_KEYS: readonly ProductsColumnKey[] = ["index", "nmId", "vendorCode"];
 
 type DashboardCatalogProductsSectionProps = {
   productCatalogCount: number;
@@ -41,6 +54,9 @@ type DashboardCatalogProductsSectionProps = {
   adSpendValues: Map<number, number>;
   sppValues: Map<number, number>;
   priceChangeStatuses: Map<number, PriceChangeStatus>;
+  /** Колонки, скрытые в этой секции. Напр. «Юнит Экономика» прячет
+   *  заказы/остатки/сумму заказов/выручку/с-с продаж/рекламу. */
+  hiddenColumns?: ProductsColumnKey[];
   onProductsSearchChange: (value: string) => void;
   onProductsSortToggle: (key: ProductListSortKey) => void;
   onOpenCostPriceSheet: () => void;
@@ -62,361 +78,6 @@ type DashboardCatalogProductsSectionProps = {
 // ─── Local sort key (for columns backed by external Maps) ────────────────────
 type LocalSortKey = "cost" | "price" | "orders" | "buyout" | "spp" | "stock" | "ordersSum" | "revenue" | "costSum" | "adSpend";
 
-function SortArrow({
-  active,
-  direction,
-}: {
-  active: boolean;
-  direction: "asc" | "desc";
-}) {
-  return (
-    <span className={active ? "wb-sort-arrow--active" : "wb-sort-arrow--inactive"}>
-      {active ? (direction === "asc" ? "↑" : "↓") : "↕"}
-    </span>
-  );
-}
-
-type CostInputCellProps = {
-  nmId: number;
-  savedValue: number | null;
-  isSelected: boolean;
-  isEditing: boolean;
-  onSaved: (nmId: number, value: number) => Promise<void>;
-  onCommitEdit: () => void;
-  /** Enter edit mode — вызывается кликом по карандашу слева от значения.
-   *  Принимает nmId, чтобы родитель мог передать ОДИН стабильный колбэк на все
-   *  ячейки и не ломать memo (инлайн-стрелка пересоздавалась бы каждый рендер). */
-  onStartEdit: (nmId: number) => void;
-};
-
-const CostInputCell = memo(function CostInputCell({
-  nmId,
-  savedValue,
-  isSelected,
-  isEditing,
-  onSaved,
-  onCommitEdit,
-  onStartEdit,
-}: CostInputCellProps) {
-  const [draft, setDraft] = useState<string>("");
-  const [saving, setSaving] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const savedValueRef = useRef(savedValue);
-  useEffect(() => {
-    savedValueRef.current = savedValue;
-  }, [savedValue]);
-
-  const startDraft = useCallback(() => {
-    setDraft(savedValueRef.current !== null ? String(savedValueRef.current) : "");
-  }, []);
-
-  useEffect(() => {
-    if (isEditing) {
-      startDraft();
-    }
-  }, [isEditing, startDraft]);
-
-  useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [isEditing]);
-
-  const commit = useCallback(async () => {
-    const trimmed = draft.trim().replace(",", ".");
-    const currentSaved = savedValueRef.current;
-    if (trimmed === "") {
-      onCommitEdit();
-      return;
-    }
-    const parsed = Number(trimmed);
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      onCommitEdit();
-      return;
-    }
-    if (parsed === currentSaved) {
-      onCommitEdit();
-      return;
-    }
-    setSaving(true);
-    try {
-      await onSaved(nmId, parsed);
-      onCommitEdit();
-    } catch {
-      // keep editing so user can retry
-    } finally {
-      setSaving(false);
-    }
-  }, [draft, nmId, onSaved, onCommitEdit]);
-
-  if (isEditing) {
-    return (
-      <input
-        ref={inputRef}
-        className={`wb-cost-price-input${saving ? " wb-cost-price-input--saving" : ""}`}
-        type="text"
-        inputMode="decimal"
-        value={draft}
-        placeholder="0"
-        disabled={saving}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => { void commit(); }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            void commit();
-          } else if (e.key === "Escape") {
-            onCommitEdit();
-          }
-          e.stopPropagation();
-        }}
-        onClick={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
-        aria-label="Себестоимость"
-      />
-    );
-  }
-
-  return (
-    <span
-      className={`wb-cost-price-display${isSelected ? " wb-cost-price-display--selected" : ""}`}
-    >
-      <button
-        type="button"
-        className="wb-cost-price-edit-icon"
-        title="Изменить себестоимость"
-        aria-label="Изменить себестоимость"
-        tabIndex={-1}
-        onMouseDown={(e) => { e.stopPropagation(); }}
-        onClick={(e) => { e.stopPropagation(); onStartEdit(nmId); }}
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M12 20h9" />
-          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
-        </svg>
-      </button>
-      <span className="wb-cost-price-value">
-        {savedValue !== null
-          ? `${savedValue.toLocaleString("ru-RU")} ₽`
-          : <span className="wb-cost-price-empty">—</span>}
-      </span>
-    </span>
-  );
-});
-
-// ─── Price edit cell (запись на маркетплейс WB) ───────────────────────────────
-// Клик по числу или карандашу → инлайн-ввод. Enter → модалка подтверждения
-// (подтверждение/отмена живут в родителе). Без статусов и без readback: значение
-// фиксируется в таблице оптимистично (overlay), WB применяет цену сам.
-
-const PriceInputCell = memo(function PriceInputCell({
-  nmId,
-  entry,
-  overlay,
-  isEditing,
-  onStartEdit,
-  onCommitEdit,
-  onRequestConfirm,
-}: {
-  nmId: number;
-  entry: CurrentPriceEntry | undefined;
-  /** Последняя выставленная пользователем цена — показываем её оптимистично. */
-  overlay: PriceChangeStatus | undefined;
-  isEditing: boolean;
-  onStartEdit: (nmId: number) => void;
-  onCommitEdit: () => void;
-  onRequestConfirm: (nmId: number, targetFinal: number) => void;
-}) {
-  const [draft, setDraft] = useState<string>("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  // Цена в ячейке: если пользователь уже выставлял цену — показываем его значение
-  // (оптимистично, переживает перезагрузку), иначе последний снапшот.
-  const currentFinal: number | null =
-    overlay ? overlay.desiredFinal : (entry?.priceWithDiscount ?? null);
-  const currentFinalRef = useRef(currentFinal);
-  useEffect(() => { currentFinalRef.current = currentFinal; }, [currentFinal]);
-
-  useEffect(() => {
-    if (isEditing) setDraft(currentFinalRef.current !== null ? String(currentFinalRef.current) : "");
-  }, [isEditing]);
-  useEffect(() => {
-    if (isEditing && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
-  }, [isEditing]);
-
-  const submit = useCallback(() => {
-    const t = draft.trim().replace(",", ".");
-    if (t === "") { onCommitEdit(); return; }
-    const target = Number(t);
-    if (!Number.isFinite(target) || target <= 0) { onCommitEdit(); return; }
-    // No-op только если введено РОВНО текущее значение ячейки (можно ставить любое
-    // другое число, в т.ч. равное исходной цене до прежних правок).
-    if (currentFinalRef.current !== null && Math.abs(target - currentFinalRef.current) < 0.005) {
-      onCommitEdit();
-      return;
-    }
-    onRequestConfirm(nmId, target);
-  }, [draft, nmId, onRequestConfirm, onCommitEdit]);
-
-  if (isEditing) {
-    return (
-      <input
-        ref={inputRef}
-        className="wb-cost-price-input"
-        type="text"
-        inputMode="decimal"
-        value={draft}
-        placeholder="0"
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => { submit(); }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") { e.preventDefault(); submit(); }
-          else if (e.key === "Escape") { onCommitEdit(); }
-          e.stopPropagation();
-        }}
-        onClick={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
-        aria-label="Цена со скидкой продавца"
-      />
-    );
-  }
-
-  return (
-    <span
-      className="wb-cost-price-display"
-      style={{ cursor: "pointer" }}
-      role="button"
-      tabIndex={-1}
-      onClick={(e) => { e.stopPropagation(); onStartEdit(nmId); }}
-    >
-      <button
-        type="button"
-        className="wb-cost-price-edit-icon"
-        title="Изменить цену и отправить на маркетплейс WB"
-        aria-label="Изменить цену"
-        tabIndex={-1}
-        onMouseDown={(e) => { e.stopPropagation(); }}
-        onClick={(e) => { e.stopPropagation(); onStartEdit(nmId); }}
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M12 20h9" />
-          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
-        </svg>
-      </button>
-      <span className="wb-cost-price-value">
-        {currentFinal !== null
-          ? formatMoney(currentFinal)
-          : <span className="wb-cost-price-empty">—</span>}
-      </span>
-    </span>
-  );
-});
-
-// ─── Модалка подтверждения изменения цены ─────────────────────────────────────
-// Всплывает после Enter в поле. Enter — применить, Esc/Отмена/клик по фону — закрыть
-// без изменений. Кнопка «Поставить» в фокусе, поэтому Enter применяет сразу.
-
-const PriceConfirmModal = memo(function PriceConfirmModal({
-  productLabel,
-  oldFinal,
-  shelf,
-  onConfirm,
-  onCancel,
-}: {
-  productLabel: string;
-  oldFinal: number | null;
-  shelf: number;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const confirmRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    confirmRef.current?.focus();
-  }, []);
-
-  return (
-    <div
-      className="wb-price-confirm-backdrop"
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") { e.preventDefault(); onCancel(); }
-        else if (e.key === "Enter") { e.preventDefault(); onConfirm(); }
-      }}
-    >
-      <div className="wb-price-confirm" role="dialog" aria-modal="true">
-        <div className="wb-price-confirm-title">Изменить цену на маркетплейсе WB</div>
-        <div className="wb-price-confirm-body">
-          <div className="wb-price-confirm-product">{productLabel}</div>
-          <div className="wb-price-confirm-prices">
-            {oldFinal !== null && (
-              <span className="wb-price-confirm-old">{formatMoney(oldFinal)}</span>
-            )}
-            <span className="wb-price-confirm-arrow">→</span>
-            <span className="wb-price-confirm-new">{formatMoney(shelf)}</span>
-          </div>
-          <div className="wb-price-confirm-note">Фактическая цена со скидкой на WB станет {formatMoney(shelf)}.</div>
-        </div>
-        <div className="wb-price-confirm-actions">
-          <button type="button" className="wb-btn-secondary" onClick={onCancel}>
-            Отмена
-          </button>
-          <button
-            ref={confirmRef}
-            type="button"
-            className="wb-btn-primary"
-            onClick={onConfirm}
-          >
-            Поставить
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-});
-
-// ─── Column width helper ──────────────────────────────────────────────────────
-
-function getColWidth(col: ProductColumnDefinition, nameColWidth: number): number {
-  return col.key === "vendorCode" ? nameColWidth : col.defaultWidth;
-}
-
-// ─── Column label ─────────────────────────────────────────────────────────────
-
-function getColLabel(key: ProductsColumnKey): string {
-  switch (key) {
-    case "index":     return ui.rowNumber;
-    case "nmId":      return ui.productIdColumn;
-    case "vendorCode": return ui.productNameColumn;
-    case "category":  return ui.category;
-    case "subject":   return ui.subject;
-    case "cost":      return "Себестоимость";
-    case "price":     return "Цена";
-    case "orders":    return "Заказы";
-    case "buyout":    return "% выкупа";
-    case "spp":       return "СПП";
-    case "stock":     return "Остатки";
-    case "ordersSum": return "Сумма заказов";
-    case "revenue":   return "Выручка";
-    case "costSum":   return "С/с продаж";
-    case "adSpend":   return "Реклама";
-  }
-}
-
-// ─── Parent sort key mapping ──────────────────────────────────────────────────
-
-function getParentSortKey(key: ProductsColumnKey): ProductListSortKey | null {
-  switch (key) {
-    case "index":     return "id";
-    case "nmId":      return "id";
-    case "vendorCode": return "name";
-    case "category":  return "category";
-    case "subject":   return "subject";
-    default:          return null;
-  }
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export const DashboardCatalogProductsSection = memo(
@@ -426,8 +87,17 @@ export const DashboardCatalogProductsSection = memo(
     const resizingColRef = useRef<number | null>(null);
 
     // ── Column ordering (drag-and-drop) ────────────────────────────────────────
-    const { draggedColumn, orderedColumns, setDraggedColumn, handleDrop } =
+    const { draggedColumn, orderedColumns: allOrderedColumns, setDraggedColumn, handleDrop } =
       useProductsColumnOrderState();
+    // Скрытые в этой секции колонки (порядок/ширины храним общими, фильтруем только показ).
+    const hiddenColumns = props.hiddenColumns;
+    const orderedColumns = useMemo(
+      () =>
+        hiddenColumns && hiddenColumns.length > 0
+          ? allOrderedColumns.filter((c) => !hiddenColumns.includes(c.key))
+          : allOrderedColumns,
+      [allOrderedColumns, hiddenColumns],
+    );
 
     // ── Multi-select state ──────────────────────────────────────────────────────
     const [selectedNmIds, setSelectedNmIds] = useState<Set<number>>(new Set());
@@ -669,6 +339,45 @@ export const DashboardCatalogProductsSection = memo(
     const totalW = useMemo(
       () => orderedColumns.reduce((sum, col) => sum + getColWidth(col, nameColWidth), 0),
       [orderedColumns, nameColWidth],
+    );
+
+    // ── Закрепление левых колонок (sticky) ───────────────────────────────────────
+    // Считаем left-офсет для каждой закреплённой колонки из ведущего префикса
+    // PINNED_COLUMN_KEYS; lastPinnedKey — для разделительной тени справа.
+    const { pinnedLeftByKey, lastPinnedKey } = useMemo(() => {
+      const map = new Map<ProductsColumnKey, number>();
+      let left = 0;
+      let last: ProductsColumnKey | null = null;
+      for (const col of orderedColumns) {
+        if (!PINNED_COLUMN_KEYS.includes(col.key)) break;
+        map.set(col.key, left);
+        left += getColWidth(col, nameColWidth);
+        last = col.key;
+      }
+      return { pinnedLeftByKey: map, lastPinnedKey: last };
+    }, [orderedColumns, nameColWidth]);
+
+    // Применяет sticky-класс + left-офсет к уже отрендеренной ячейке колонки (th/td),
+    // не трогая switch'и рендереров. Фоны закреплённых ячеек задаёт класс
+    // .wb-table-cell--sticky-left (header/totals/body — каждый со своим фоном).
+    const withPin = useCallback(
+      (
+        col: ProductColumnDefinition,
+        el: ReactElement<{ className?: string; style?: React.CSSProperties }> | undefined,
+      ) => {
+        if (!el) return el;
+        const left = pinnedLeftByKey.get(col.key);
+        if (left === undefined) return el;
+        const className = [
+          el.props.className,
+          "wb-table-cell--sticky-left",
+          col.key === lastPinnedKey ? "wb-table-cell--sticky-left-last" : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        return cloneElement(el, { className, style: { ...el.props.style, left } });
+      },
+      [pinnedLeftByKey, lastPinnedKey],
     );
 
     // ── Column resizing ─────────────────────────────────────────────────────────
@@ -1268,11 +977,11 @@ export const DashboardCatalogProductsSection = memo(
                   </colgroup>
                   <thead>
                     <tr>
-                      {orderedColumns.map((col, colIdx) => renderHeaderCell(col, colIdx))}
+                      {orderedColumns.map((col, colIdx) => withPin(col, renderHeaderCell(col, colIdx)))}
                     </tr>
                     {displayProducts.length > 0 && (
                       <tr className="wb-products-totals-row wb-thead-row--second">
-                        {orderedColumns.map((col) => renderTotalsCell(col))}
+                        {orderedColumns.map((col) => withPin(col, renderTotalsCell(col)))}
                       </tr>
                     )}
                   </thead>
@@ -1293,7 +1002,7 @@ export const DashboardCatalogProductsSection = memo(
                               data-index={vRow.index}
                               ref={rowVirtualizer.measureElement}
                             >
-                              {orderedColumns.map((col) => renderBodyCell(col, product, vRow.index))}
+                              {orderedColumns.map((col) => withPin(col, renderBodyCell(col, product, vRow.index)))}
                             </tr>
                           );
                         })}

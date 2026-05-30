@@ -24,6 +24,7 @@ import { DashboardQueryFrequenciesSection } from "./DashboardQueryFrequenciesSec
 import { DashboardSyncRunsSection } from "./DashboardSyncRunsSection";
 import { DashboardTechSection } from "./DashboardTechSection";
 import { isProductsWorkspaceSection } from "./persistence/dashboardViewState";
+import { UNIT_ECONOMICS_HIDDEN_COLUMNS } from "./productsTableColumns";
 import { WbCabinetSidebar } from "./WbCabinetSidebar";
 import type { WbDashboardShellProps } from "./WbDashboardShellTypes";
 
@@ -271,6 +272,7 @@ export function WbDashboardShell({
               />
             ) : (
               <DashboardCatalogProductsSection
+                hiddenColumns={activeSection === "unit-economics" ? UNIT_ECONOMICS_HIDDEN_COLUMNS : undefined}
                 productCatalogCount={productCatalogCount}
                 productsSearch={productsSearch}
                 hasCatalogItems={hasCatalogItems}

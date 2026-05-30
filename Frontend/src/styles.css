@@ -1136,8 +1136,10 @@ input {
   white-space: nowrap;
 }
 
-/* Restore original: only vertical sticky for the two header rows (thead + totals).
-   No horizontal column sticky — that was causing the layout shift, gaps and truncation. */
+/* Вертикальный sticky двух строк шапки (заголовки + Итого). Горизонтальное
+   закрепление левых колонок (№/ID/Название) включается отдельно — классом
+   .wb-table-cell--sticky-left + инлайновым left-офсетом (см. withPin в
+   DashboardCatalogProductsSection); фоны для header/totals/body уже заданы выше. */
 .wb-data-table--products thead th {
   position: sticky;
   top: 0;
@@ -1151,6 +1153,17 @@ input {
   background: var(--wb-table-totals-bg);
   border-bottom: 1px solid rgba(201, 162, 39, 0.3);
   z-index: var(--wb-table-sticky-z-header);
+}
+
+/* Закреплённые ячейки тела подхватывают подсветку строки при hover, иначе остаются
+   белыми пятнами на затенённой строке. #fdfaf0 = rgba(232,197,71,0.08) поверх белого. */
+.wb-data-table--products tbody tr:hover .wb-table-cell--sticky-left {
+  background: #fdfaf0;
+}
+
+/* Разделительная тень справа у последней закреплённой колонки (не влияет на layout). */
+.wb-data-table--products .wb-table-cell--sticky-left-last {
+  box-shadow: 1px 0 0 rgba(0, 0, 0, 0.06);
 }
 
 .wb-products-campaign-count-th,
