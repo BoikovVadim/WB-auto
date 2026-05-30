@@ -6,6 +6,7 @@ import type { TodayOrderCount } from "../../api/syncClientOrders";
 import type { PriceChangeStatus } from "../../api/syncClientPrices";
 import { formatMoney, formatPercent } from "../../formatters";
 import { CalcInputCell, CostInputCell, PriceInputCell } from "./ProductsTableCells";
+import { cellKey, type EditableColumnKey, type EditingCell } from "./useProductsTableSelection";
 import type { CurrentPriceEntry } from "./useCurrentPrices";
 import type { ProductColumnDefinition } from "./productsTableColumns";
 import { getDisplayVendorCode } from "./productsTableHelpers";
@@ -42,16 +43,26 @@ export type ProductsBodyRenderCtx = {
   priceChangeStatuses: Map<number, PriceChangeStatus>;
   /** Редактирование себестоимости/цены доступно только в «Юнит Экономика».
    *  В «Товары» (editable=false) cost/price рендерятся read-only — те же значения,
-   *  но без карандаша, инлайн-ввода и выделения cost-ячеек под Delete. */
+   *  но без карандаша, инлайн-ввода и выделения ячеек под Delete. */
   editable: boolean;
-  selectedNmIds: Set<number>;
-  editingNmId: number | null;
+  /** Выделенные ячейки (как в Sheets), ключ `${nmId}|${colKey}` — см. cellKey. */
+  selectedCells: Set<string>;
+  /** Ячейка в режиме правки (себестоимость/поля калькулятора). */
+  editing: EditingCell | null;
   editingPriceNmId: number | null;
-  onCellClick: (nmId: number, index: number, event: React.MouseEvent) => void;
-  onCellDoubleClick: (nmId: number, index: number) => void;
+  /** Первый набранный символ для правки набором (передаётся только редактируемой ячейке). */
+  initialEditChar: string | null;
+  onCellMouseDown: (
+    nmId: number,
+    rowIndex: number,
+    colKey: EditableColumnKey,
+    event: React.MouseEvent,
+  ) => void;
+  onCellMouseEnter: (nmId: number, rowIndex: number, colKey: EditableColumnKey) => void;
+  onCellDoubleClick: (nmId: number, colKey: EditableColumnKey) => void;
   onCostSaved: (nmId: number, value: number) => Promise<void>;
   onCommitEdit: () => void;
-  onStartEdit: (nmId: number) => void;
+  onStartEditCost: (nmId: number) => void;
   onStartPriceEdit: (nmId: number) => void;
   onCommitPriceEdit: () => void;
   onRequestPriceConfirm: (nmId: number, target: number) => void;
@@ -82,8 +93,10 @@ export function renderProductsBodyCell(
 ): GridCell | undefined {
   const key = col.key;
   const nmId = product.nmId;
-  const isSelected = nmId !== null && ctx.selectedNmIds.has(nmId);
-  const isEditing = nmId !== null && ctx.editingNmId === nmId;
+  const isCellSelected = (colKey: EditableColumnKey): boolean =>
+    nmId !== null && ctx.selectedCells.has(cellKey(nmId, colKey));
+  const isCellEditing = (colKey: EditableColumnKey): boolean =>
+    nmId !== null && ctx.editing?.nmId === nmId && ctx.editing.colKey === colKey;
 
   switch (key) {
     case "index":
@@ -110,28 +123,32 @@ export function renderProductsBodyCell(
           <span className="wb-pg-ellipsis">{product.subjectName ?? "—"}</span>
         </div>
       );
-    case "cost":
+    case "cost": {
+      const selected = ctx.editable && isCellSelected("cost");
+      const editingThis = isCellEditing("cost");
       return (
         <div
           key={key}
-          className={`wb-pg-cell wb-pg-cell--num wb-pg-cell--cost${isSelected ? " wb-pg-cell--cost-selected" : ""}`}
-          onClick={ctx.editable && nmId !== null ? (e) => ctx.onCellClick(nmId, index, e) : undefined}
-          onDoubleClick={ctx.editable && nmId !== null ? () => ctx.onCellDoubleClick(nmId, index) : undefined}
+          className={`wb-pg-cell wb-pg-cell--num wb-pg-cell--cost${selected ? " wb-pg-cell--cell-selected" : ""}`}
+          onMouseDown={ctx.editable && nmId !== null ? (e) => ctx.onCellMouseDown(nmId, index, "cost", e) : undefined}
+          onMouseEnter={ctx.editable && nmId !== null ? () => ctx.onCellMouseEnter(nmId, index, "cost") : undefined}
+          onDoubleClick={ctx.editable && nmId !== null ? () => ctx.onCellDoubleClick(nmId, "cost") : undefined}
         >
           {nmId !== null ? (
             <CostInputCell
               nmId={nmId}
               savedValue={ctx.costPrices.get(nmId)?.costValue ?? null}
-              isSelected={isSelected}
-              isEditing={isEditing}
+              isEditing={editingThis}
               editable={ctx.editable}
+              initialChar={editingThis ? ctx.initialEditChar : null}
               onSaved={ctx.onCostSaved}
               onCommitEdit={ctx.onCommitEdit}
-              onStartEdit={ctx.onStartEdit}
+              onStartEdit={ctx.onStartEditCost}
             />
           ) : "—"}
         </div>
       );
+    }
     case "price":
       return (
         <div key={key} className="wb-pg-cell wb-pg-cell--num wb-pg-cell--cost">
@@ -188,19 +205,31 @@ export function renderProductsBodyCell(
         </div>
       );
     }
-    case "targetMargin":
+    case "targetMargin": {
+      const selected = isCellSelected("targetMargin");
+      const editingThis = isCellEditing("targetMargin");
       return (
-        <div key={key} className="wb-pg-cell wb-pg-cell--num wb-pg-cell--cost">
+        <div
+          key={key}
+          className={`wb-pg-cell wb-pg-cell--num wb-pg-cell--cost${selected ? " wb-pg-cell--cell-selected" : ""}`}
+          onMouseDown={nmId !== null ? (e) => ctx.onCellMouseDown(nmId, index, "targetMargin", e) : undefined}
+          onMouseEnter={nmId !== null ? () => ctx.onCellMouseEnter(nmId, index, "targetMargin") : undefined}
+          onDoubleClick={nmId !== null ? () => ctx.onCellDoubleClick(nmId, "targetMargin") : undefined}
+        >
           {nmId !== null ? (
             <CalcInputCell
               nmId={nmId}
               savedValue={ctx.targetMarginInputs.get(nmId) ?? null}
+              isEditing={editingThis}
+              initialChar={editingThis ? ctx.initialEditChar : null}
               onChange={ctx.onTargetMarginChange}
+              onCommitEdit={ctx.onCommitEdit}
               ariaLabel="Целевая маржа, %"
             />
           ) : dash}
         </div>
       );
+    }
     case "priceForMargin": {
       // Расчёт нужной цены: пусто без ввода маржи; «—» если маржа недостижима/нет с/с.
       if (nmId === null || !ctx.targetMarginInputs.has(nmId)) {
@@ -219,19 +248,31 @@ export function renderProductsBodyCell(
       }
       return <div key={key} className="wb-pg-cell wb-pg-cell--num wb-pg-cell--calc">{formatMoney(r)}</div>;
     }
-    case "priceInput":
+    case "priceInput": {
+      const selected = isCellSelected("priceInput");
+      const editingThis = isCellEditing("priceInput");
       return (
-        <div key={key} className="wb-pg-cell wb-pg-cell--num wb-pg-cell--cost">
+        <div
+          key={key}
+          className={`wb-pg-cell wb-pg-cell--num wb-pg-cell--cost${selected ? " wb-pg-cell--cell-selected" : ""}`}
+          onMouseDown={nmId !== null ? (e) => ctx.onCellMouseDown(nmId, index, "priceInput", e) : undefined}
+          onMouseEnter={nmId !== null ? () => ctx.onCellMouseEnter(nmId, index, "priceInput") : undefined}
+          onDoubleClick={nmId !== null ? () => ctx.onCellDoubleClick(nmId, "priceInput") : undefined}
+        >
           {nmId !== null ? (
             <CalcInputCell
               nmId={nmId}
               savedValue={ctx.priceCalcInputs.get(nmId) ?? null}
+              isEditing={editingThis}
+              initialChar={editingThis ? ctx.initialEditChar : null}
               onChange={ctx.onPriceCalcChange}
+              onCommitEdit={ctx.onCommitEdit}
               ariaLabel="Цена для расчёта маржи, ₽"
             />
           ) : dash}
         </div>
       );
+    }
     case "marginForPrice": {
       // Расчёт маржи при введённой цене: пусто без ввода цены; «—» если нет с/с.
       if (nmId === null || !ctx.priceCalcInputs.has(nmId)) {

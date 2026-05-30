@@ -12,7 +12,11 @@ import type { ProductListItem, ProductListSortKey } from "./useDashboardProducts
 import { PriceConfirmModal } from "./ProductsTableCells";
 import { getDisplayVendorCode } from "./productsTableHelpers";
 import { sortProductsByLocalKey, type LocalSortKey } from "./productsTableSort";
-import { useProductsTableSelection } from "./useProductsTableSelection";
+import {
+  EDITABLE_COLUMN_KEYS,
+  useProductsTableSelection,
+  type EditableColumnKey,
+} from "./useProductsTableSelection";
 import { useProductsTableTotals } from "./useProductsTableTotals";
 import { useUnitEconomicsCalc } from "./useUnitEconomicsCalc";
 import type { ProductsHeaderRenderCtx } from "./ProductsTableHeadCells";
@@ -169,12 +173,41 @@ export const DashboardCatalogProductsSection = memo(
       [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costSumValues, props.adSpendValues, props.sppValues, props.commissionValues, props.taxValues, props.acquiringValues, props.acquiringPercentValues, props.drrValues, props.marginRubValues, props.marginPercentValues, props.costPrices, props.priceCounts, calc.priceResults, calc.marginResults],
     );
 
-    // Выделение строк + inline-редактирование (себестоимость/цена) — см. useProductsTableSelection.
+    // Редактируемые колонки в текущем порядке — для прямоугольного выделения ячеек.
+    // В «Товарах» (editable=false) с/с read-only, поля калькулятора скрыты → выделять нечего.
+    const clearableColumns = useMemo<EditableColumnKey[]>(
+      () =>
+        props.editable
+          ? orderedColumns.flatMap((c) =>
+              EDITABLE_COLUMN_KEYS.includes(c.key as EditableColumnKey)
+                ? [c.key as EditableColumnKey]
+                : [],
+            )
+          : [],
+      [props.editable, orderedColumns],
+    );
+
+    // Массовая очистка полей калькулятора (Delete по выделенным ячейкам). Каждый setInput
+    // дёргает один дебаунс-коммит (схлопывается), отдельный батч-метод не нужен.
+    const { setMarginInput, setPriceInput } = calc;
+    const onClearTargetMargins = useCallback(
+      (ids: number[]) => { for (const id of ids) setMarginInput(id, null); },
+      [setMarginInput],
+    );
+    const onClearPriceInputs = useCallback(
+      (ids: number[]) => { for (const id of ids) setPriceInput(id, null); },
+      [setPriceInput],
+    );
+
+    // Выделение ЯЧЕЕК + inline-редактирование (с/с, поля калькулятора, цена) — как в Sheets.
     // Объект целиком передаём в useProductsBodyCtx; отдельные поля нужны только модалке цены.
     const selection = useProductsTableSelection({
       displayProducts,
+      clearableColumns,
       tableRef: containerRef,
       onCostCleared: props.onCostCleared,
+      onClearTargetMargins,
+      onClearPriceInputs,
       onPriceSaved: props.onPriceSaved,
     });
     const { priceConfirm, handleCancelPriceConfirm, handleConfirmPrice } = selection;

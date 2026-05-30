@@ -40,21 +40,24 @@ export type ProductsCalcCtx = Pick<
 >;
 
 /**
- * Состояние выделения/редактирования + хендлеры (имена как у useProductsTableSelection,
- * чтобы её возвращаемое значение передавалось сюда без переименований).
+ * Состояние выделения ячеек/редактирования + хендлеры. Имена совпадают с возвращаемым
+ * значением useProductsTableSelection — передаётся сюда без переименований.
  */
-export type ProductsBodySelection = {
-  selectedNmIds: Set<number>;
-  editingNmId: number | null;
-  editingPriceNmId: number | null;
-  handleCellClick: ProductsBodyRenderCtx["onCellClick"];
-  handleCellDoubleClick: ProductsBodyRenderCtx["onCellDoubleClick"];
-  handleCommitEdit: ProductsBodyRenderCtx["onCommitEdit"];
-  handleStartEdit: ProductsBodyRenderCtx["onStartEdit"];
-  handleStartPriceEdit: ProductsBodyRenderCtx["onStartPriceEdit"];
-  handleCommitPriceEdit: ProductsBodyRenderCtx["onCommitPriceEdit"];
-  handleRequestPriceConfirm: ProductsBodyRenderCtx["onRequestPriceConfirm"];
-};
+export type ProductsBodySelection = Pick<
+  ProductsBodyRenderCtx,
+  | "selectedCells"
+  | "editing"
+  | "editingPriceNmId"
+  | "initialEditChar"
+  | "onCellMouseDown"
+  | "onCellMouseEnter"
+  | "onCellDoubleClick"
+  | "onCommitEdit"
+  | "onStartEditCost"
+  | "onStartPriceEdit"
+  | "onCommitPriceEdit"
+  | "onRequestPriceConfirm"
+>;
 
 /**
  * Собирает СТАБИЛЬНЫЙ (memo) контекст рендера ячеек тела таблицы товаров/юнит-экономики.
@@ -98,16 +101,18 @@ export function useProductsBodyCtx(
       priceChangeStatuses: data.priceChangeStatuses,
       editable: data.editable,
       onCostSaved: data.onCostSaved,
-      selectedNmIds: selection.selectedNmIds,
-      editingNmId: selection.editingNmId,
+      selectedCells: selection.selectedCells,
+      editing: selection.editing,
       editingPriceNmId: selection.editingPriceNmId,
-      onCellClick: selection.handleCellClick,
-      onCellDoubleClick: selection.handleCellDoubleClick,
-      onCommitEdit: selection.handleCommitEdit,
-      onStartEdit: selection.handleStartEdit,
-      onStartPriceEdit: selection.handleStartPriceEdit,
-      onCommitPriceEdit: selection.handleCommitPriceEdit,
-      onRequestPriceConfirm: selection.handleRequestPriceConfirm,
+      initialEditChar: selection.initialEditChar,
+      onCellMouseDown: selection.onCellMouseDown,
+      onCellMouseEnter: selection.onCellMouseEnter,
+      onCellDoubleClick: selection.onCellDoubleClick,
+      onCommitEdit: selection.onCommitEdit,
+      onStartEditCost: selection.onStartEditCost,
+      onStartPriceEdit: selection.onStartPriceEdit,
+      onCommitPriceEdit: selection.onCommitPriceEdit,
+      onRequestPriceConfirm: selection.onRequestPriceConfirm,
     }),
     [
       data.costPrices,
@@ -137,16 +142,18 @@ export function useProductsBodyCtx(
       data.priceChangeStatuses,
       data.editable,
       data.onCostSaved,
-      selection.selectedNmIds,
-      selection.editingNmId,
+      selection.selectedCells,
+      selection.editing,
       selection.editingPriceNmId,
-      selection.handleCellClick,
-      selection.handleCellDoubleClick,
-      selection.handleCommitEdit,
-      selection.handleStartEdit,
-      selection.handleStartPriceEdit,
-      selection.handleCommitPriceEdit,
-      selection.handleRequestPriceConfirm,
+      selection.initialEditChar,
+      selection.onCellMouseDown,
+      selection.onCellMouseEnter,
+      selection.onCellDoubleClick,
+      selection.onCommitEdit,
+      selection.onStartEditCost,
+      selection.onStartPriceEdit,
+      selection.onCommitPriceEdit,
+      selection.onRequestPriceConfirm,
     ],
   );
 }

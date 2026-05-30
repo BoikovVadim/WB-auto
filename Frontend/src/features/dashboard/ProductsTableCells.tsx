@@ -21,25 +21,24 @@ export function SortArrow({
 type CostInputCellProps = {
   nmId: number;
   savedValue: number | null;
-  isSelected: boolean;
   isEditing: boolean;
   /** Редактирование доступно только в «Юнит Экономика». В «Товары» — read-only
    *  отображение того же значения (без карандаша и инлайн-ввода). */
   editable: boolean;
+  /** Первый набранный символ (правка набором, Sheets): ячейка стартует с него; иначе null. */
+  initialChar: string | null;
   onSaved: (nmId: number, value: number) => Promise<void>;
   onCommitEdit: () => void;
-  /** Enter edit mode — вызывается кликом по карандашу слева от значения.
-   *  Принимает nmId, чтобы родитель мог передать ОДИН стабильный колбэк на все
-   *  ячейки и не ломать memo (инлайн-стрелка пересоздавалась бы каждый рендер). */
+  /** Вход в правку — карандаш. ОДИН стабильный колбэк на все ячейки (memo цел). */
   onStartEdit: (nmId: number) => void;
 };
 
 export const CostInputCell = memo(function CostInputCell({
   nmId,
   savedValue,
-  isSelected,
   isEditing,
   editable,
+  initialChar,
   onSaved,
   onCommitEdit,
   onStartEdit,
@@ -53,22 +52,23 @@ export const CostInputCell = memo(function CostInputCell({
     savedValueRef.current = savedValue;
   }, [savedValue]);
 
-  const startDraft = useCallback(() => {
-    setDraft(savedValueRef.current !== null ? String(savedValueRef.current) : "");
-  }, []);
-
+  // Старт правки: набором — с введённого символа, иначе — с текущего значения.
   useEffect(() => {
-    if (isEditing) {
-      startDraft();
-    }
-  }, [isEditing, startDraft]);
+    if (!isEditing) return;
+    setDraft(initialChar ?? (savedValueRef.current !== null ? String(savedValueRef.current) : ""));
+  }, [isEditing, initialChar]);
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
       inputRef.current.focus();
-      inputRef.current.select();
+      if (initialChar) {
+        const len = inputRef.current.value.length;
+        inputRef.current.setSelectionRange(len, len); // курсор в конец, дальше дописывает
+      } else {
+        inputRef.current.select(); // выделить всё — следующий ввод заменит
+      }
     }
-  }, [isEditing]);
+  }, [isEditing, initialChar]);
 
   const commit = useCallback(async () => {
     const trimmed = draft.trim().replace(",", ".");
@@ -126,9 +126,7 @@ export const CostInputCell = memo(function CostInputCell({
   }
 
   return (
-    <span
-      className={`wb-cost-price-display${isSelected ? " wb-cost-price-display--selected" : ""}`}
-    >
+    <span className="wb-cost-price-display">
       {editable && (
         <button
           type="button"
@@ -154,82 +152,106 @@ export const CostInputCell = memo(function CostInputCell({
   );
 });
 
-// ─── Калькулятор: ячейка-ввод «что если» (целевая маржа % / гипотетическая цена) ──
-// Поведение как в Google Sheets: пока печатаешь — только локальный draft, расчёт НЕ идёт;
-// значение применяется (и расчёт запускается) при выходе из ячейки — Enter или клик вне
-// (blur). Escape — отмена правки и возврат к прежнему значению. Во время фокуса проп
-// игнорируется (как PercentInput в настройках). Расчёт рисует соседняя read-only колонка.
+// ─── Калькулятор: ячейка «что если» (целевая маржа % / гипотетическая цена) ──
+// Как ячейка Google Sheets: вне правки — просто значение (можно выделять/очищать рамкой);
+// правка по двойному клику / Enter / набору (isEditing управляет родитель). В режиме правки
+// — инпут; пока печатаешь, расчёт НЕ идёт, применяется при выходе из ячейки (Enter или клик
+// вне → blur), затем запускается расчёт. Escape — отмена правки без применения.
 
 export const CalcInputCell = memo(function CalcInputCell({
   nmId,
   savedValue,
+  isEditing,
+  initialChar,
   onChange,
+  onCommitEdit,
   ariaLabel,
 }: {
   nmId: number;
   savedValue: number | null;
+  isEditing: boolean;
+  initialChar: string | null;
   onChange: (nmId: number, value: number | null) => void;
+  onCommitEdit: () => void;
   ariaLabel: string;
 }) {
-  const [draft, setDraft] = useState(savedValue !== null ? String(savedValue) : "");
-  const focusedRef = useRef(false);
-  // Escape ставит флаг, чтобы blur-коммит после отмены не применил откатанный draft.
-  const skipCommitRef = useRef(false);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
   const savedValueRef = useRef(savedValue);
   useEffect(() => {
     savedValueRef.current = savedValue;
   }, [savedValue]);
+  // Escape — выйти без применения (blur не должен закоммитить откатанное значение).
+  const skipCommitRef = useRef(false);
 
-  // Перечитываем проп только вне фокуса (скролл-возврат / внешнее изменение); во время
-  // набора локальный draft — источник истины.
   useEffect(() => {
-    if (!focusedRef.current) setDraft(savedValue !== null ? String(savedValue) : "");
-  }, [savedValue]);
+    if (!isEditing) return;
+    setDraft(initialChar ?? (savedValueRef.current !== null ? String(savedValueRef.current) : ""));
+  }, [isEditing, initialChar]);
 
-  // Применяем введённое: пусто → сброс (null), иначе число. Зовётся на Enter/blur, не на ввод.
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      if (initialChar) {
+        const len = inputRef.current.value.length;
+        inputRef.current.setSelectionRange(len, len);
+      } else {
+        inputRef.current.select();
+      }
+    }
+  }, [isEditing, initialChar]);
+
+  // Применяем введённое и выходим из правки. Зовётся по Enter/blur, не на каждый символ.
   const commit = useCallback(() => {
     const trimmed = draft.trim().replace(",", ".");
-    if (trimmed === "") {
-      onChange(nmId, null);
-      return;
+    if (trimmed === "") onChange(nmId, null);
+    else {
+      const parsed = Number(trimmed);
+      onChange(nmId, Number.isFinite(parsed) ? parsed : null);
     }
-    const parsed = Number(trimmed);
-    onChange(nmId, Number.isFinite(parsed) ? parsed : null);
-  }, [draft, nmId, onChange]);
+    onCommitEdit();
+  }, [draft, nmId, onChange, onCommitEdit]);
+
+  if (isEditing) {
+    return (
+      <input
+        ref={inputRef}
+        className="wb-cost-price-input"
+        type="text"
+        inputMode="decimal"
+        value={draft}
+        placeholder="—"
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          if (skipCommitRef.current) {
+            skipCommitRef.current = false;
+            onCommitEdit();
+            return;
+          }
+          commit();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.currentTarget.blur();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            skipCommitRef.current = true;
+            e.currentTarget.blur();
+          }
+          e.stopPropagation();
+        }}
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        aria-label={ariaLabel}
+      />
+    );
+  }
 
   return (
-    <input
-      className="wb-cost-price-input"
-      type="text"
-      inputMode="decimal"
-      value={draft}
-      placeholder="—"
-      onChange={(e) => setDraft(e.target.value)}
-      onFocus={() => { focusedRef.current = true; }}
-      onBlur={() => {
-        focusedRef.current = false;
-        if (skipCommitRef.current) {
-          skipCommitRef.current = false;
-          return;
-        }
-        commit();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          e.currentTarget.blur(); // выход из ячейки → blur применит значение и запустит расчёт
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          skipCommitRef.current = true;
-          setDraft(savedValueRef.current !== null ? String(savedValueRef.current) : "");
-          e.currentTarget.blur();
-        }
-        e.stopPropagation();
-      }}
-      onClick={(e) => e.stopPropagation()}
-      onMouseDown={(e) => e.stopPropagation()}
-      aria-label={ariaLabel}
-    />
+    <span className="wb-cost-price-value">
+      {savedValue !== null ? String(savedValue) : <span className="wb-cost-price-empty">—</span>}
+    </span>
   );
 });
 
