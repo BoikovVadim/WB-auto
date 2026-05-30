@@ -97,5 +97,9 @@ export function useDashboardShellHandlers(input: Input) {
     onCloseSppSheet: closeSheet,
     onOpenAcquiringSheet: () => openSheet("acquiring"),
     onCloseAcquiringSheet: closeSheet,
+    onOpenMarginRubSheet: () => openSheet("margin-rub"),
+    onCloseMarginRubSheet: closeSheet,
+    onOpenMarginPercentSheet: () => openSheet("margin-percent"),
+    onCloseMarginPercentSheet: closeSheet,
   };
 }

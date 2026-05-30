@@ -78,6 +78,8 @@ type DashboardCatalogProductsSectionProps = {
   onOpenAdSpendSheet: () => void;
   onOpenSppSheet: () => void;
   onOpenAcquiringSheet: () => void;
+  onOpenMarginRubSheet: () => void;
+  onOpenMarginPercentSheet: () => void;
   onCostSaved: (nmId: number, value: number) => Promise<void>;
   onCostCleared: (nmIds: number[]) => Promise<void>;
   /** ⚠️ Запись новой цены «со скидкой» на маркетплейс WB. */
@@ -317,6 +319,8 @@ export const DashboardCatalogProductsSection = memo(
           costSum: props.onOpenCostSumSheet,
           adSpend: props.onOpenAdSpendSheet,
           acquiring: props.onOpenAcquiringSheet,
+          marginRub: props.onOpenMarginRubSheet,
+          marginPercent: props.onOpenMarginPercentSheet,
         },
       }),
       [
@@ -341,6 +345,8 @@ export const DashboardCatalogProductsSection = memo(
         props.onOpenCostSumSheet,
         props.onOpenAdSpendSheet,
         props.onOpenAcquiringSheet,
+        props.onOpenMarginRubSheet,
+        props.onOpenMarginPercentSheet,
       ],
     );
 

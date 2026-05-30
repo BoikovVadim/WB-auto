@@ -15,6 +15,7 @@ import { DashboardCostSumDetailSection } from "./DashboardCostSumDetailSection";
 import { DashboardAdSpendDetailSection } from "./DashboardAdSpendDetailSection";
 import { DashboardSppDetailSection } from "./DashboardSppDetailSection";
 import { DashboardAcquiringDetailSection } from "./DashboardAcquiringDetailSection";
+import { DashboardMarginDetailSection } from "./DashboardMarginDetailSection";
 import { DashboardPricesDetailSection } from "./DashboardPricesDetailSection";
 import { DashboardStocksDetailSection } from "./DashboardStocksDetailSection";
 import { DashboardBuyoutDetailSection } from "./DashboardBuyoutDetailSection";
@@ -120,6 +121,8 @@ export function WbDashboardShell({
   isAdSpendSheetOpen,
   isSppSheetOpen,
   isAcquiringSheetOpen,
+  isMarginRubSheetOpen,
+  isMarginPercentSheetOpen,
   onOpenCostPriceSheet,
   onCloseCostPriceSheet,
   onOpenOrdersSheet,
@@ -142,6 +145,10 @@ export function WbDashboardShell({
   onCloseSppSheet,
   onOpenAcquiringSheet,
   onCloseAcquiringSheet,
+  onOpenMarginRubSheet,
+  onCloseMarginRubSheet,
+  onOpenMarginPercentSheet,
+  onCloseMarginPercentSheet,
   onCostSaved,
   onCostCleared,
   onPriceSaved,
@@ -291,6 +298,18 @@ export function WbDashboardShell({
                 products={filteredProducts}
                 onBack={onCloseAcquiringSheet}
               />
+            ) : isMarginRubSheetOpen ? (
+              <DashboardMarginDetailSection
+                products={filteredProducts}
+                mode="rub"
+                onBack={onCloseMarginRubSheet}
+              />
+            ) : isMarginPercentSheetOpen ? (
+              <DashboardMarginDetailSection
+                products={filteredProducts}
+                mode="percent"
+                onBack={onCloseMarginPercentSheet}
+              />
             ) : (
               <DashboardCatalogProductsSection
                 hiddenColumns={activeSection === "unit-economics" ? UNIT_ECONOMICS_HIDDEN_COLUMNS : CATALOG_PRODUCTS_HIDDEN_COLUMNS}
@@ -335,6 +354,8 @@ export function WbDashboardShell({
                 onOpenAdSpendSheet={onOpenAdSpendSheet}
                 onOpenSppSheet={onOpenSppSheet}
                 onOpenAcquiringSheet={onOpenAcquiringSheet}
+                onOpenMarginRubSheet={onOpenMarginRubSheet}
+                onOpenMarginPercentSheet={onOpenMarginPercentSheet}
                 onCostSaved={onCostSaved}
                 onCostCleared={onCostCleared}
                 onPriceSaved={onPriceSaved}

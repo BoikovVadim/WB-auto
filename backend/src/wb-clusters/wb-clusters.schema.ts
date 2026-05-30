@@ -38,7 +38,10 @@ import {
 } from "./wb-clusters.schema.executor";
 import { getProductAcquiringWeeklyCreateStatements } from "./wb-clusters.schema.acquiring";
 import { getIndexStatements } from "./wb-clusters.schema.indexes";
-import { getUnitEconomicsSettingsCreateStatements } from "./wb-clusters.schema.unit-economics";
+import {
+  getUnitEconomicsMarginSnapshotCreateStatements,
+  getUnitEconomicsSettingsCreateStatements,
+} from "./wb-clusters.schema.unit-economics";
 import type { WbClustersSchemaContext } from "./wb-clusters.schema.types";
 
 export async function initializeWbClustersSchema(input: {
@@ -81,4 +84,5 @@ export async function initializeWbClustersSchema(input: {
   await executeSchemaStatements(context, getProductPriceChangesCreateStatements(context));
   await executeSchemaStatements(context, getProductAcquiringWeeklyCreateStatements(context));
   await executeSchemaStatements(context, getUnitEconomicsSettingsCreateStatements(context));
+  await executeSchemaStatements(context, getUnitEconomicsMarginSnapshotCreateStatements(context));
 }

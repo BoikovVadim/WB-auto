@@ -38,6 +38,23 @@ export class UnitEconomicsController {
     return this.unitEconomicsService.getAcquiringMatrix();
   }
 
+  /** Ретроспектива маржи: товары × даты (сегодня live + закрытые дни из снапшота). */
+  @Get("margin-matrix")
+  getMarginMatrix() {
+    return this.unitEconomicsService.getMarginMatrix();
+  }
+
+  /**
+   * Ручная материализация снапшота маржи за вчера (для проверки/добивки). Обычно
+   * запускается ночным cron'ом; здесь — write-guarded ручной триггер.
+   */
+  @Post("margin-snapshot-run")
+  @UseGuards(WbClustersWriteGuard)
+  @HttpCode(200)
+  runMarginSnapshot() {
+    return this.unitEconomicsService.materializeMarginSnapshotForYesterday();
+  }
+
   /**
    * Калькуляторы маржи/цены: по введённым per-товар целевой марже и/или цене сервер
    * считает обратную величину на том же базисе, что и колонка маржи. Read-only расчёт

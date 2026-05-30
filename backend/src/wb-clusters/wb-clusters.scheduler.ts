@@ -4,6 +4,7 @@ import { Cron } from "@nestjs/schedule";
 import { appEnv } from "../common/env";
 import { AcquiringSyncService } from "./acquiring-sync.service";
 import { ProductCatalogService } from "./product-catalog.service";
+import { UnitEconomicsService } from "./unit-economics.service";
 import { WbClustersService } from "./wb-clusters.service";
 
 @Injectable()
@@ -14,6 +15,7 @@ export class WbClustersScheduler implements OnModuleInit {
     private readonly wbClustersService: WbClustersService,
     private readonly productCatalogService: ProductCatalogService,
     private readonly acquiringSyncService: AcquiringSyncService,
+    private readonly unitEconomicsService: UnitEconomicsService,
   ) {}
 
   async onModuleInit() {
@@ -327,4 +329,16 @@ export class WbClustersScheduler implements OnModuleInit {
       .catch((err: Error) => this.logger.warn(`Acquiring sync error: ${err.message}`));
   }
 
+  // ─── Маржа (дневной снапшот ретроспективы) ───────────────────────────────────
+  //
+  // Раз в сутки в 05:30 МСК фиксируем маржу за вчера (₽/%) той же формулой, что и колонка.
+  // После синка эквайринга (05:07), чтобы взять самый свежий фактический % эквайринга.
+  // Серия копится вперёд от запуска; backfill истории не делаем (маржа зависит от текущих
+  // настроек/цены/с-с). «Сегодня» считается на лету в сервисе, в снапшоте его нет.
+  @Cron("0 30 5 * * *")
+  async handleMarginSnapshot() {
+    await this.unitEconomicsService
+      .materializeMarginSnapshotForYesterday()
+      .catch((err: Error) => this.logger.warn(`Margin snapshot error: ${err.message}`));
+  }
 }

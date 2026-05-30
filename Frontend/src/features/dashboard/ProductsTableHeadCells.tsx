@@ -32,6 +32,8 @@ export type ProductsHeaderRenderCtx = {
     costSum: () => void;
     adSpend: () => void;
     acquiring: () => void;
+    marginRub: () => void;
+    marginPercent: () => void;
   };
 };
 
@@ -147,9 +149,9 @@ export function renderProductsHeaderCell(
       case "drr":
         return renderSortOnlyHeader("ДРР", "drr");
       case "marginRub":
-        return renderSortOnlyHeader("Маржа, ₽", "marginRub");
+        return renderSheetHeader("Маржа, ₽", "marginRub", ctx.sheets.marginRub, "Открыть ретроспективу маржи, ₽");
       case "marginPercent":
-        return renderSortOnlyHeader("Маржа, %", "marginPercent");
+        return renderSheetHeader("Маржа, %", "marginPercent", ctx.sheets.marginPercent, "Открыть ретроспективу маржи, %");
       case "targetMargin":
         return renderPlainHeader("Целевая маржа, %");
       case "priceForMargin":

@@ -100,6 +100,31 @@ export async function fetchAcquiringMatrix(): Promise<AcquiringMatrix> {
   return response.data ?? { weeks: [], products: [] };
 }
 
+// ─── Ретроспектива маржи (товары × даты, ₽ и %) ───────────────────────────────
+
+export type MarginMatrix = {
+  /** Сегодня (Москва) — первая дата в dates, считается на лету. */
+  today: string;
+  /** Даты DESC: dates[0] = today (live), остальные — закрытые дни снапшота. */
+  dates: string[];
+  products: {
+    nmId: number;
+    /** Маржа, ₽ на единицу за дату (null — нет с/с / нет данных за день). */
+    marginRub: (number | null)[];
+    /** Маржа, % к цене со скидкой за дату. */
+    marginPercent: (number | null)[];
+    /** Цена со скидкой за дату — база взвешенного «Итого, %». */
+    priceWithDiscount: (number | null)[];
+  }[];
+};
+
+export async function fetchMarginMatrix(): Promise<MarginMatrix> {
+  const response = await apiClient.get<MarginMatrix>(
+    "/wb-clusters/unit-economics/margin-matrix",
+  );
+  return response.data ?? { today: "", dates: [], products: [] };
+}
+
 // ─── Калькуляторы маржи/цены (на едином базисе колонки маржи, считает бэк) ─────
 
 export type UnitEconomicsCalcInput = {

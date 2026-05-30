@@ -51,6 +51,8 @@ export function useDashboardSheets(input: {
     isAdSpendSheetOpen: inProductsWorkspace && activeSheet === "ad-spend",
     isSppSheetOpen: inProductsWorkspace && activeSheet === "spp",
     isAcquiringSheetOpen: inProductsWorkspace && activeSheet === "acquiring",
+    isMarginRubSheetOpen: inProductsWorkspace && activeSheet === "margin-rub",
+    isMarginPercentSheetOpen: inProductsWorkspace && activeSheet === "margin-percent",
     openSheet,
     closeSheet,
   };

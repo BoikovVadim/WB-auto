@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 
 import { WbClustersRepository } from "./wb-clusters.repository";
+import type { MarginSnapshotRow } from "./wb-clusters.repository.margin-snapshot";
 import type { GlobalPercentMetric } from "./wb-clusters.repository.unit-economics";
 
 export type UnitEconomicsSubjectSetting = {
@@ -23,6 +24,23 @@ export type AcquiringMatrix = {
     percents: (number | null)[];
     fees: number[];
     retails: number[];
+  }[];
+};
+
+/**
+ * Ретроспектива маржи: товары × даты. dates отсортированы DESC, dates[0] = today (Москва,
+ * считается на лету), остальные — закрытые дни из снапшота. По товару выровненные с dates
+ * массивы marginRub/marginPercent/priceWithDiscount (цена нужна фронту для взвешенного
+ * «Итого, %»). Всё считается на сервере (одна формула marginAt), фронт только рисует.
+ */
+export type MarginMatrix = {
+  today: string;
+  dates: string[];
+  products: {
+    nmId: number;
+    marginRub: (number | null)[];
+    marginPercent: (number | null)[];
+    priceWithDiscount: (number | null)[];
   }[];
 };
 
@@ -356,5 +374,90 @@ export class UnitEconomicsService {
     }
 
     return { weeks, products: Array.from(byNmId.values()) };
+  }
+
+  /**
+   * Материализует снапшот маржи за закрытый «вчера» (Москва): считает текущую маржу той же
+   * формулой, что и колонка/калькулятор (marginAt по эффективной цене и с/с), и апсертит
+   * строку на товар. Товары без себестоимости пропускаются (маржа не определена). Серия
+   * копится вперёд от запуска, backfill истории не делаем (см. схему таблицы). Идемпотентно.
+   */
+  async materializeMarginSnapshotForYesterday(): Promise<{
+    rowsWritten: number;
+    snapshotDate: string;
+  }> {
+    if (!this.repository.isConfigured()) return { rowsWritten: 0, snapshotDate: "" };
+    await this.repository.ensureSchema();
+    const [snapshotDate, base] = await Promise.all([
+      this.repository.getMoscowDate(-1),
+      this.loadUnitEconomicsBase(),
+    ]);
+
+    const rows: MarginSnapshotRow[] = [];
+    for (const [nmId, b] of base) {
+      if (b.cost == null) continue; // без с/с маржа не определена
+      const { marginRub, marginPercent } = marginAt(b.priceWithDiscount, b.cost, b);
+      rows.push({ nmId, priceWithDiscount: b.priceWithDiscount, marginRub, marginPercent });
+    }
+    const rowsWritten = await this.repository.upsertMarginSnapshotRows(snapshotDate, rows);
+    return { rowsWritten, snapshotDate };
+  }
+
+  /**
+   * Ретроспектива маржи (товары × даты) для листа VirtualMatrixTable. Закрытые дни берёт
+   * из снапшота, «сегодня» считает на лету (та же формула, что у колонки маржи), и ставит
+   * его первой датой. priceWithDiscount возвращается per-cell, чтобы фронт считал взвешенный
+   * «Итого, %» (Σмаржа₽ / Σцены × 100), как в inline-колонке.
+   */
+  async getMarginMatrix(): Promise<MarginMatrix> {
+    if (!this.repository.isConfigured()) return { today: "", dates: [], products: [] };
+    await this.repository.ensureSchema();
+    const [snapshot, today, base] = await Promise.all([
+      this.repository.getMarginSnapshotMatrix(),
+      this.repository.getMoscowDate(0),
+      this.loadUnitEconomicsBase(),
+    ]);
+
+    // Закрытые дни снапшота без сегодня (на случай ручного снапшота за сегодня) — DESC.
+    const pastDates = snapshot.dates.filter((d) => d !== today);
+    const pastSnapshotIdx = pastDates.map((d) => snapshot.dates.indexOf(d));
+    const dates = [today, ...pastDates];
+
+    // «Сегодня» на лету: маржа по эффективной цене и с/с (товары без с/с — нет данных).
+    const todayByNmId = new Map<number, { marginRub: number; marginPercent: number | null; price: number }>();
+    for (const [nmId, b] of base) {
+      if (b.cost == null) continue;
+      const { marginRub, marginPercent } = marginAt(b.priceWithDiscount, b.cost, b);
+      todayByNmId.set(nmId, { marginRub, marginPercent, price: b.priceWithDiscount });
+    }
+
+    const snapByNmId = new Map(snapshot.products.map((p) => [p.nmId, p]));
+    const nmIds = new Set<number>([...todayByNmId.keys(), ...snapByNmId.keys()]);
+
+    const products: MarginMatrix["products"] = [];
+    for (const nmId of nmIds) {
+      const marginRub = new Array<number | null>(dates.length).fill(null);
+      const marginPercent = new Array<number | null>(dates.length).fill(null);
+      const priceWithDiscount = new Array<number | null>(dates.length).fill(null);
+
+      const t = todayByNmId.get(nmId);
+      if (t) {
+        marginRub[0] = t.marginRub;
+        marginPercent[0] = t.marginPercent;
+        priceWithDiscount[0] = t.price;
+      }
+      const snap = snapByNmId.get(nmId);
+      if (snap) {
+        for (let i = 0; i < pastDates.length; i++) {
+          const si = pastSnapshotIdx[i]!;
+          marginRub[i + 1] = snap.marginRub[si] ?? null;
+          marginPercent[i + 1] = snap.marginPercent[si] ?? null;
+          priceWithDiscount[i + 1] = snap.priceWithDiscount[si] ?? null;
+        }
+      }
+      products.push({ nmId, marginRub, marginPercent, priceWithDiscount });
+    }
+
+    return { today, dates, products };
   }
 }

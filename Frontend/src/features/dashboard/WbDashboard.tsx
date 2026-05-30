@@ -121,6 +121,8 @@ export function WbDashboard() {
     isAdSpendSheetOpen,
     isSppSheetOpen,
     isAcquiringSheetOpen,
+    isMarginRubSheetOpen,
+    isMarginPercentSheetOpen,
     openSheet,
     closeSheet,
   } = useDashboardSheets({
@@ -431,6 +433,8 @@ export function WbDashboard() {
       isAdSpendSheetOpen={isAdSpendSheetOpen}
       isSppSheetOpen={isSppSheetOpen}
       isAcquiringSheetOpen={isAcquiringSheetOpen}
+      isMarginRubSheetOpen={isMarginRubSheetOpen}
+      isMarginPercentSheetOpen={isMarginPercentSheetOpen}
       orderCounts={orderCounts}
       ordersMatrix={ordersMatrix}
       buyoutCounts={buyoutCounts}

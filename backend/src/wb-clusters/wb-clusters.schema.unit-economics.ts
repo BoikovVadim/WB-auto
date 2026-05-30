@@ -74,3 +74,35 @@ export function getUnitEconomicsSettingsCreateStatements({
     `,
   ];
 }
+
+/**
+ * Ретроспектива маржи: дневной снапшот маржи на товар (₽ и %).
+ *
+ * wb_product_margin_daily_snapshot(nm_id, snapshot_date, ...) — одна строка на товар
+ * на закрытый день. Маржа зависит от ТЕКУЩИХ настроек (комиссия/эквайринг/ДРР/налог),
+ * с/с и эффективной цены, и по прошлым дням достоверно не восстанавливается (глобальные
+ * %-метрики хранятся одной строкой без истории). Поэтому, как и «С/с продаж», серия НЕ
+ * бэкфилится: ночной cron материализует только закрытый «вчера», ретроспектива стартует
+ * с момента запуска и копится вперёд. «Сегодня» считается на лету в сервисе (та же формула).
+ *
+ * price_with_discount хранится рядом с маржой, чтобы «Итого, %» по столбцу-дате считался
+ * взвешенно (Σмаржа₽ / Σцены × 100), как в inline-колонке «Маржа, %».
+ */
+export function getUnitEconomicsMarginSnapshotCreateStatements({
+  tableName,
+}: WbClustersSchemaContext): string[] {
+  const tbl = tableName("wb_product_margin_daily_snapshot");
+  return [
+    `
+      CREATE TABLE IF NOT EXISTS ${tbl} (
+        nm_id               BIGINT        NOT NULL,
+        snapshot_date       DATE          NOT NULL,
+        price_with_discount NUMERIC(12,2) NOT NULL,
+        margin_rub          NUMERIC(12,2) NOT NULL,
+        margin_percent      NUMERIC(7,2)  NULL,
+        updated_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (nm_id, snapshot_date)
+      )
+    `,
+  ];
+}
