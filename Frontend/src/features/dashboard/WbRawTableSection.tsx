@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 import type { WbRawTable } from "../../api/syncClient";
 import { ui } from "./copy";
@@ -31,18 +32,7 @@ export function WbRawTableSection(props: { table: WbRawTable; cacheKey: string }
   const [savedColumns, setSavedColumns] = useState<string[]>([]);
   const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [scrollTop, setScrollTop] = useState(0);
-  const scrollTopRef = useRef(0);
-  const scrollRafRef = useRef(0);
-  const [viewportHeight, setViewportHeight] = useState(480);
 
-  const handleScroll = useCallback((value: number) => {
-    scrollTopRef.current = value;
-    cancelAnimationFrame(scrollRafRef.current);
-    scrollRafRef.current = requestAnimationFrame(() => {
-      setScrollTop(scrollTopRef.current);
-    });
-  }, []);
   const columns = useMemo(
     () => applyStoredRawColumnOrder(detectedColumns, savedColumns),
     [detectedColumns, savedColumns],
@@ -56,20 +46,23 @@ export function WbRawTableSection(props: { table: WbRawTable; cacheKey: string }
 
     return flattenedRows.filter((row) => matchesRawTableSearch(row, normalizedQuery));
   }, [flattenedRows, searchQuery]);
+
+  // Виртуализация строк через @tanstack/react-virtual: окно считается от scrollTop
+  // контейнера в том же кадре (без rAF-throttle, который отставал на кадр при флинге).
   const rowHeight = 24;
-  const overscanRows = 8;
-  const visibleRowCount = Math.max(
-    1,
-    Math.ceil(viewportHeight / rowHeight) + overscanRows * 2,
-  );
-  const startRowIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - overscanRows);
-  const endRowIndex = Math.min(filteredRows.length, startRowIndex + visibleRowCount);
-  const visibleRows = useMemo(
-    () => filteredRows.slice(startRowIndex, endRowIndex),
-    [filteredRows, startRowIndex, endRowIndex],
-  );
-  const topSpacerHeight = startRowIndex * rowHeight;
-  const bottomSpacerHeight = Math.max(0, (filteredRows.length - endRowIndex) * rowHeight);
+  const rowVirt = useVirtualizer({
+    count: filteredRows.length,
+    getScrollElement: () => tableWrapRef.current,
+    estimateSize: () => rowHeight,
+    overscan: 16,
+  });
+  const virtualItems = rowVirt.getVirtualItems();
+  const totalSize = rowVirt.getTotalSize();
+  const topSpacerHeight = virtualItems.length > 0 ? (virtualItems[0]?.start ?? 0) : 0;
+  const bottomSpacerHeight =
+    virtualItems.length > 0
+      ? totalSize - (virtualItems[virtualItems.length - 1]?.end ?? 0)
+      : 0;
 
   useEffect(() => {
     setSavedColumns(readStoredRawColumnOrder(storageKey, detectedColumns));
@@ -84,35 +77,11 @@ export function WbRawTableSection(props: { table: WbRawTable; cacheKey: string }
   }, [storageKey, savedColumns]);
 
   useEffect(() => {
-    const element = tableWrapRef.current;
-    if (!element) {
-      return;
-    }
-
-    const updateViewportHeight = () => {
-      setViewportHeight(element.clientHeight || 480);
-    };
-
-    updateViewportHeight();
-
-    if (typeof ResizeObserver === "undefined") {
-      return;
-    }
-
-    const resizeObserver = new ResizeObserver(() => {
-      updateViewportHeight();
-    });
-    resizeObserver.observe(element);
-
-    return () => resizeObserver.disconnect();
-  }, [filteredRows.length]);
-
-  useEffect(() => {
-    setScrollTop(0);
+    rowVirt.scrollToOffset(0);
     if (tableWrapRef.current) {
       tableWrapRef.current.scrollTop = 0;
     }
-  }, [searchQuery, props.cacheKey]);
+  }, [searchQuery, props.cacheKey, rowVirt]);
 
   function handleMoveColumn(sourceColumn: string, targetColumn: string) {
     if (sourceColumn === targetColumn) {
@@ -168,11 +137,8 @@ export function WbRawTableSection(props: { table: WbRawTable; cacheKey: string }
       </div>
 
       {filteredRows.length > 0 && columns.length > 0 ? (
-        <div
-          ref={tableWrapRef}
-          className="wb-table-wrap"
-          onScroll={(event) => handleScroll(event.currentTarget.scrollTop)}
-        >
+        <div ref={tableWrapRef} className="wb-table-wrap">
+
           <table className="wb-data-table wb-data-table--compact">
             <thead>
               <tr>
@@ -208,20 +174,24 @@ export function WbRawTableSection(props: { table: WbRawTable; cacheKey: string }
                   <td colSpan={columns.length} style={{ height: `${topSpacerHeight}px` }} />
                 </tr>
               ) : null}
-              {visibleRows.map((row, rowIndex) => (
-                <tr key={`${props.table.id}-${startRowIndex + rowIndex}`}>
-                  {columns.map((column, columnIndex) => (
-                    <td
-                      key={`${props.table.id}-${startRowIndex + rowIndex}-${column}`}
-                      className={`${getRawTableColumnClass(columnIndex, column)} ${
-                        isNumericTableValue(row[column]) ? "wb-table-cell--numeric" : ""
-                      }`.trim()}
-                    >
-                      <span className="wb-raw-cell">{formatRawCellValue(row[column])}</span>
-                    </td>
-                  ))}
-                </tr>
-              ))}
+              {virtualItems.map((vi) => {
+                const row = filteredRows[vi.index];
+                if (!row) return null;
+                return (
+                  <tr key={`${props.table.id}-${vi.index}`} style={{ height: `${rowHeight}px` }}>
+                    {columns.map((column, columnIndex) => (
+                      <td
+                        key={`${props.table.id}-${vi.index}-${column}`}
+                        className={`${getRawTableColumnClass(columnIndex, column)} ${
+                          isNumericTableValue(row[column]) ? "wb-table-cell--numeric" : ""
+                        }`.trim()}
+                      >
+                        <span className="wb-raw-cell">{formatRawCellValue(row[column])}</span>
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
               {bottomSpacerHeight > 0 ? (
                 <tr className="wb-virtual-spacer-row" aria-hidden="true">
                   <td colSpan={columns.length} style={{ height: `${bottomSpacerHeight}px` }} />

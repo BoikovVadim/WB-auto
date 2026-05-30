@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { memo, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+
 import { mutedStyle, tdStyle, thStyle } from "./RawTableSection.styles";
 
 export type ColumnDef<T> = {
@@ -12,7 +14,13 @@ export type ColumnDef<T> = {
 
 type SortDir = "asc" | "desc";
 
-const PAGE_SIZE = 1000;
+// Фикс. высота строки → виртуализатору не нужен measureElement (точная математика
+// спейсеров без дрейфа). Ячейки single-line (nowrap + ellipsis), поэтому высота
+// детерминирована: padding 7+7 + border 1 + строка ≈ 34px.
+const ROW_H = 34;
+// Дефолтная «ширина-пропорция» колонки для table-layout:fixed. С width:100% это
+// работает как доля: числовые узкие, текстовые (имя/кластер) — шире (см. consumers).
+const DEFAULT_COL_WIDTH = 100;
 
 type RawTableSectionProps<T> = {
   title: string;
@@ -34,6 +42,27 @@ type RawTableSectionProps<T> = {
   defaultSortDir?: SortDir;
 };
 
+// ── Мемо-строка тела ────────────────────────────────────────────────────────
+// При скролле виртуализатор перерисовывает родителя, но `row`/`columns` стабильны
+// (массив строк меняется только на смену данных/сортировки/поиска, а не на скролл)
+// → строки в окне «бейлятся» из reconcile. Только реально входящие рендерятся.
+type RawRowProps<T> = { row: T; columns: ColumnDef<T>[] };
+
+function RawTableRowInner<T>({ row, columns }: RawRowProps<T>) {
+  return (
+    <tr style={{ height: ROW_H }}>
+      {columns.map((col) => (
+        <td key={col.key} style={tdStyle}>
+          {col.render(row)}
+        </td>
+      ))}
+    </tr>
+  );
+}
+
+// memo с дефолтным shallow-compare (row/columns — стабильные ссылки при скролле).
+const RawTableRow = memo(RawTableRowInner) as <T>(p: RawRowProps<T>) => ReactElement;
+
 export function RawTableSection<T>({
   title,
   subtitle,
@@ -53,9 +82,10 @@ export function RawTableSection<T>({
   const [isLoading, setIsLoading] = useState(() => initialData == null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<string | null>(defaultSortKey ?? null);
   const [sortDir, setSortDir] = useState<SortDir>(defaultSortDir);
+
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (initialData != null && refetchKey === 0) {
@@ -64,15 +94,12 @@ export function RawTableSection<T>({
     setIsLoading(true);
     setError(null);
     fetchData()
-      .then((data) => { setRows(data); setPage(1); })
+      .then((data) => { setRows(data); })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : "Ошибка загрузки");
       })
       .finally(() => setIsLoading(false));
   }, [fetchData, refetchKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Reset page when search changes
-  useEffect(() => { setPage(1); }, [search]);
 
   const filtered = useMemo(() => {
     let result = filterRow && search
@@ -97,9 +124,38 @@ export function RawTableSection<T>({
     return result;
   }, [rows, filterRow, search, sortKey, sortDir, columns]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  // Виртуализация строк — в DOM только видимое окно (~30 строк) независимо от
+  // объёма (1000-5000+). Спейсеры сверху/снизу держат высоту скролла.
+  const rowVirt = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW_H,
+    overscan: 12,
+  });
+  const virtualItems = rowVirt.getVirtualItems();
+  const totalSize = rowVirt.getTotalSize();
+  const paddingTop = virtualItems.length > 0 ? (virtualItems[0]?.start ?? 0) : 0;
+  const paddingBottom =
+    virtualItems.length > 0
+      ? totalSize - (virtualItems[virtualItems.length - 1]?.end ?? 0)
+      : 0;
+
+  // Смена поиска/сортировки → к началу списка (как раньше пагинация сбрасывала на стр. 1).
+  useEffect(() => {
+    rowVirt.scrollToOffset(0);
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [search, sortKey, sortDir, rowVirt]);
+
+  // Сумма «ширин-пропорций» → minWidth таблицы: при узком контейнере включается
+  // горизонтальный скролл, при широком — fixed-layout распределяет по долям.
+  const totalColWidth = useMemo(
+    () =>
+      columns.reduce((sum, c) => {
+        const w = typeof c.width === "number" ? c.width : DEFAULT_COL_WIDTH;
+        return sum + w;
+      }, 0),
+    [columns],
+  );
 
   function handleSort(key: string) {
     if (sortKey === key) {
@@ -108,7 +164,6 @@ export function RawTableSection<T>({
       setSortKey(key);
       setSortDir("desc");
     }
-    setPage(1);
   }
 
   const sortIndicator = (key: string) => {
@@ -159,68 +214,69 @@ export function RawTableSection<T>({
         ) : filtered.length === 0 ? (
           <p style={{ ...mutedStyle, padding: "24px 0" }}>Данных нет</p>
         ) : (
-          <>
-            <div style={{ overflowX: "auto" }}>
-              <table
-                className="wb-data-table"
-                style={{ width: "100%", borderCollapse: "collapse" }}
-              >
-                <thead>
-                  <tr>
-                    {columns.map((col) => (
-                      <th
-                        key={col.key}
-                        style={{
-                          ...thStyle,
-                          width: col.width,
-                          cursor: col.sortValue ? "pointer" : "default",
-                          userSelect: "none",
-                        }}
-                        onClick={col.sortValue ? () => handleSort(col.key) : undefined}
-                      >
-                        {col.label}{col.sortValue && sortIndicator(col.key)}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageRows.map((row) => (
-                    <tr key={getRowKey(row)}>
-                      {columns.map((col) => (
-                        <td key={col.key} style={tdStyle} title="">
-                          {col.render(row)}
-                        </td>
-                      ))}
-                    </tr>
+          <div ref={scrollRef} className="wb-table-wrap">
+            <table
+              className="wb-data-table"
+              style={{
+                // border-collapse НЕ трогаем: .wb-data-table ставит separate +
+                // border-spacing:0 намеренно — collapse ломает фон sticky-шапки.
+                width: "100%",
+                minWidth: totalColWidth,
+                tableLayout: "fixed",
+              }}
+            >
+              <colgroup>
+                {columns.map((col) => (
+                  <col
+                    key={col.key}
+                    style={{ width: col.width ?? DEFAULT_COL_WIDTH }}
+                  />
+                ))}
+              </colgroup>
+              <thead>
+                <tr>
+                  {columns.map((col) => (
+                    <th
+                      key={col.key}
+                      style={{
+                        ...thStyle,
+                        cursor: col.sortValue ? "pointer" : "default",
+                        userSelect: "none",
+                      }}
+                      onClick={col.sortValue ? () => handleSort(col.key) : undefined}
+                    >
+                      {col.label}{col.sortValue && sortIndicator(col.key)}
+                    </th>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </tr>
+              </thead>
+              <tbody>
+                {paddingTop > 0 && (
+                  <tr aria-hidden style={{ height: paddingTop }}>
+                    <td colSpan={columns.length} style={{ padding: 0, border: "none" }} />
+                  </tr>
+                )}
+                {virtualItems.map((vi) => {
+                  const row = filtered[vi.index];
+                  if (!row) return null;
+                  return <RawTableRow key={getRowKey(row)} row={row} columns={columns} />;
+                })}
+                {paddingBottom > 0 && (
+                  <tr aria-hidden style={{ height: paddingBottom }}>
+                    <td colSpan={columns.length} style={{ padding: 0, border: "none" }} />
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0 0", flexWrap: "wrap" }}>
-              <span style={{ ...mutedStyle, fontSize: 11 }}>
-                Страница {safePage} / {totalPages} · показано {pageRows.length} из {filtered.length} строк (всего {rows.length})
-              </span>
-              <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
-                <button
-                  className="wb-secondary-button"
-                  style={{ padding: "3px 10px", fontSize: 12 }}
-                  disabled={safePage <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  ← Назад
-                </button>
-                <button
-                  className="wb-secondary-button"
-                  style={{ padding: "3px 10px", fontSize: 12 }}
-                  disabled={safePage >= totalPages}
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                >
-                  Вперёд →
-                </button>
-              </div>
-            </div>
-          </>
+        {!isLoading && filtered.length > 0 && (
+          <div style={{ padding: "10px 0 0" }}>
+            <span style={{ ...mutedStyle, fontSize: 11 }}>
+              Показано {filtered.length} строк (всего загружено {rows.length})
+            </span>
+          </div>
         )}
       </section>
     </div>
