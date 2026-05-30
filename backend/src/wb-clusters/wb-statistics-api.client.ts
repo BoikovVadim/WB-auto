@@ -180,49 +180,6 @@ export class WbStatisticsApiClient {
   }
 
   /**
-   * Downloads ALL orders changed since `dateFrom` using flag=0 (lastChangeDate cursor).
-   * One request covers everything — no per-day calls, no nmId batching.
-   * Paginates automatically if WB returns a full 80k-row page.
-   *
-   * The `date` field in each row contains the actual order placement date in Moscow timezone.
-   * Aggregation is done via SQL after inserting raw rows into wb_orders_raw.
-   */
-  /**
-   * Downloads ALL orders changed since dateFrom using flag=0 (sorted by lastChangeDate).
-   * flag=0: returns all orders where lastChangeDate >= dateFrom, covering ALL statuses.
-   * For a 7-day window with ~1500 orders/day the response is ~10k rows (well under 80k limit).
-   * Paginates automatically if the response hits the 80k-row limit.
-   *
-   * Note: flag=1 returns orders for a SINGLE calendar day only (= date of dateFrom).
-   * For a multi-day range flag=0 is the correct choice.
-   */
-  async fetchAllOrdersByDate(dateFrom: Date): Promise<WbOrderRow[]> {
-    await this.throttle();
-    const rows = await this.fetchOrdersPage(dateFrom, 0);
-
-    if (rows.length < 80000) return rows;
-
-    // Paginate: keep fetching while WB returns full pages
-    const allRows = [...rows];
-    let cursor = new Date(rows[rows.length - 1]!.lastChangeDate);
-
-    for (;;) {
-      await this.throttle();
-      const page = await this.fetchOrdersPage(cursor, 0);
-      if (page.length === 0) break;
-      allRows.push(...page);
-      if (page.length < 80000) break;
-      const last = page[page.length - 1];
-      if (!last) break;
-      const next = new Date(last.lastChangeDate);
-      if (isNaN(next.getTime()) || next <= cursor) break;
-      cursor = next;
-    }
-
-    return allRows;
-  }
-
-  /**
    * Fetches all orders placed on a specific Moscow calendar date using flag=1.
    * WB Statistics API flag=1: returns orders for the exact date derived from dateFrom.
    * One call per day — the correct way to get accurate gross order counts per day.
