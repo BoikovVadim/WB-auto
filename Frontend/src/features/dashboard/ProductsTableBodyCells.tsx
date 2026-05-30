@@ -23,6 +23,7 @@ export type ProductsBodyRenderCtx = {
   adSpendValues: Map<number, number>;
   sppValues: Map<number, number>;
   commissionValues: Map<number, number>;
+  taxValues: Map<number, number>;
   acquiringValues: Map<number, number>;
   drrValues: Map<number, number>;
   marginRubValues: Map<number, number>;
@@ -127,6 +128,8 @@ export function renderProductsBodyCell(
       );
     case "commission":
       return moneyCell(key, nmId !== null ? ctx.commissionValues.get(nmId) : undefined, false);
+    case "tax":
+      return moneyCell(key, nmId !== null ? ctx.taxValues.get(nmId) : undefined, false);
     case "acquiring":
       return moneyCell(key, nmId !== null ? ctx.acquiringValues.get(nmId) : undefined, false);
     case "drr":

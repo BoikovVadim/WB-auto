@@ -7,6 +7,8 @@ import { fetchUnitEconomicsCharges } from "../../api/syncClientUnitEconomics";
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 
 export type UseUnitEconomicsChargesResult = {
+  /** Налог в ₽ на товар (глобальный % × цена со скидкой). Считается на бэке. */
+  taxValues: Map<number, number>;
   /** Комиссия в ₽ на товар (по категории × цена со скидкой). Считается на бэке. */
   commissionValues: Map<number, number>;
   /** Эквайринг в ₽ на товар (глобальный % × цена со скидкой). Считается на бэке. */
@@ -21,6 +23,7 @@ export type UseUnitEconomicsChargesResult = {
 };
 
 export function useUnitEconomicsCharges(): UseUnitEconomicsChargesResult {
+  const [taxValues, setTaxValues] = useState<Map<number, number>>(new Map());
   const [commissionValues, setCommissionValues] = useState<Map<number, number>>(new Map());
   const [acquiringValues, setAcquiringValues] = useState<Map<number, number>>(new Map());
   const [drrValues, setDrrValues] = useState<Map<number, number>>(new Map());
@@ -32,18 +35,21 @@ export function useUnitEconomicsCharges(): UseUnitEconomicsChargesResult {
     fetchUnitEconomicsCharges()
       .then((items) => {
         if (!isMountedRef.current) return;
+        const tax = new Map<number, number>();
         const commission = new Map<number, number>();
         const acquiring = new Map<number, number>();
         const drr = new Map<number, number>();
         const marginRub = new Map<number, number>();
         const marginPercent = new Map<number, number>();
         for (const item of items) {
+          if (item.taxRub !== null) tax.set(item.nmId, item.taxRub);
           if (item.commissionRub !== null) commission.set(item.nmId, item.commissionRub);
           if (item.acquiringRub !== null) acquiring.set(item.nmId, item.acquiringRub);
           if (item.drrRub !== null) drr.set(item.nmId, item.drrRub);
           if (item.marginRub !== null) marginRub.set(item.nmId, item.marginRub);
           if (item.marginPercent !== null) marginPercent.set(item.nmId, item.marginPercent);
         }
+        setTaxValues(tax);
         setCommissionValues(commission);
         setAcquiringValues(acquiring);
         setDrrValues(drr);
@@ -68,6 +74,7 @@ export function useUnitEconomicsCharges(): UseUnitEconomicsChargesResult {
   }, [load]);
 
   return {
+    taxValues,
     commissionValues,
     acquiringValues,
     drrValues,

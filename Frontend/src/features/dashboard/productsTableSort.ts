@@ -10,6 +10,7 @@ export type LocalSortKey =
   | "cost"
   | "price"
   | "commission"
+  | "tax"
   | "acquiring"
   | "drr"
   | "marginRub"
@@ -35,6 +36,7 @@ type SortMaps = {
   adSpendValues: Map<number, number>;
   sppValues: Map<number, number>;
   commissionValues: Map<number, number>;
+  taxValues: Map<number, number>;
   acquiringValues: Map<number, number>;
   drrValues: Map<number, number>;
   marginRubValues: Map<number, number>;
@@ -42,13 +44,13 @@ type SortMaps = {
 };
 
 // Числовое значение товара для локальной сортировки. «Нет данных» для buyout/spp/
-// commission/acquiring/drr = -1 (валидный 0 сортируется выше отсутствующего); для маржи
+// commission/tax/acquiring/drr = -1 (валидный 0 сортируется выше отсутствующего); для маржи
 // = -Infinity (она бывает отрицательной, -1 был бы валидным значением); для остальных — 0.
 function localSortValue(product: ProductListItem, key: LocalSortKey, maps: SortMaps): number {
   const nmId = product.nmId;
   if (nmId === null) {
     if (key === "marginRub" || key === "marginPercent") return Number.NEGATIVE_INFINITY;
-    return key === "buyout" || key === "spp" || key === "commission" || key === "acquiring" || key === "drr"
+    return key === "buyout" || key === "spp" || key === "commission" || key === "tax" || key === "acquiring" || key === "drr"
       ? -1
       : 0;
   }
@@ -74,6 +76,8 @@ function localSortValue(product: ProductListItem, key: LocalSortKey, maps: SortM
       return maps.adSpendValues.get(nmId) ?? 0;
     case "commission":
       return maps.commissionValues.get(nmId) ?? -1;
+    case "tax":
+      return maps.taxValues.get(nmId) ?? -1;
     case "acquiring":
       return maps.acquiringValues.get(nmId) ?? -1;
     case "drr":

@@ -89,6 +89,7 @@ export type WbDashboardShellProps = {
   adSpendMatrix: import("./useAdSpendMatrix").AdSpendMatrix;
   sppValues: Map<number, number>;
   sppMatrix: import("./useSppMatrix").SppMatrix;
+  taxValues: Map<number, number>;
   commissionValues: Map<number, number>;
   acquiringValues: Map<number, number>;
   drrValues: Map<number, number>;

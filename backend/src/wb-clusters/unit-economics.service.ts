@@ -10,12 +10,14 @@ export type UnitEconomicsSubjectSetting = {
 
 export type UnitEconomicsSettings = {
   subjects: UnitEconomicsSubjectSetting[];
+  taxPercent: number | null;
   acquiringPercent: number | null;
   drrPercent: number | null;
 };
 
 export type UnitEconomicsChargeItem = {
   nmId: number;
+  taxRub: number | null;
   commissionRub: number | null;
   acquiringRub: number | null;
   drrRub: number | null;
@@ -25,7 +27,7 @@ export type UnitEconomicsChargeItem = {
   marginPercent: number | null;
 };
 
-const GLOBAL_PERCENT_METRICS: readonly GlobalPercentMetric[] = ["acquiring", "drr"];
+const GLOBAL_PERCENT_METRICS: readonly GlobalPercentMetric[] = ["tax", "acquiring", "drr"];
 
 function assertGlobalPercentMetric(metric: string): GlobalPercentMetric {
   if ((GLOBAL_PERCENT_METRICS as readonly string[]).includes(metric)) {
@@ -51,7 +53,7 @@ export class UnitEconomicsService {
   /** Предметы каталога с их комиссией (% или null) + глобальные %-метрики. */
   async getSettings(): Promise<UnitEconomicsSettings> {
     if (!this.repository.isConfigured()) {
-      return { subjects: [], acquiringPercent: null, drrPercent: null };
+      return { subjects: [], taxPercent: null, acquiringPercent: null, drrPercent: null };
     }
     await this.repository.ensureSchema();
     const [subjects, commissions, global] = await Promise.all([
@@ -65,6 +67,7 @@ export class UnitEconomicsService {
         subject,
         commissionPercent: bySubject.get(subject) ?? null,
       })),
+      taxPercent: global.taxPercent,
       acquiringPercent: global.acquiringPercent,
       drrPercent: global.drrPercent,
     };
@@ -100,8 +103,8 @@ export class UnitEconomicsService {
    * предмету товара; эквайринг и ДРР — глобальные %. null, если для предмета нет %
    * или метрика не задана (фронт рисует «—»). Товары без текущей цены пропускаются.
    *
-   * Маржа = цена со скидкой − себестоимость − комиссия − эквайринг − ДРР (до логистики/
-   * хранения/налога — этих данных пока нет). Незаданные вычеты считаются как 0; без
+   * Маржа = цена со скидкой − себестоимость − комиссия − эквайринг − ДРР − налог (до
+   * логистики/хранения — этих данных пока нет). Незаданные вычеты считаются как 0; без
    * себестоимости маржа = null (прибыль без с/с не определить).
    */
   async getCharges(): Promise<{ items: UnitEconomicsChargeItem[] }> {
@@ -130,18 +133,21 @@ export class UnitEconomicsService {
       const commissionRub = applyPercent(priceWithDiscount, commissionPercent);
       const acquiringRub = applyPercent(priceWithDiscount, global.acquiringPercent);
       const drrRub = applyPercent(priceWithDiscount, global.drrPercent);
+      const taxRub = applyPercent(priceWithDiscount, global.taxPercent);
 
       const cost = costByNmId.get(product.nmId) ?? null;
       let marginRub: number | null = null;
       let marginPercent: number | null = null;
       if (cost != null) {
-        const deductions = (commissionRub ?? 0) + (acquiringRub ?? 0) + (drrRub ?? 0);
+        const deductions =
+          (commissionRub ?? 0) + (acquiringRub ?? 0) + (drrRub ?? 0) + (taxRub ?? 0);
         marginRub = round2(priceWithDiscount - cost - deductions);
         marginPercent =
           priceWithDiscount > 0 ? round2((marginRub / priceWithDiscount) * 100) : null;
       }
 
       if (
+        taxRub === null &&
         commissionRub === null &&
         acquiringRub === null &&
         drrRub === null &&
@@ -149,7 +155,7 @@ export class UnitEconomicsService {
       ) {
         continue;
       }
-      items.push({ nmId: product.nmId, commissionRub, acquiringRub, drrRub, marginRub, marginPercent });
+      items.push({ nmId: product.nmId, taxRub, commissionRub, acquiringRub, drrRub, marginRub, marginPercent });
     }
     return { items };
   }

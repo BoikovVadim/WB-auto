@@ -14,6 +14,7 @@ export type ProductsTableTotals = {
   totalCostSum: number | null;
   totalAdSpend: number | null;
   totalCommission: number | null;
+  totalTax: number | null;
   totalAcquiring: number | null;
   totalDrr: number | null;
   totalMarginRub: number | null;
@@ -31,6 +32,7 @@ type Input = {
   costSumValues: Map<number, number>;
   adSpendValues: Map<number, number>;
   commissionValues: Map<number, number>;
+  taxValues: Map<number, number>;
   acquiringValues: Map<number, number>;
   drrValues: Map<number, number>;
   marginRubValues: Map<number, number>;
@@ -74,6 +76,7 @@ export function useProductsTableTotals(input: Input): ProductsTableTotals {
     costSumValues,
     adSpendValues,
     commissionValues,
+    taxValues,
     acquiringValues,
     drrValues,
     marginRubValues,
@@ -136,6 +139,11 @@ export function useProductsTableTotals(input: Input): ProductsTableTotals {
     [filteredProducts, commissionValues],
   );
 
+  const totalTax = useMemo(
+    () => sumOverProducts(filteredProducts, taxValues, false),
+    [filteredProducts, taxValues],
+  );
+
   const totalAcquiring = useMemo(
     () => sumOverProducts(filteredProducts, acquiringValues, false),
     [filteredProducts, acquiringValues],
@@ -195,6 +203,7 @@ export function useProductsTableTotals(input: Input): ProductsTableTotals {
     totalCostSum,
     totalAdSpend,
     totalCommission,
+    totalTax,
     totalAcquiring,
     totalDrr,
     totalMarginRub,

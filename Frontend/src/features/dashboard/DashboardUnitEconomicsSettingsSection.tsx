@@ -16,9 +16,10 @@ type DashboardUnitEconomicsSettingsSectionProps = {
 const GLOBAL_METRICS: {
   key: GlobalPercentMetric;
   label: string;
-  field: "acquiringPercent" | "drrPercent";
+  field: "taxPercent" | "acquiringPercent" | "drrPercent";
   hint?: string;
 }[] = [
+  { key: "tax", label: "Налог", field: "taxPercent", hint: "Налог с цены со скидкой" },
   { key: "acquiring", label: "Эквайринг", field: "acquiringPercent" },
   { key: "drr", label: "ДРР", field: "drrPercent", hint: "Доля рекламных расходов" },
 ];
@@ -120,8 +121,8 @@ export function DashboardUnitEconomicsSettingsSection({
           <div>
             <h2>{ui.viewUnitEconomicsTitle}</h2>
             <p className="wb-card-meta">
-              Комиссия применяется по предмету товара; общие метрики (эквайринг, ДРР) — ко всем
-              товарам. Все значения в % считаются от цены со скидкой.
+              Комиссия применяется по предмету товара; общие метрики (налог, эквайринг, ДРР) — ко
+              всем товарам. Все значения в % считаются от цены со скидкой.
             </p>
           </div>
         </div>

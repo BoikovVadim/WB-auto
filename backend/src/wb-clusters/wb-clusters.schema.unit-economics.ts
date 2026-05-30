@@ -10,9 +10,10 @@ import type { WbClustersSchemaContext } from "./wb-clusters.schema.types";
  * (комиссия в ₽ = цена-со-скидкой × %).
  *
  * wb_unit_economics_settings — единственная строка (id = 1) с глобальными %-метриками,
- * применяемыми ко всем товарам: эквайринг, ДРР (доля рекламных расходов). Каждая —
+ * применяемыми ко всем товарам: налог, эквайринг, ДРР (доля рекламных расходов). Каждая —
  * отдельная колонка `*_percent`; новая глобальная метрика = ещё одна колонка + строка
- * в GLOBAL_PERCENT_COLUMNS сервиса (те же 2 знака после запятой).
+ * в GLOBAL_PERCENT_COLUMN репозитория (те же 2 знака после запятой). Налог по умолчанию
+ * 12 % (DEFAULT 12 при ALTER бэкфилит существующую строку настроек).
  */
 export function getUnitEconomicsSettingsCreateStatements({
   tableName,
@@ -56,6 +57,20 @@ export function getUnitEconomicsSettingsCreateStatements({
     `
       ALTER TABLE ${tableName("wb_unit_economics_settings")}
         ADD COLUMN IF NOT EXISTS drr_percent NUMERIC(7,2) NULL
+    `,
+    // Налог добавлен позже со ставкой по умолчанию 12 %. DEFAULT 12 при ADD COLUMN
+    // бэкфилит существующую строку настроек (id = 1) → налог сразу 12 %, без отдельного
+    // UPDATE. Пользователь может изменить/очистить значение в «Настройке».
+    `
+      ALTER TABLE ${tableName("wb_unit_economics_settings")}
+        ADD COLUMN IF NOT EXISTS tax_percent NUMERIC(7,2) NULL DEFAULT 12
+    `,
+    // На случай, если строки настроек ещё нет (никакая метрика не сохранялась): создаём
+    // её, чтобы налог-по-умолчанию (12 %) применился и на чистой базе. Идемпотентно.
+    `
+      INSERT INTO ${tableName("wb_unit_economics_settings")} (id)
+      VALUES (1)
+      ON CONFLICT (id) DO NOTHING
     `,
   ];
 }

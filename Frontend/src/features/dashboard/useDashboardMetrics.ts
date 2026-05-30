@@ -54,6 +54,7 @@ export function useDashboardMetrics(input: {
   const { sppValues } = useSpp();
   const { sppMatrix } = useSppMatrix(input.isSppSheetOpen);
   const {
+    taxValues,
     commissionValues,
     acquiringValues,
     drrValues,
@@ -113,6 +114,7 @@ export function useDashboardMetrics(input: {
     adSpendMatrix,
     sppValues,
     sppMatrix,
+    taxValues,
     commissionValues,
     acquiringValues,
     drrValues,

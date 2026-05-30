@@ -10,7 +10,11 @@ import {
 } from "../../api/syncClientUnitEconomics";
 
 // Метрика → поле в settings (для оптимистичного обновления локального состояния).
-const GLOBAL_METRIC_FIELD: Record<GlobalPercentMetric, "acquiringPercent" | "drrPercent"> = {
+const GLOBAL_METRIC_FIELD: Record<
+  GlobalPercentMetric,
+  "taxPercent" | "acquiringPercent" | "drrPercent"
+> = {
+  tax: "taxPercent",
   acquiring: "acquiringPercent",
   drr: "drrPercent",
 };
@@ -24,7 +28,12 @@ export type UseUnitEconomicsSettingsResult = {
   saveGlobalMetric: (metric: GlobalPercentMetric, value: number | null) => Promise<void>;
 };
 
-const EMPTY: UnitEconomicsSettings = { subjects: [], acquiringPercent: null, drrPercent: null };
+const EMPTY: UnitEconomicsSettings = {
+  subjects: [],
+  taxPercent: null,
+  acquiringPercent: null,
+  drrPercent: null,
+};
 
 // Список предметов обновляем с той же периодичностью, что и каталог товаров
 // (productCatalogRefreshTtlMs = 5 мин): добавился новый товар → его предмет

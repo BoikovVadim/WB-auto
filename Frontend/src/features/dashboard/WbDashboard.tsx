@@ -150,6 +150,7 @@ export function WbDashboard() {
     adSpendMatrix,
     sppValues,
     sppMatrix,
+    taxValues,
     commissionValues,
     acquiringValues,
     drrValues,
@@ -458,6 +459,7 @@ export function WbDashboard() {
       adSpendMatrix={adSpendMatrix}
       sppValues={sppValues}
       sppMatrix={sppMatrix}
+      taxValues={taxValues}
       commissionValues={commissionValues}
       acquiringValues={acquiringValues}
       drrValues={drrValues}

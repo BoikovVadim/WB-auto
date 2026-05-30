@@ -8,10 +8,11 @@ export type UnitEconomicsSubjectSetting = {
 };
 
 /** Глобальные %-метрики юнит-экономики (применяются ко всем товарам). */
-export type GlobalPercentMetric = "acquiring" | "drr";
+export type GlobalPercentMetric = "tax" | "acquiring" | "drr";
 
 export type UnitEconomicsSettings = {
   subjects: UnitEconomicsSubjectSetting[];
+  taxPercent: number | null;
   acquiringPercent: number | null;
   drrPercent: number | null;
 };
@@ -20,7 +21,7 @@ export async function fetchUnitEconomicsSettings(): Promise<UnitEconomicsSetting
   const response = await apiClient.get<UnitEconomicsSettings>(
     "/wb-clusters/unit-economics/settings",
   );
-  return response.data ?? { subjects: [], acquiringPercent: null, drrPercent: null };
+  return response.data ?? { subjects: [], taxPercent: null, acquiringPercent: null, drrPercent: null };
 }
 
 export async function saveSubjectCommission(
@@ -56,6 +57,7 @@ export async function saveGlobalPercent(
 
 export type UnitEconomicsChargeItem = {
   nmId: number;
+  taxRub: number | null;
   commissionRub: number | null;
   acquiringRub: number | null;
   drrRub: number | null;

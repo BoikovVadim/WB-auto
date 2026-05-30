@@ -38,7 +38,7 @@ export type ProductsHeaderRenderCtx = {
 type PinnableCell = ReactElement<{ className?: string; style?: CSSProperties }>;
 
 const NUMERIC_HEADER_KEYS: ReadonlySet<ProductsColumnKey> = new Set([
-  "index", "nmId", "cost", "price", "commission", "acquiring", "drr",
+  "index", "nmId", "cost", "price", "commission", "tax", "acquiring", "drr",
   "marginRub", "marginPercent",
   "orders", "buyout", "spp", "stock", "ordersSum", "revenue", "costSum", "adSpend",
 ]);
@@ -136,6 +136,8 @@ export function renderProductsHeaderCell(
         return renderSheetHeader("Цена", "price", ctx.sheets.price, "Открыть ретроспективу цен");
       case "commission":
         return renderSortOnlyHeader("Комиссия", "commission");
+      case "tax":
+        return renderSortOnlyHeader("Налог", "tax");
       case "acquiring":
         return renderSortOnlyHeader("Эквайринг", "acquiring");
       case "drr":
@@ -212,6 +214,8 @@ export function renderProductsTotalsCell(
       );
     case "commission":
       return moneyCell(totals.totalCommission);
+    case "tax":
+      return moneyCell(totals.totalTax);
     case "acquiring":
       return moneyCell(totals.totalAcquiring);
     case "drr":

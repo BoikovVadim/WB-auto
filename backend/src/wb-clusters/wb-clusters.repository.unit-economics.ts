@@ -6,15 +6,17 @@ export type SubjectCommissionRow = {
 };
 
 /** Глобальные %-метрики юнит-экономики (применяются ко всем товарам). */
-export type GlobalPercentMetric = "acquiring" | "drr";
+export type GlobalPercentMetric = "tax" | "acquiring" | "drr";
 
 export type GlobalSettings = {
+  taxPercent: number | null;
   acquiringPercent: number | null;
   drrPercent: number | null;
 };
 
 // Метрика → колонка единственной строки настроек. Хардкод (никакой инъекции).
 const GLOBAL_PERCENT_COLUMN: Record<GlobalPercentMetric, string> = {
+  tax: "tax_percent",
   acquiring: "acquiring_percent",
   drr: "drr_percent",
 };
@@ -59,13 +61,15 @@ export abstract class WbClustersRepositoryUnitEconomics extends WbClustersReposi
     );
   }
 
-  /** Глобальные %-метрики (эквайринг, ДРР); null — не задано. */
+  /** Глобальные %-метрики (налог, эквайринг, ДРР); null — не задано. */
   async getGlobalSettings(): Promise<GlobalSettings> {
     const result = await this.getPool().query<{
+      tax_percent: string | null;
       acquiring_percent: string | null;
       drr_percent: string | null;
     }>(
-      `SELECT acquiring_percent::text AS acquiring_percent,
+      `SELECT tax_percent::text       AS tax_percent,
+              acquiring_percent::text AS acquiring_percent,
               drr_percent::text       AS drr_percent
        FROM ${this.tableName("wb_unit_economics_settings")} WHERE id = 1`,
     );
@@ -76,6 +80,7 @@ export abstract class WbClustersRepositoryUnitEconomics extends WbClustersReposi
       return Number.isFinite(value) ? value : null;
     };
     return {
+      taxPercent: parse(row?.tax_percent),
       acquiringPercent: parse(row?.acquiring_percent),
       drrPercent: parse(row?.drr_percent),
     };
