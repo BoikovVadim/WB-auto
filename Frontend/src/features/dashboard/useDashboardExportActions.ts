@@ -14,18 +14,7 @@ import { getSafeMessage } from "./dashboardErrors";
 import { useDashboardExportJobPolling } from "./useDashboardExportJobPolling";
 import type { DashboardWorkspaceActionsInput } from "./useDashboardWorkspaceActionTypes";
 import { useDashboardExportNavigation } from "./useDashboardExportNavigation";
-
-function sortExportHistoryNewestFirst(items: DashboardWorkspaceActionsInput["exportHistory"]) {
-  return [...items].sort((left, right) => {
-    const leftMs = Date.parse(left.exportedAt);
-    const rightMs = Date.parse(right.exportedAt);
-    if (Number.isFinite(leftMs) && Number.isFinite(rightMs) && leftMs !== rightMs) {
-      return rightMs - leftMs;
-    }
-
-    return right.requestId.localeCompare(left.requestId, "en");
-  });
-}
+import { sortExportHistoryNewestFirst } from "./dashboardExportHistory";
 
 export function useDashboardExportActions(input: DashboardWorkspaceActionsInput) {
   const {

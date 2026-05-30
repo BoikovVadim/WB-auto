@@ -19,18 +19,7 @@ import {
 import type { DashboardSection, ProductsMode } from "./persistence/dashboardViewState";
 import type { DashboardOpenExportOptions } from "./useDashboardWorkspaceActionTypes";
 import { startQueryFrequenciesPrefetch } from "./queryFrequenciesPrefetch";
-
-function sortExportHistoryNewestFirst(items: WbExportListItem[]) {
-  return [...items].sort((left, right) => {
-    const leftMs = Date.parse(left.exportedAt);
-    const rightMs = Date.parse(right.exportedAt);
-    if (Number.isFinite(leftMs) && Number.isFinite(rightMs) && leftMs !== rightMs) {
-      return rightMs - leftMs;
-    }
-
-    return right.requestId.localeCompare(left.requestId, "en");
-  });
-}
+import { sortExportHistoryNewestFirst } from "./dashboardExportHistory";
 
 export function useDashboardBootstrap(input: {
   activeSection: DashboardSection;

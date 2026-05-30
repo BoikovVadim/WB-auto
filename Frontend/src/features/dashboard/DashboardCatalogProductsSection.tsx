@@ -4,7 +4,6 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { CostPriceCurrent } from "../../api/syncClientCostPrice";
 import type { TodayOrderCount } from "../../api/syncClientOrders";
 import type { TodayBuyoutCount } from "../../api/syncClientBuyouts";
-import { formatMoney, formatPercent } from "../../formatters";
 import type { CurrentPriceEntry } from "./useCurrentPrices";
 import type { PriceChangeStatus } from "../../api/syncClientPrices";
 import { ui } from "./copy";
@@ -14,14 +13,19 @@ import {
 } from "./persistence/scrollPositionPersistence";
 import type { ProductColumnDefinition, ProductsColumnKey } from "./productsTableColumns";
 import { useProductsColumnOrderState } from "./useProductsColumnOrderState";
+import { useProductsColumnResize } from "./useProductsColumnResize";
 import type { ProductListItem, ProductListSortKey } from "./useDashboardProductsWorkspace";
+import { PriceConfirmModal } from "./ProductsTableCells";
+import { getColWidth, getDisplayVendorCode } from "./productsTableHelpers";
+import { sortProductsByLocalKey, type LocalSortKey } from "./productsTableSort";
+import { useProductsTableSelection } from "./useProductsTableSelection";
+import { useProductsTableTotals } from "./useProductsTableTotals";
 import {
-  CostInputCell,
-  PriceConfirmModal,
-  PriceInputCell,
-  SortArrow,
-} from "./ProductsTableCells";
-import { getColLabel, getColWidth, getParentSortKey } from "./productsTableHelpers";
+  renderProductsHeaderCell,
+  renderProductsTotalsCell,
+  type ProductsHeaderRenderCtx,
+} from "./ProductsTableHeadCells";
+import { renderProductsBodyCell, type ProductsBodyRenderCtx } from "./ProductsTableBodyCells";
 
 export type { CostPriceCurrent };
 export type { CurrentPriceEntry };
@@ -81,16 +85,12 @@ type DashboardCatalogProductsSectionProps = {
   onPriceSaved: (nmId: number, targetFinal: number) => Promise<void>;
 };
 
-// ─── Local sort key (for columns backed by external Maps) ────────────────────
-type LocalSortKey = "cost" | "price" | "commission" | "acquiring" | "drr" | "orders" | "buyout" | "spp" | "stock" | "ordersSum" | "revenue" | "costSum" | "adSpend";
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export const DashboardCatalogProductsSection = memo(
   function DashboardCatalogProductsSection(props: DashboardCatalogProductsSectionProps) {
     const tableWrapRef = useRef<HTMLDivElement | null>(null);
     const tableRef = useRef<HTMLTableElement | null>(null);
-    const resizingColRef = useRef<number | null>(null);
 
     // ── Column ordering (drag-and-drop) ────────────────────────────────────────
     const { draggedColumn, orderedColumns: allOrderedColumns, setDraggedColumn, handleDrop } =
@@ -104,12 +104,6 @@ export const DashboardCatalogProductsSection = memo(
           : allOrderedColumns,
       [allOrderedColumns, hiddenColumns],
     );
-
-    // ── Multi-select state ──────────────────────────────────────────────────────
-    const [selectedNmIds, setSelectedNmIds] = useState<Set<number>>(new Set());
-    const [editingNmId, setEditingNmId] = useState<number | null>(null);
-    const [editingPriceNmId, setEditingPriceNmId] = useState<number | null>(null);
-    const lastClickedIndexRef = useRef<number>(-1);
 
     // ── Local sort (for cost/orders/stock columns) ──────────────────────────────
     const [localSortKey, setLocalSortKey] = useState<LocalSortKey | null>(null);
@@ -143,190 +137,48 @@ export const DashboardCatalogProductsSection = memo(
       [props],
     );
 
-    // Products sorted by local sort (if active), otherwise use parent-sorted list
-    const displayProducts = useMemo(() => {
-      if (!localSortKey) return props.filteredProducts;
-      return [...props.filteredProducts].sort((a, b) => {
-        let av = 0;
-        let bv = 0;
-        if (localSortKey === "orders") {
-          av = a.nmId !== null ? (props.orderCounts.get(a.nmId)?.ordersCount ?? 0) : 0;
-          bv = b.nmId !== null ? (props.orderCounts.get(b.nmId)?.ordersCount ?? 0) : 0;
-        } else if (localSortKey === "buyout") {
-          const buyoutPercent = (nmId: number | null): number => {
-            if (nmId === null) return -1;
-            const entry = props.rollingBuyoutCounts.get(nmId);
-            // 0 выкупов при наличии заказов = данных ещё нет (WB отдаёт выкупы с
-            // лагом), а не реальный 0 % — сортируем как «нет данных», см. ретроспективу.
-            if (!entry || entry.ordersCount === 0 || entry.buyoutsCount === 0) return -1;
-            return (entry.buyoutsCount / entry.ordersCount) * 100;
-          };
-          av = buyoutPercent(a.nmId);
-          bv = buyoutPercent(b.nmId);
-        } else if (localSortKey === "stock") {
-          av = a.nmId !== null ? (props.stockCounts.get(a.nmId) ?? 0) : 0;
-          bv = b.nmId !== null ? (props.stockCounts.get(b.nmId) ?? 0) : 0;
-        } else if (localSortKey === "ordersSum") {
-          av = a.nmId !== null ? (props.ordersSumValues.get(a.nmId) ?? 0) : 0;
-          bv = b.nmId !== null ? (props.ordersSumValues.get(b.nmId) ?? 0) : 0;
-        } else if (localSortKey === "revenue") {
-          av = a.nmId !== null ? (props.revenueValues.get(a.nmId) ?? 0) : 0;
-          bv = b.nmId !== null ? (props.revenueValues.get(b.nmId) ?? 0) : 0;
-        } else if (localSortKey === "costSum") {
-          av = a.nmId !== null ? (props.costSumValues.get(a.nmId) ?? 0) : 0;
-          bv = b.nmId !== null ? (props.costSumValues.get(b.nmId) ?? 0) : 0;
-        } else if (localSortKey === "adSpend") {
-          av = a.nmId !== null ? (props.adSpendValues.get(a.nmId) ?? 0) : 0;
-          bv = b.nmId !== null ? (props.adSpendValues.get(b.nmId) ?? 0) : 0;
-        } else if (localSortKey === "commission") {
-          av = a.nmId !== null ? (props.commissionValues.get(a.nmId) ?? -1) : -1;
-          bv = b.nmId !== null ? (props.commissionValues.get(b.nmId) ?? -1) : -1;
-        } else if (localSortKey === "acquiring") {
-          av = a.nmId !== null ? (props.acquiringValues.get(a.nmId) ?? -1) : -1;
-          bv = b.nmId !== null ? (props.acquiringValues.get(b.nmId) ?? -1) : -1;
-        } else if (localSortKey === "drr") {
-          av = a.nmId !== null ? (props.drrValues.get(a.nmId) ?? -1) : -1;
-          bv = b.nmId !== null ? (props.drrValues.get(b.nmId) ?? -1) : -1;
-        } else if (localSortKey === "spp") {
-          av = a.nmId !== null ? (props.sppValues.get(a.nmId) ?? -1) : -1;
-          bv = b.nmId !== null ? (props.sppValues.get(b.nmId) ?? -1) : -1;
-        } else if (localSortKey === "price") {
-          av = a.nmId !== null ? (props.priceCounts.get(a.nmId)?.priceWithDiscount ?? 0) : 0;
-          bv = b.nmId !== null ? (props.priceCounts.get(b.nmId)?.priceWithDiscount ?? 0) : 0;
-        } else {
-          // cost
-          av = a.nmId !== null ? (props.costPrices.get(a.nmId)?.costValue ?? 0) : 0;
-          bv = b.nmId !== null ? (props.costPrices.get(b.nmId)?.costValue ?? 0) : 0;
-        }
-        return localSortDir === "asc" ? av - bv : bv - av;
-      });
-    }, [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costSumValues, props.adSpendValues, props.sppValues, props.commissionValues, props.acquiringValues, props.drrValues, props.costPrices, props.priceCounts]);
-
-    const handleCommitEdit = useCallback(() => {
-      setEditingNmId(null);
-    }, []);
-
-    // Стабильный колбэк для карандаша: сбрасываем выделение и входим в редактирование
-    // конкретной строки. Один и тот же reference на все ячейки — memo не ломается.
-    const handleStartEdit = useCallback((nmId: number) => {
-      setSelectedNmIds(new Set());
-      setEditingPriceNmId(null);
-      setEditingNmId(nmId);
-    }, []);
-
-    // Редактирование цены (отправка на WB) — отдельно от себестоимости.
-    const handleStartPriceEdit = useCallback((nmId: number) => {
-      setSelectedNmIds(new Set());
-      setEditingNmId(null);
-      setEditingPriceNmId(nmId);
-    }, []);
-    const handleCommitPriceEdit = useCallback(() => {
-      setEditingPriceNmId(null);
-    }, []);
-
-    // Модалка подтверждения цены: открывается после Enter в поле.
-    const [priceConfirm, setPriceConfirm] = useState<{ nmId: number; target: number } | null>(null);
-    const handleRequestPriceConfirm = useCallback((nmId: number, target: number) => {
-      setEditingPriceNmId(null);
-      setPriceConfirm({ nmId, target });
-    }, []);
-    const handleCancelPriceConfirm = useCallback(() => setPriceConfirm(null), []);
-    const handleConfirmPrice = useCallback(async () => {
-      if (!priceConfirm) return;
-      const { nmId, target } = priceConfirm;
-      setPriceConfirm(null);
-      await props.onPriceSaved(nmId, target);
-    }, [priceConfirm, props]);
-
-    const handleCellClick = useCallback(
-      (nmId: number, index: number, event: React.MouseEvent) => {
-        if ((event.target as HTMLElement).tagName === "INPUT") return;
-
-        if (event.ctrlKey || event.metaKey) {
-          setSelectedNmIds((prev) => {
-            const next = new Set(prev);
-            if (next.has(nmId)) next.delete(nmId);
-            else next.add(nmId);
-            return next;
-          });
-          lastClickedIndexRef.current = index;
-          setEditingNmId(null);
-        } else if (event.shiftKey && lastClickedIndexRef.current >= 0) {
-          const from = Math.min(lastClickedIndexRef.current, index);
-          const to = Math.max(lastClickedIndexRef.current, index);
-          setSelectedNmIds(() => {
-            const next = new Set<number>();
-            for (let i = from; i <= to; i++) {
-              const p = displayProducts[i];
-              if (p?.nmId !== null && p?.nmId !== undefined) next.add(p.nmId);
-            }
-            return next;
-          });
-          setEditingNmId(null);
-        } else if (selectedNmIds.size > 0) {
-          setSelectedNmIds(new Set([nmId]));
-          lastClickedIndexRef.current = index;
-          setEditingNmId(null);
-        } else {
-          setSelectedNmIds(new Set());
-          lastClickedIndexRef.current = index;
-          setEditingNmId(nmId);
-        }
-      },
-      [selectedNmIds, displayProducts],
+    // Products sorted by local sort (if active), otherwise parent-sorted list (см. productsTableSort).
+    const displayProducts = useMemo(
+      () =>
+        sortProductsByLocalKey(props.filteredProducts, localSortKey, localSortDir, {
+          costPrices: props.costPrices,
+          orderCounts: props.orderCounts,
+          rollingBuyoutCounts: props.rollingBuyoutCounts,
+          stockCounts: props.stockCounts,
+          priceCounts: props.priceCounts,
+          ordersSumValues: props.ordersSumValues,
+          revenueValues: props.revenueValues,
+          costSumValues: props.costSumValues,
+          adSpendValues: props.adSpendValues,
+          sppValues: props.sppValues,
+          commissionValues: props.commissionValues,
+          acquiringValues: props.acquiringValues,
+          drrValues: props.drrValues,
+        }),
+      [props.filteredProducts, localSortKey, localSortDir, props.orderCounts, props.rollingBuyoutCounts, props.stockCounts, props.ordersSumValues, props.revenueValues, props.costSumValues, props.adSpendValues, props.sppValues, props.commissionValues, props.acquiringValues, props.drrValues, props.costPrices, props.priceCounts],
     );
 
-    const handleCellDoubleClick = useCallback((nmId: number, index: number) => {
-      setSelectedNmIds(new Set());
-      lastClickedIndexRef.current = index;
-      setEditingNmId(nmId);
-    }, []);
-
-    // ── Keyboard handler ────────────────────────────────────────────────────────
-    useEffect(() => {
-      const handler = (e: KeyboardEvent) => {
-        if (
-          document.activeElement instanceof HTMLInputElement ||
-          document.activeElement instanceof HTMLTextAreaElement
-        ) return;
-
-        if ((e.key === "Delete" || e.key === "Backspace") && selectedNmIds.size > 0) {
-          e.preventDefault();
-          const ids = Array.from(selectedNmIds);
-          void props.onCostCleared(ids).then(() => {
-            setSelectedNmIds(new Set());
-          });
-        } else if (e.key === "Escape") {
-          setSelectedNmIds(new Set());
-          setEditingNmId(null);
-          setEditingPriceNmId(null);
-        } else if (e.key === "Enter" && selectedNmIds.size === 1) {
-          const [id] = selectedNmIds;
-          if (id !== undefined) {
-            setSelectedNmIds(new Set());
-            setEditingNmId(id);
-          }
-        }
-      };
-      document.addEventListener("keydown", handler);
-      return () => document.removeEventListener("keydown", handler);
-    }, [selectedNmIds, props.onCostCleared]);
-
-    // Click outside clears selection
-    useEffect(() => {
-      const handler = (e: MouseEvent) => {
-        if (tableRef.current && !tableRef.current.contains(e.target as Node)) {
-          setSelectedNmIds(new Set());
-          setEditingNmId(null);
-          setEditingPriceNmId(null);
-        }
-      };
-      document.addEventListener("mousedown", handler);
-      return () => document.removeEventListener("mousedown", handler);
-    }, []);
-
-    const getDisplayVendorCode = (p: { vendorCode: string; nmId: number | null }) =>
-      p.vendorCode !== "" ? p.vendorCode : p.nmId !== null ? `#${String(p.nmId)}` : "—";
+    // Выделение строк + inline-редактирование (себестоимость/цена) — см. useProductsTableSelection.
+    const {
+      selectedNmIds,
+      editingNmId,
+      editingPriceNmId,
+      priceConfirm,
+      handleCommitEdit,
+      handleStartEdit,
+      handleStartPriceEdit,
+      handleCommitPriceEdit,
+      handleRequestPriceConfirm,
+      handleCancelPriceConfirm,
+      handleConfirmPrice,
+      handleCellClick,
+      handleCellDoubleClick,
+    } = useProductsTableSelection({
+      displayProducts,
+      tableRef,
+      onCostCleared: props.onCostCleared,
+      onPriceSaved: props.onPriceSaved,
+    });
 
     const widestVendorCode = useMemo(
       () =>
@@ -395,55 +247,8 @@ export const DashboardCatalogProductsSection = memo(
       [pinnedLeftByKey, lastPinnedKey],
     );
 
-    // ── Column resizing ─────────────────────────────────────────────────────────
-    const handleResizeMouseDown = useCallback(
-      (event: React.MouseEvent<HTMLDivElement>) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (!tableRef.current) return;
-        const colIndex = Number((event.currentTarget as HTMLElement).dataset.colIdx ?? "-1");
-        if (!Number.isFinite(colIndex) || colIndex < 0) return;
-        const tableEl = tableRef.current;
-        const cols = tableEl.querySelectorAll<HTMLTableColElement>("colgroup col");
-        if (!cols[colIndex]) return;
-
-        const measuredColWidths = Array.from(cols).map((col) => {
-          const measured = col.getBoundingClientRect().width;
-          if (measured > 0) return measured;
-          const parsed = Number.parseFloat(col.style.width);
-          return Number.isFinite(parsed) ? parsed : 0;
-        });
-        const initialSelectedWidth = measuredColWidths[colIndex] ?? 0;
-        const startX = event.clientX;
-        resizingColRef.current = colIndex;
-        document.body.style.cursor = "col-resize";
-
-        const onMouseMove = (moveEvent: MouseEvent) => {
-          if (resizingColRef.current === null || !tableRef.current) return;
-          const minWidth = 60;
-          const delta = moveEvent.clientX - startX;
-          const newWidth = Math.max(minWidth, initialSelectedWidth + delta);
-          const col = cols[resizingColRef.current];
-          if (col) col.style.width = `${newWidth}px`;
-          const totalTableWidth = measuredColWidths.reduce(
-            (sum, w, i) => sum + (i === resizingColRef.current ? newWidth : w),
-            0,
-          );
-          tableEl.style.width = `${Math.ceil(totalTableWidth)}px`;
-        };
-
-        const onMouseUp = () => {
-          resizingColRef.current = null;
-          document.body.style.cursor = "";
-          document.removeEventListener("mousemove", onMouseMove);
-          document.removeEventListener("mouseup", onMouseUp);
-        };
-
-        document.addEventListener("mousemove", onMouseMove);
-        document.addEventListener("mouseup", onMouseUp, { once: true });
-      },
-      [],
-    );
+    // Ресайз колонок мышью (тянуть правый край заголовка) — см. useProductsColumnResize.
+    const handleResizeMouseDown = useProductsColumnResize(tableRef);
 
     useLayoutEffect(() => {
       const el = tableWrapRef.current;
@@ -474,579 +279,74 @@ export const DashboardCatalogProductsSection = memo(
 
     const { productsSortKey: sortKey, productsSortDirection: sortDir } = props;
 
-    const totalOrders = useMemo(
-      () =>
-        props.filteredProducts.reduce((sum, p) => {
-          if (p.nmId === null) return sum;
-          return sum + (props.orderCounts.get(p.nmId)?.ordersCount ?? 0);
-        }, 0),
-      [props.filteredProducts, props.orderCounts],
-    );
+    const totals = useProductsTableTotals({
+      filteredProducts: props.filteredProducts,
+      orderCounts: props.orderCounts,
+      rollingBuyoutCounts: props.rollingBuyoutCounts,
+      stockCounts: props.stockCounts,
+      ordersSumValues: props.ordersSumValues,
+      revenueValues: props.revenueValues,
+      costSumValues: props.costSumValues,
+      adSpendValues: props.adSpendValues,
+      commissionValues: props.commissionValues,
+      acquiringValues: props.acquiringValues,
+      drrValues: props.drrValues,
+      sppValues: props.sppValues,
+    });
 
-    const totalStocks = useMemo(() => {
-      let sum = 0;
-      let hasAny = false;
-      for (const p of props.filteredProducts) {
-        if (p.nmId === null) continue;
-        const s = props.stockCounts.get(p.nmId);
-        if (s !== undefined) { sum += s; hasAny = true; }
-      }
-      return hasAny ? sum : null;
-    }, [props.filteredProducts, props.stockCounts]);
-
-    const totalOrdersSum = useMemo(() => {
-      let sum = 0;
-      let hasAny = false;
-      for (const p of props.filteredProducts) {
-        if (p.nmId === null) continue;
-        const v = props.ordersSumValues.get(p.nmId);
-        if (v !== undefined && v > 0) { sum += v; hasAny = true; }
-      }
-      return hasAny ? sum : null;
-    }, [props.filteredProducts, props.ordersSumValues]);
-
-    const totalBuyoutPercent = useMemo(() => {
-      let orders  = 0;
-      let buyouts = 0;
-      for (const p of props.filteredProducts) {
-        if (p.nmId === null) continue;
-        const e = props.rollingBuyoutCounts.get(p.nmId);
-        // Те же товары, что и в отображении: 0 выкупов = «нет данных» (—) и в
-        // «Итого» не участвуют. Иначе их заказы тянули бы знаменатель вниз и
-        // итог расходился бы с ретроспективой за «сегодня».
-        if (!e || e.ordersCount === 0 || e.buyoutsCount === 0) continue;
-        orders  += e.ordersCount;
-        buyouts += e.buyoutsCount;
-      }
-      return orders > 0 ? (buyouts / orders) * 100 : null;
-    }, [props.filteredProducts, props.rollingBuyoutCounts]);
-
-    const totalRevenue = useMemo(() => {
-      let sum = 0;
-      let hasAny = false;
-      for (const p of props.filteredProducts) {
-        if (p.nmId === null) continue;
-        const v = props.revenueValues.get(p.nmId);
-        if (v !== undefined && v > 0) { sum += v; hasAny = true; }
-      }
-      return hasAny ? sum : null;
-    }, [props.filteredProducts, props.revenueValues]);
-
-    const totalCostSum = useMemo(() => {
-      let sum = 0;
-      let hasAny = false;
-      for (const p of props.filteredProducts) {
-        if (p.nmId === null) continue;
-        const v = props.costSumValues.get(p.nmId);
-        if (v !== undefined && v > 0) { sum += v; hasAny = true; }
-      }
-      return hasAny ? sum : null;
-    }, [props.filteredProducts, props.costSumValues]);
-
-    const totalAdSpend = useMemo(() => {
-      let sum = 0;
-      let hasAny = false;
-      for (const p of props.filteredProducts) {
-        if (p.nmId === null) continue;
-        const v = props.adSpendValues.get(p.nmId);
-        if (v !== undefined && v > 0) { sum += v; hasAny = true; }
-      }
-      return hasAny ? sum : null;
-    }, [props.filteredProducts, props.adSpendValues]);
-
-    const totalCommission = useMemo(() => {
-      let sum = 0;
-      let hasAny = false;
-      for (const p of props.filteredProducts) {
-        if (p.nmId === null) continue;
-        const v = props.commissionValues.get(p.nmId);
-        if (v !== undefined) { sum += v; hasAny = true; }
-      }
-      return hasAny ? sum : null;
-    }, [props.filteredProducts, props.commissionValues]);
-
-    const totalAcquiring = useMemo(() => {
-      let sum = 0;
-      let hasAny = false;
-      for (const p of props.filteredProducts) {
-        if (p.nmId === null) continue;
-        const v = props.acquiringValues.get(p.nmId);
-        if (v !== undefined) { sum += v; hasAny = true; }
-      }
-      return hasAny ? sum : null;
-    }, [props.filteredProducts, props.acquiringValues]);
-
-    const totalDrr = useMemo(() => {
-      let sum = 0;
-      let hasAny = false;
-      for (const p of props.filteredProducts) {
-        if (p.nmId === null) continue;
-        const v = props.drrValues.get(p.nmId);
-        if (v !== undefined) { sum += v; hasAny = true; }
-      }
-      return hasAny ? sum : null;
-    }, [props.filteredProducts, props.drrValues]);
-
-    // СПП «Итого» — простое среднее по товарам с данными (то же усреднение, что у
-    // самой метрики). spp=0 — валидное значение, учитывается; «—» только без данных.
-    const totalSpp = useMemo(() => {
-      let sum = 0;
-      let count = 0;
-      for (const p of props.filteredProducts) {
-        if (p.nmId === null) continue;
-        const v = props.sppValues.get(p.nmId);
-        if (v !== undefined) { sum += v; count += 1; }
-      }
-      return count > 0 ? sum / count : null;
-    }, [props.filteredProducts, props.sppValues]);
-
-    // ── Header cell renderer ───────────────────────────────────────────────────
-
-    const renderHeaderCell = (col: ProductColumnDefinition, colIdx: number) => {
-      const key = col.key;
-      const parentSortKey = getParentSortKey(key);
-      const isParentActive = localSortKey === null && parentSortKey !== null && sortKey === parentSortKey;
-      const isLocalActive = localSortKey === key;
-      const isNumeric = key === "index" || key === "nmId" || key === "cost" || key === "price" || key === "commission" || key === "acquiring" || key === "drr" || key === "orders" || key === "buyout" || key === "spp" || key === "stock" || key === "ordersSum" || key === "revenue" || key === "costSum" || key === "adSpend";
-      const isDragging = draggedColumn === key;
-
-      const dragHandlers = {
-        draggable: true as const,
-        onDragStart: (e: React.DragEvent<HTMLTableCellElement>) => {
-          if ((e.target as HTMLElement).closest(".wb-col-resize-handle")) {
-            e.preventDefault();
-            return;
-          }
-          setDraggedColumn(key);
-        },
-        onDragEnd: () => setDraggedColumn(null),
-        onDragOver: (e: React.DragEvent<HTMLTableCellElement>) => e.preventDefault(),
-        onDrop: (e: React.DragEvent<HTMLTableCellElement>) => handleDrop(e, key),
-      };
-
-      const thStyle: React.CSSProperties = {};
-      if (isNumeric) thStyle.textAlign = "right";
-
-      // Заголовок столбца с ретроспективой: клик по НАЗВАНИЮ открывает лист
-      // ретроспективы, клик по СТРЕЛКЕ справа — сортирует. (Раньше было наоборот:
-      // название сортировало, а отдельная «↗» открывала лист.)
-      const renderSheetHeader = (
-        label: string,
-        localKey: LocalSortKey,
-        onOpenSheet: () => void,
-        sheetTitle: string,
-      ) => (
-        <div className="wb-products-col-header-split">
-          <button
-            className="wb-products-header-sheet-btn"
-            type="button"
-            title={sheetTitle}
-            onClick={onOpenSheet}
-          >
-            <span>{label}</span>
-          </button>
-          <button
-            className="wb-products-header-sort-btn"
-            type="button"
-            title="Сортировать"
-            onClick={() => handleLocalSortToggle(localKey)}
-          >
-            <SortArrow active={isLocalActive} direction={localSortDir} />
-          </button>
-        </div>
-      );
-
-      // Заголовок read-only колонки без ретроспективы (комиссия/эквайринг): клик по
-      // названию = локальная сортировка, без листа.
-      const renderSortOnlyHeader = (label: string, localKey: LocalSortKey) => (
-        <button
-          className="wb-products-sort-button"
-          type="button"
-          onClick={() => handleLocalSortToggle(localKey)}
-        >
-          <span>{label}</span>
-          <SortArrow active={isLocalActive} direction={localSortDir} />
-        </button>
-      );
-
-      const content = (() => {
-        switch (key) {
-          case "index":
-          case "nmId":
-            return (
-              <button
-                className="wb-products-sort-button"
-                type="button"
-                onClick={() => handleParentSortToggle("id")}
-              >
-                <span>{getColLabel(key)}</span>
-                <SortArrow active={isParentActive} direction={sortDir} />
-              </button>
-            );
-          case "vendorCode":
-            return (
-              <>
-                <button
-                  className="wb-products-sort-button"
-                  type="button"
-                  onClick={() => handleParentSortToggle("name")}
-                >
-                  <span>{getColLabel(key)}</span>
-                  <SortArrow active={isParentActive} direction={sortDir} />
-                </button>
-                <div className="wb-col-resize-handle" data-col-idx={String(colIdx)} onMouseDown={handleResizeMouseDown} />
-              </>
-            );
-          case "category":
-            return (
-              <>
-                <button
-                  className="wb-products-sort-button"
-                  type="button"
-                  onClick={() => handleParentSortToggle("category")}
-                >
-                  <span>{getColLabel(key)}</span>
-                  <SortArrow active={isParentActive} direction={sortDir} />
-                </button>
-                <div className="wb-col-resize-handle" data-col-idx={String(colIdx)} onMouseDown={handleResizeMouseDown} />
-              </>
-            );
-          case "subject":
-            return (
-              <>
-                <button
-                  className="wb-products-sort-button"
-                  type="button"
-                  onClick={() => handleParentSortToggle("subject")}
-                >
-                  <span>{getColLabel(key)}</span>
-                  <SortArrow active={isParentActive} direction={sortDir} />
-                </button>
-                <div className="wb-col-resize-handle" data-col-idx={String(colIdx)} onMouseDown={handleResizeMouseDown} />
-              </>
-            );
-          case "cost":
-            return renderSheetHeader("Себестоимость", "cost", props.onOpenCostPriceSheet, "Открыть лист себестоимости");
-          case "price":
-            return renderSheetHeader("Цена", "price", props.onOpenPricesSheet, "Открыть ретроспективу цен");
-          case "commission":
-            return renderSortOnlyHeader("Комиссия", "commission");
-          case "acquiring":
-            return renderSortOnlyHeader("Эквайринг", "acquiring");
-          case "drr":
-            return renderSortOnlyHeader("ДРР", "drr");
-          case "orders":
-            return renderSheetHeader("Заказы", "orders", props.onOpenOrdersSheet, "Открыть ретроспективу заказов");
-          case "buyout":
-            return renderSheetHeader("% выкупа", "buyout", props.onOpenBuyoutSheet, "Открыть ретроспективу % выкупа");
-          case "spp":
-            return renderSheetHeader("СПП", "spp", props.onOpenSppSheet, "Открыть ретроспективу СПП");
-          case "stock":
-            return renderSheetHeader("Остатки", "stock", props.onOpenStocksSheet, "Открыть ретроспективу остатков");
-          case "ordersSum":
-            return renderSheetHeader("Сумма заказов", "ordersSum", props.onOpenOrdersSumSheet, "Открыть ретроспективу суммы заказов");
-          case "revenue":
-            return renderSheetHeader("Выручка", "revenue", props.onOpenRevenueSheet, "Открыть ретроспективу выручки");
-          case "costSum":
-            return renderSheetHeader("С/с продаж", "costSum", props.onOpenCostSumSheet, "Открыть ретроспективу С/с продаж");
-          case "adSpend":
-            return renderSheetHeader("Реклама", "adSpend", props.onOpenAdSpendSheet, "Открыть ретроспективу расходов на рекламу");
-        }
-      })();
-
-      return (
-        <th
-          key={key}
-          className={isDragging ? "wb-products-column--dragging" : undefined}
-          style={thStyle}
-          {...dragHandlers}
-        >
-          {content}
-        </th>
-      );
+    // ── Контекст для вынесенных рендереров шапки/тела ───────────────────────────
+    const headerCtx: ProductsHeaderRenderCtx = {
+      localSortKey,
+      localSortDir,
+      parentSortKey: sortKey,
+      parentSortDir: sortDir,
+      draggedColumn,
+      onParentSort: handleParentSortToggle,
+      onLocalSort: handleLocalSortToggle,
+      onDragStart: setDraggedColumn,
+      onDragEnd: () => setDraggedColumn(null),
+      onDrop: handleDrop,
+      onResizeMouseDown: handleResizeMouseDown,
+      sheets: {
+        cost: props.onOpenCostPriceSheet,
+        price: props.onOpenPricesSheet,
+        orders: props.onOpenOrdersSheet,
+        buyout: props.onOpenBuyoutSheet,
+        spp: props.onOpenSppSheet,
+        stock: props.onOpenStocksSheet,
+        ordersSum: props.onOpenOrdersSumSheet,
+        revenue: props.onOpenRevenueSheet,
+        costSum: props.onOpenCostSumSheet,
+        adSpend: props.onOpenAdSpendSheet,
+      },
     };
 
-    // ── Totals row cell renderer ──────────────────────────────────────────────
-
-    const renderTotalsCell = (col: ProductColumnDefinition) => {
-      const key = col.key;
-      switch (key) {
-        case "vendorCode":
-          return (
-            <th
-              key={key}
-              style={{ textAlign: "left", fontWeight: 700, color: "rgba(15,23,42,0.45)" }}
-            >
-              Итого
-            </th>
-          );
-        case "orders":
-          return (
-            <th key={key} className="wb-table-cell--numeric">
-              {totalOrders > 0 ? String(totalOrders) : "—"}
-            </th>
-          );
-        case "buyout":
-          return (
-            <th key={key} className="wb-table-cell--numeric">
-              {formatPercent(totalBuyoutPercent)}
-            </th>
-          );
-        case "spp":
-          return (
-            <th key={key} className="wb-table-cell--numeric">
-              {formatPercent(totalSpp)}
-            </th>
-          );
-        case "stock":
-          return (
-            <th key={key} className="wb-table-cell--numeric">
-              {totalStocks !== null ? String(totalStocks) : "—"}
-            </th>
-          );
-        case "commission":
-          return (
-            <th key={key} className="wb-table-cell--numeric">
-              {totalCommission !== null ? formatMoney(totalCommission) : "—"}
-            </th>
-          );
-        case "acquiring":
-          return (
-            <th key={key} className="wb-table-cell--numeric">
-              {totalAcquiring !== null ? formatMoney(totalAcquiring) : "—"}
-            </th>
-          );
-        case "drr":
-          return (
-            <th key={key} className="wb-table-cell--numeric">
-              {totalDrr !== null ? formatMoney(totalDrr) : "—"}
-            </th>
-          );
-        case "ordersSum":
-          return (
-            <th key={key} className="wb-table-cell--numeric">
-              {totalOrdersSum !== null ? formatMoney(totalOrdersSum) : "—"}
-            </th>
-          );
-        case "revenue":
-          return (
-            <th key={key} className="wb-table-cell--numeric">
-              {totalRevenue !== null ? formatMoney(totalRevenue) : "—"}
-            </th>
-          );
-        case "costSum":
-          return (
-            <th key={key} className="wb-table-cell--numeric">
-              {totalCostSum !== null ? formatMoney(totalCostSum) : "—"}
-            </th>
-          );
-        case "adSpend":
-          return (
-            <th key={key} className="wb-table-cell--numeric">
-              {totalAdSpend !== null ? formatMoney(totalAdSpend) : "—"}
-            </th>
-          );
-        default:
-          return <th key={key} />;
-      }
-    };
-
-    // ── Body cell renderer ────────────────────────────────────────────────────
-
-    const renderBodyCell = (
-      col: ProductColumnDefinition,
-      product: ProductListItem,
-      index: number,
-    ) => {
-      const key = col.key;
-      const nmId = product.nmId;
-      const cost = nmId !== null ? props.costPrices.get(nmId) : undefined;
-      const orders = nmId !== null ? props.orderCounts.get(nmId) : undefined;
-      const buyout = nmId !== null ? props.rollingBuyoutCounts.get(nmId) : undefined;
-      const stock = nmId !== null ? props.stockCounts.get(nmId) : undefined;
-      const priceEntry = nmId !== null ? props.priceCounts.get(nmId) : undefined;
-      const ordersSum = nmId !== null ? props.ordersSumValues.get(nmId) : undefined;
-      const isSelected = nmId !== null && selectedNmIds.has(nmId);
-      const isEditing = nmId !== null && editingNmId === nmId;
-
-      switch (key) {
-        case "index":
-          return (
-            <td key={key} className="wb-table-cell--numeric">
-              {String(index + 1)}
-            </td>
-          );
-        case "nmId":
-          return (
-            <td key={key} className="wb-table-cell--numeric">
-              {nmId === null ? "—" : String(nmId)}
-            </td>
-          );
-        case "vendorCode":
-          return (
-            <td key={key}>
-              <span
-                title={getDisplayVendorCode(product)}
-                style={{
-                  display: "block",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {getDisplayVendorCode(product)}
-              </span>
-            </td>
-          );
-        case "category":
-          return <td key={key}>{product.categoryName ?? "—"}</td>;
-        case "subject":
-          return <td key={key}>{product.subjectName ?? "—"}</td>;
-        case "cost":
-          return (
-            <td
-              key={key}
-              className={`wb-table-cell--cost${isSelected ? " wb-table-cell--cost-selected" : ""}`}
-              onClick={nmId !== null ? (e) => handleCellClick(nmId, index, e) : undefined}
-              onDoubleClick={nmId !== null ? () => handleCellDoubleClick(nmId, index) : undefined}
-            >
-              {nmId !== null ? (
-                <CostInputCell
-                  nmId={nmId}
-                  savedValue={cost?.costValue ?? null}
-                  isSelected={isSelected}
-                  isEditing={isEditing}
-                  onSaved={props.onCostSaved}
-                  onCommitEdit={handleCommitEdit}
-                  onStartEdit={handleStartEdit}
-                />
-              ) : "—"}
-            </td>
-          );
-        case "price":
-          return (
-            <td key={key} className="wb-table-cell--numeric wb-table-cell--cost">
-              {nmId !== null ? (
-                <PriceInputCell
-                  nmId={nmId}
-                  entry={priceEntry}
-                  overlay={props.priceChangeStatuses.get(nmId)}
-                  isEditing={editingPriceNmId === nmId}
-                  onStartEdit={handleStartPriceEdit}
-                  onCommitEdit={handleCommitPriceEdit}
-                  onRequestConfirm={handleRequestPriceConfirm}
-                />
-              ) : (
-                <span style={{ opacity: 0.3 }}>—</span>
-              )}
-            </td>
-          );
-        case "commission": {
-          const commission = nmId !== null ? props.commissionValues.get(nmId) : undefined;
-          return (
-            <td key={key} className="wb-table-cell--numeric">
-              {commission !== undefined
-                ? formatMoney(commission)
-                : <span style={{ opacity: 0.3 }}>—</span>}
-            </td>
-          );
-        }
-        case "acquiring": {
-          const acquiring = nmId !== null ? props.acquiringValues.get(nmId) : undefined;
-          return (
-            <td key={key} className="wb-table-cell--numeric">
-              {acquiring !== undefined
-                ? formatMoney(acquiring)
-                : <span style={{ opacity: 0.3 }}>—</span>}
-            </td>
-          );
-        }
-        case "drr": {
-          const drr = nmId !== null ? props.drrValues.get(nmId) : undefined;
-          return (
-            <td key={key} className="wb-table-cell--numeric">
-              {drr !== undefined
-                ? formatMoney(drr)
-                : <span style={{ opacity: 0.3 }}>—</span>}
-            </td>
-          );
-        }
-        case "orders":
-          return (
-            <td key={key} className="wb-table-cell--numeric wb-table-cell--orders">
-              {orders && orders.ordersCount > 0 ? String(orders.ordersCount) : "—"}
-            </td>
-          );
-        case "buyout": {
-          // 0 выкупов при наличии заказов = данных ещё нет → «—», как в ретроспективе
-          // (не фантомные 0,00 %). Процент показываем только когда есть и заказы, и выкупы.
-          const hasData = !!buyout && buyout.ordersCount > 0 && buyout.buyoutsCount > 0;
-          const percent = hasData ? (buyout.buyoutsCount / buyout.ordersCount) * 100 : null;
-          return (
-            <td key={key} className="wb-table-cell--numeric">
-              {percent !== null
-                ? formatPercent(percent)
-                : <span style={{ opacity: 0.3 }}>—</span>}
-            </td>
-          );
-        }
-        case "spp": {
-          // СПП за сегодня (среднее по заказам). spp=0 — валидное значение (нет скидки),
-          // показываем «0,00 %»; «—» только при отсутствии данных (нет заказов сегодня).
-          const spp = nmId !== null ? props.sppValues.get(nmId) : undefined;
-          return (
-            <td key={key} className="wb-table-cell--numeric">
-              {spp !== undefined
-                ? formatPercent(spp)
-                : <span style={{ opacity: 0.3 }}>—</span>}
-            </td>
-          );
-        }
-        case "stock":
-          return (
-            <td key={key} className="wb-table-cell--numeric">
-              {stock !== undefined ? String(stock) : "—"}
-            </td>
-          );
-        case "ordersSum":
-          return (
-            <td key={key} className="wb-table-cell--numeric">
-              {ordersSum !== undefined && ordersSum > 0
-                ? formatMoney(ordersSum)
-                : <span style={{ opacity: 0.3 }}>—</span>}
-            </td>
-          );
-        case "revenue": {
-          const revenue = nmId !== null ? props.revenueValues.get(nmId) : undefined;
-          return (
-            <td key={key} className="wb-table-cell--numeric">
-              {revenue !== undefined && revenue > 0
-                ? formatMoney(revenue)
-                : <span style={{ opacity: 0.3 }}>—</span>}
-            </td>
-          );
-        }
-        case "costSum": {
-          const costSum = nmId !== null ? props.costSumValues.get(nmId) : undefined;
-          return (
-            <td key={key} className="wb-table-cell--numeric">
-              {costSum !== undefined && costSum > 0
-                ? formatMoney(costSum)
-                : <span style={{ opacity: 0.3 }}>—</span>}
-            </td>
-          );
-        }
-        case "adSpend": {
-          const adSpend = nmId !== null ? props.adSpendValues.get(nmId) : undefined;
-          return (
-            <td key={key} className="wb-table-cell--numeric">
-              {adSpend !== undefined && adSpend > 0
-                ? formatMoney(adSpend)
-                : <span style={{ opacity: 0.3 }}>—</span>}
-            </td>
-          );
-        }
-      }
+    const bodyCtx: ProductsBodyRenderCtx = {
+      costPrices: props.costPrices,
+      orderCounts: props.orderCounts,
+      rollingBuyoutCounts: props.rollingBuyoutCounts,
+      stockCounts: props.stockCounts,
+      priceCounts: props.priceCounts,
+      ordersSumValues: props.ordersSumValues,
+      revenueValues: props.revenueValues,
+      costSumValues: props.costSumValues,
+      adSpendValues: props.adSpendValues,
+      sppValues: props.sppValues,
+      commissionValues: props.commissionValues,
+      acquiringValues: props.acquiringValues,
+      drrValues: props.drrValues,
+      priceChangeStatuses: props.priceChangeStatuses,
+      selectedNmIds,
+      editingNmId,
+      editingPriceNmId,
+      onCellClick: handleCellClick,
+      onCellDoubleClick: handleCellDoubleClick,
+      onCostSaved: props.onCostSaved,
+      onCommitEdit: handleCommitEdit,
+      onStartEdit: handleStartEdit,
+      onStartPriceEdit: handleStartPriceEdit,
+      onCommitPriceEdit: handleCommitPriceEdit,
+      onRequestPriceConfirm: handleRequestPriceConfirm,
     };
 
     // ── Render ─────────────────────────────────────────────────────────────────
@@ -1091,11 +391,11 @@ export const DashboardCatalogProductsSection = memo(
                   </colgroup>
                   <thead>
                     <tr>
-                      {orderedColumns.map((col, colIdx) => withPin(col, renderHeaderCell(col, colIdx)))}
+                      {orderedColumns.map((col, colIdx) => withPin(col, renderProductsHeaderCell(col, colIdx, headerCtx)))}
                     </tr>
                     {displayProducts.length > 0 && (
                       <tr className="wb-products-totals-row wb-thead-row--second">
-                        {orderedColumns.map((col) => withPin(col, renderTotalsCell(col)))}
+                        {orderedColumns.map((col) => withPin(col, renderProductsTotalsCell(col, totals)))}
                       </tr>
                     )}
                   </thead>
@@ -1116,7 +416,7 @@ export const DashboardCatalogProductsSection = memo(
                               data-index={vRow.index}
                               ref={rowVirtualizer.measureElement}
                             >
-                              {orderedColumns.map((col) => withPin(col, renderBodyCell(col, product, vRow.index)))}
+                              {orderedColumns.map((col) => withPin(col, renderProductsBodyCell(col, product, vRow.index, bodyCtx)))}
                             </tr>
                           );
                         })}

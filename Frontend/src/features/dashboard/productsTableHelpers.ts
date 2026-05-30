@@ -8,6 +8,12 @@ export function getColWidth(col: ProductColumnDefinition, nameColWidth: number):
   return col.key === "vendorCode" ? nameColWidth : col.defaultWidth;
 }
 
+// ─── Отображаемое «Название» товара ───────────────────────────────────────────
+// vendorCode, иначе #nmId, иначе «—».
+export function getDisplayVendorCode(p: { vendorCode: string; nmId: number | null }): string {
+  return p.vendorCode !== "" ? p.vendorCode : p.nmId !== null ? `#${String(p.nmId)}` : "—";
+}
+
 // ─── Column label ─────────────────────────────────────────────────────────────
 
 export function getColLabel(key: ProductsColumnKey): string {

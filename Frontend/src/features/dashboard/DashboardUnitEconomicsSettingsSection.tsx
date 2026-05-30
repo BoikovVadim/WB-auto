@@ -128,6 +128,32 @@ export function DashboardUnitEconomicsSettingsSection({
 
         <div className="wb-unit-econ-blocks">
           <div className="wb-unit-econ-block">
+            <h3 className="wb-unit-econ-block-title">Общие метрики</h3>
+            <table className="wb-data-table wb-unit-econ-table">
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left" }}>Метрика</th>
+                  <th style={{ textAlign: "right", width: 170 }}>Значение, %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {GLOBAL_METRICS.map((m) => (
+                  <tr key={m.key}>
+                    <td title={m.hint}>{m.label}</td>
+                    <td style={{ textAlign: "right" }}>
+                      <PercentInput
+                        value={settings[m.field]}
+                        ariaLabel={m.label}
+                        onCommit={(next) => saveGlobalMetric(m.key, next)}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="wb-unit-econ-block">
             <h3 className="wb-unit-econ-block-title">Комиссия по категориям</h3>
             {isLoading && settings.categories.length === 0 ? (
               <p className="wb-card-meta">Загрузка…</p>
@@ -157,32 +183,6 @@ export function DashboardUnitEconomicsSettingsSection({
                 </tbody>
               </table>
             )}
-          </div>
-
-          <div className="wb-unit-econ-block">
-            <h3 className="wb-unit-econ-block-title">Общие метрики</h3>
-            <table className="wb-data-table wb-unit-econ-table">
-              <thead>
-                <tr>
-                  <th style={{ textAlign: "left" }}>Метрика</th>
-                  <th style={{ textAlign: "right", width: 170 }}>Значение, %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {GLOBAL_METRICS.map((m) => (
-                  <tr key={m.key}>
-                    <td title={m.hint}>{m.label}</td>
-                    <td style={{ textAlign: "right" }}>
-                      <PercentInput
-                        value={settings[m.field]}
-                        ariaLabel={m.label}
-                        onCommit={(next) => saveGlobalMetric(m.key, next)}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
         </div>
       </section>

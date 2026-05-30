@@ -1,8 +1,6 @@
 import {
   useCallback,
-  useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 
@@ -34,7 +32,6 @@ import {
 } from "./advertising/productAdvertisingDetailInvalidation";
 import {
   advertisingUxBudgetsMs,
-  completeAdvertisingUxBudget,
   startAdvertisingUxBudget,
 } from "./advertising/advertisingUxBudgets";
 import { WbDashboardShell } from "./WbDashboardShell";
@@ -45,22 +42,13 @@ import { useDashboardExportView } from "./useDashboardExportView";
 import { useDashboardInitialState } from "./useDashboardInitialState";
 import { useDashboardProductsMode } from "./useDashboardProductsMode";
 import { useDashboardSheets } from "./useDashboardSheets";
+import { useDashboardShellHandlers } from "./useDashboardShellHandlers";
+import { useDashboardLifecycle } from "./useDashboardLifecycle";
+import { sortExportHistoryNewestFirst } from "./dashboardExportHistory";
 import { useDashboardProductsWorkspace } from "./useDashboardProductsWorkspace";
 import { useDashboardWorkspaceActions } from "./useDashboardWorkspaceActions";
 import type { DashboardStatusNotice } from "./useDashboardWorkspaceActionTypes";
 const primaryEntityType: SyncEntity = "product_search_texts";
-
-function sortExportHistoryNewestFirst(items: WbExportListItem[]) {
-  return [...items].sort((left, right) => {
-    const leftMs = Date.parse(left.exportedAt);
-    const rightMs = Date.parse(right.exportedAt);
-    if (Number.isFinite(leftMs) && Number.isFinite(rightMs) && leftMs !== rightMs) {
-      return rightMs - leftMs;
-    }
-
-    return right.requestId.localeCompare(left.requestId, "en");
-  });
-}
 
 export function WbDashboard() {
   const {
@@ -353,60 +341,30 @@ export function WbDashboard() {
     getSafeMessage,
     backendErrorMessage: ui.backendError,
   });
-  const initializeDashboardRef = useRef(initializeDashboard);
-
-  useEffect(() => {
-    initializeDashboardRef.current = initializeDashboard;
-  }, [initializeDashboard]);
-
-  useEffect(() => {
-    startAdvertisingUxBudget(
-      "dashboard:shell",
-      "dashboard shell visible",
-      advertisingUxBudgetsMs.dashboardShellVisible,
-    );
-    void initializeDashboardRef.current().finally(() => {
-      setIsDashboardBootstrapComplete(true);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (health !== null && integrationStatus !== null && tokenSession !== null) {
-      completeAdvertisingUxBudget("dashboard:shell");
-    }
-  }, [health, integrationStatus, tokenSession]);
-
-  useEffect(() => {
-    completeAdvertisingUxBudget(`section:${activeSection}`);
-  }, [activeSection]);
-
-  const handleDashboardRefresh = useCallback(async () => {
-    setStatusNotice(null);
-    startAdvertisingUxBudget(
-      "dashboard:shell",
-      "dashboard shell visible",
-      advertisingUxBudgetsMs.dashboardShellVisible,
-    );
-
-    if (activeSection === "products" && productsMode === "detail") {
-      await handleReloadSelectedProductAdvertising({
-        target: "all",
-      });
-    }
-
-    await initializeDashboard();
-  }, [
-    activeSection,
-    handleReloadSelectedProductAdvertising,
+  const { handleDashboardRefresh } = useDashboardLifecycle({
     initializeDashboard,
+    health,
+    integrationStatus,
+    tokenSession,
+    activeSection,
     productsMode,
-  ]);
+    handleReloadSelectedProductAdvertising,
+    setIsDashboardBootstrapComplete,
+    setStatusNotice,
+  });
 
-  
-
-  
-
-  
+  const shellHandlers = useDashboardShellHandlers({
+    setActiveSection,
+    setActiveSheet,
+    setSelectedMethodEntity,
+    setSelectedCatalogVendorCode,
+    openProductsWorkspace,
+    prefetchProductsWorkspace,
+    prefetchCostPrices,
+    refreshUnitEconomicsCharges,
+    openSheet,
+    closeSheet,
+  });
 
   const detailWorkspace = useMemo(
     () => (
@@ -471,48 +429,7 @@ export function WbDashboard() {
       isTokenSaving={isTokenSaving}
       error={error}
       statusNotice={statusNotice}
-      onSetExportsSection={() => {
-        setActiveSection("exports");
-        setSelectedMethodEntity(null);
-      }}
-      onOpenJamSection={() => setActiveSection("jam")}
-      onOpenCatalogSection={() => setActiveSection("catalog")}
-      onOpenCampaignsSection={() => setActiveSection("campaigns")}
-      onOpenSyncRunsSection={() => setActiveSection("sync-runs")}
-      onOpenClusterStatsSection={() => setActiveSection("cluster-stats")}
-      onOpenDailyStatsSection={() => setActiveSection("daily-stats")}
-      onOpenMinusPhrasesSection={() => setActiveSection("minus-phrases")}
-      onOpenQueryFrequenciesSection={() => setActiveSection("query-frequencies")}
-      onOpenProductsSection={() => {
-        setSelectedCatalogVendorCode(null);
-        void openProductsWorkspace();
-      }}
-      onPrefetchProductsSection={prefetchProductsWorkspace}
-      onPrefetchCatalogProductsSection={() => {
-        prefetchProductsWorkspace();
-        prefetchCostPrices();
-      }}
-      onOpenCatalogProductsSection={() => {
-        prefetchProductsWorkspace();
-        prefetchCostPrices();
-        setActiveSheet("none");
-        setActiveSection("catalog-products");
-      }}
-      onOpenUnitEconomicsSection={() => {
-        prefetchProductsWorkspace();
-        prefetchCostPrices();
-        setActiveSheet("none");
-        setActiveSection("unit-economics");
-      }}
-      onOpenUnitEconomicsSettingsSection={() => {
-        setActiveSheet("none");
-        setActiveSection("unit-economics-settings");
-      }}
-      onUnitEconomicsChargesInvalidate={refreshUnitEconomicsCharges}
-      onOpenDashboardSection={() => { setActiveSection("dashboard"); }}
-      onOpenDashboardTechSection={() => { setActiveSection("dashboard-tech"); }}
-      onOpenDashboardCabinetSection={() => { setActiveSection("dashboard-cabinet"); }}
-      onOpenChangeHistorySection={() => { setActiveSection("change-history"); }}
+      {...shellHandlers}
       isCostPriceSheetOpen={isCostPriceSheetOpen}
       isOrdersSheetOpen={isOrdersSheetOpen}
       isBuyoutSheetOpen={isBuyoutSheetOpen}
@@ -545,30 +462,10 @@ export function WbDashboard() {
       priceChangeStatuses={priceChangeStatuses}
       isCostPricesLoading={isCostPricesLoading}
       costPrices={costPrices}
-      onOpenCostPriceSheet={() => openSheet("cost-price")}
-      onCloseCostPriceSheet={closeSheet}
-      onOpenOrdersSheet={() => openSheet("orders")}
-      onCloseOrdersSheet={closeSheet}
-      onOpenBuyoutSheet={() => openSheet("buyout")}
-      onCloseBuyoutSheet={closeSheet}
-      onOpenStocksSheet={() => openSheet("stocks")}
-      onCloseStocksSheet={closeSheet}
-      onOpenPricesSheet={() => openSheet("prices")}
-      onClosePricesSheet={closeSheet}
-      onOpenOrdersSumSheet={() => openSheet("orders-sum")}
-      onCloseOrdersSumSheet={closeSheet}
-      onOpenRevenueSheet={() => openSheet("revenue")}
-      onCloseRevenueSheet={closeSheet}
-      onOpenCostSumSheet={() => openSheet("cost-sum")}
-      onCloseCostSumSheet={closeSheet}
-      onOpenAdSpendSheet={() => openSheet("ad-spend")}
-      onCloseAdSpendSheet={closeSheet}
-      onOpenSppSheet={() => openSheet("spp")}
-      onCloseSppSheet={closeSheet}
       onCostSaved={handleCostSaved}
       onCostCleared={handleCostCleared}
       onPriceSaved={handlePriceSaved}
-      onRefresh={() => void handleDashboardRefresh()}
+      onRefresh={handleDashboardRefresh}
       onTokenInputChange={setTokenInput}
       onSaveToken={handleSaveToken}
       onClearToken={handleClearToken}
@@ -587,7 +484,6 @@ export function WbDashboard() {
       onProductHover={handleProductHover}
       onProductFocus={handleProductFocus}
       onBackToProducts={handleBackToProducts}
-      onBackToMethods={() => setSelectedMethodEntity(null)}
       onRunExport={handleRunExport}
       onPrefetchSavedExport={prefetchSavedExport}
       onOpenExport={openExport}
