@@ -166,6 +166,14 @@ export function useProductsTableSelection({
     setEditing({ nmId, colKey: "cost" });
   }, []);
 
+  // Стабильный колбэк для карандаша полей-вводов калькулятора (целевая маржа / цена).
+  const onStartEditCalc = useCallback((nmId: number, colKey: EditableColumnKey) => {
+    setSelectedCells(new Set([cellKey(nmId, colKey)]));
+    setEditingPriceNmId(null);
+    setInitialEditChar(null);
+    setEditing({ nmId, colKey });
+  }, []);
+
   // ── Запись цены на WB (отдельно от выделения) ───────────────────────────────
   const onStartPriceEdit = useCallback((nmId: number) => {
     setSelectedCells(new Set());
@@ -329,6 +337,7 @@ export function useProductsTableSelection({
     onCellDoubleClick,
     onCommitEdit,
     onStartEditCost,
+    onStartEditCalc,
     onStartPriceEdit,
     onCommitPriceEdit,
     onRequestPriceConfirm,

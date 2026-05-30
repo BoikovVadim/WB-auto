@@ -54,6 +54,7 @@ export type ProductsBodySelection = Pick<
   | "onCellDoubleClick"
   | "onCommitEdit"
   | "onStartEditCost"
+  | "onStartEditCalc"
   | "onStartPriceEdit"
   | "onCommitPriceEdit"
   | "onRequestPriceConfirm"
@@ -110,6 +111,7 @@ export function useProductsBodyCtx(
       onCellDoubleClick: selection.onCellDoubleClick,
       onCommitEdit: selection.onCommitEdit,
       onStartEditCost: selection.onStartEditCost,
+      onStartEditCalc: selection.onStartEditCalc,
       onStartPriceEdit: selection.onStartPriceEdit,
       onCommitPriceEdit: selection.onCommitPriceEdit,
       onRequestPriceConfirm: selection.onRequestPriceConfirm,
@@ -151,6 +153,7 @@ export function useProductsBodyCtx(
       selection.onCellDoubleClick,
       selection.onCommitEdit,
       selection.onStartEditCost,
+      selection.onStartEditCalc,
       selection.onStartPriceEdit,
       selection.onCommitPriceEdit,
       selection.onRequestPriceConfirm,

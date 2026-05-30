@@ -63,6 +63,8 @@ export type ProductsBodyRenderCtx = {
   onCostSaved: (nmId: number, value: number) => Promise<void>;
   onCommitEdit: () => void;
   onStartEditCost: (nmId: number) => void;
+  /** Вход в правку поля-ввода калькулятора (целевая маржа / цена) по карандашу. */
+  onStartEditCalc: (nmId: number, colKey: EditableColumnKey) => void;
   onStartPriceEdit: (nmId: number) => void;
   onCommitPriceEdit: () => void;
   onRequestPriceConfirm: (nmId: number, target: number) => void;
@@ -205,11 +207,13 @@ export function renderProductsBodyCell(
           {nmId !== null ? (
             <CalcInputCell
               nmId={nmId}
+              colKey="targetMargin"
               savedValue={ctx.targetMarginInputs.get(nmId) ?? null}
               isEditing={editingThis}
               initialChar={editingThis ? ctx.initialEditChar : null}
               onChange={ctx.onTargetMarginChange}
               onCommitEdit={ctx.onCommitEdit}
+              onStartEdit={ctx.onStartEditCalc}
               ariaLabel="Целевая маржа, %"
             />
           ) : dash}
@@ -232,7 +236,7 @@ export function renderProductsBodyCell(
           </div>
         );
       }
-      return <div key={key} className="wb-pg-cell wb-pg-cell--num wb-pg-cell--calc">{formatMoney(r)}</div>;
+      return <div key={key} className="wb-pg-cell wb-pg-cell--num">{formatMoney(r)}</div>;
     }
     case "priceInput": {
       const editingThis = isCellEditing("priceInput");
@@ -241,11 +245,13 @@ export function renderProductsBodyCell(
           {nmId !== null ? (
             <CalcInputCell
               nmId={nmId}
+              colKey="priceInput"
               savedValue={ctx.priceCalcInputs.get(nmId) ?? null}
               isEditing={editingThis}
               initialChar={editingThis ? ctx.initialEditChar : null}
               onChange={ctx.onPriceCalcChange}
               onCommitEdit={ctx.onCommitEdit}
+              onStartEdit={ctx.onStartEditCalc}
               ariaLabel="Цена для расчёта маржи, ₽"
             />
           ) : dash}
@@ -268,7 +274,7 @@ export function renderProductsBodyCell(
           </div>
         );
       }
-      return <div key={key} className="wb-pg-cell wb-pg-cell--num wb-pg-cell--calc">{formatPercent(r)}</div>;
+      return <div key={key} className="wb-pg-cell wb-pg-cell--num">{formatPercent(r)}</div>;
     }
     case "orders": {
       const orders = nmId !== null ? ctx.orderCounts.get(nmId) : undefined;

@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { formatMoney } from "../../formatters";
 import type { CurrentPriceEntry } from "./useCurrentPrices";
 import type { PriceChangeStatus } from "../../api/syncClientPrices";
+import type { EditableColumnKey } from "./useProductsTableSelection";
 
 export function SortArrow({
   active,
@@ -160,19 +161,24 @@ export const CostInputCell = memo(function CostInputCell({
 
 export const CalcInputCell = memo(function CalcInputCell({
   nmId,
+  colKey,
   savedValue,
   isEditing,
   initialChar,
   onChange,
   onCommitEdit,
+  onStartEdit,
   ariaLabel,
 }: {
   nmId: number;
+  colKey: EditableColumnKey;
   savedValue: number | null;
   isEditing: boolean;
   initialChar: string | null;
   onChange: (nmId: number, value: number | null) => void;
   onCommitEdit: () => void;
+  /** Вход в правку — карандаш. ОДИН стабильный колбэк на все ячейки (memo цел). */
+  onStartEdit: (nmId: number, colKey: EditableColumnKey) => void;
   ariaLabel: string;
 }) {
   const [draft, setDraft] = useState("");
@@ -249,8 +255,24 @@ export const CalcInputCell = memo(function CalcInputCell({
   }
 
   return (
-    <span className="wb-cost-price-value">
-      {savedValue !== null ? String(savedValue) : <span className="wb-cost-price-empty">—</span>}
+    <span className="wb-cost-price-display">
+      <button
+        type="button"
+        className="wb-cost-price-edit-icon"
+        title="Изменить"
+        aria-label={`Изменить — ${ariaLabel}`}
+        tabIndex={-1}
+        onMouseDown={(e) => { e.stopPropagation(); }}
+        onClick={(e) => { e.stopPropagation(); onStartEdit(nmId, colKey); }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+        </svg>
+      </button>
+      <span className="wb-cost-price-value">
+        {savedValue !== null ? String(savedValue) : <span className="wb-cost-price-empty">—</span>}
+      </span>
     </span>
   );
 });
