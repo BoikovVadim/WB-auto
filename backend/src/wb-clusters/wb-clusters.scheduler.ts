@@ -255,7 +255,9 @@ export class WbClustersScheduler implements OnModuleInit {
 
   // ─── Stocks snapshot ─────────────────────────────────────────────────────────
   //
-  // Run once a day at 01:00 МСК (22:00 UTC).
+  // Раз в сутки в 01:00 МСК (дефолт WB_STOCKS_SNAPSHOT_CRON). Сервер в Europe/Moscow →
+  // cron-строка трактуется как МСК, НЕ UTC; прежний "0 0 22 * * *" с пометкой «22:00 UTC»
+  // на деле срабатывал в 22:00 МСК.
   // Downloads /api/v1/supplier/stocks from WB Statistics API,
   // aggregates quantity by nmId across all warehouses,
   // and writes one row per product into wb_product_daily_stocks.
@@ -269,11 +271,14 @@ export class WbClustersScheduler implements OnModuleInit {
 
   // ─── Prices snapshot ─────────────────────────────────────────────────────────
   //
-  // Run once a day at 01:05 МСК (22:05 UTC), 5 minutes after stocks snapshot.
-  // Downloads current prices and seller discounts from WB Prices API
-  // and writes one row per product into wb_product_daily_prices.
+  // Раз в сутки в 01:05 МСК. Сервер живёт в Europe/Moscow, поэтому cron-строка — это
+  // МСК напрямую, НЕ UTC. Прежнее "5 22 * * *" с пометкой «22:05 UTC = 01:05 МСК» на
+  // самом деле срабатывало в 22:05 МСК: снапшот за день писался поздно вечером, и почти
+  // все сутки активный столбец ретроспективы (= MAX(price_date)) показывал вчера.
+  // Скачивает текущие цены и скидки из WB Prices API, пишет строку на товар в
+  // wb_product_daily_prices.
 
-  @Cron("5 22 * * *")
+  @Cron("0 5 1 * * *")
   async handlePricesSnapshot() {
     await this.wbClustersService
       .syncPricesFromWb()
