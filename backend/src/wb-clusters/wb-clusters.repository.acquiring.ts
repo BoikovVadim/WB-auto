@@ -36,8 +36,15 @@ export type AcquiringWeeklyHistoryRow = {
  * = acquiring_fee_sum / retail_amount_sum × 100 (последняя закрытая неделя).
  */
 export abstract class WbClustersRepositoryAcquiring extends WbClustersRepositoryPrices {
-  /** Upsert агрегированного недельного эквайринга. */
-  async upsertAcquiringWeekly(rows: AcquiringWeeklyRow[]): Promise<void> {
+  /**
+   * Накопительный upsert недельного эквайринга: при конфликте СУММИРУЕТ к существующему
+   * (fee += EXCLUDED.fee, retail += EXCLUDED.retail). Нужен для почанкового бэкфилла —
+   * неделя, попавшая на стык чанков, корректно складывается из частей. Перед первым
+   * касанием недели в прогоне её чистят через clearAcquiringWeek (иначе пере-синк
+   * задвоит). Почанковая запись делает синк рестарт-устойчивым: завершённые чанки
+   * переживают перезапуск процесса.
+   */
+  async addAcquiringWeekly(rows: AcquiringWeeklyRow[]): Promise<void> {
     if (rows.length === 0) return;
     const tbl = this.tableName("wb_product_acquiring_weekly");
 
@@ -50,24 +57,24 @@ export abstract class WbClustersRepositoryAcquiring extends WbClustersRepository
     });
 
     await this.getPool().query(
-      `INSERT INTO ${tbl}
+      `INSERT INTO ${tbl} AS t
          (nm_id, week_start, week_end, acquiring_fee_sum, retail_amount_sum, updated_at)
        VALUES ${placeholders.join(", ")}
        ON CONFLICT (nm_id, week_start) DO UPDATE SET
          week_end          = EXCLUDED.week_end,
-         acquiring_fee_sum = EXCLUDED.acquiring_fee_sum,
-         retail_amount_sum = EXCLUDED.retail_amount_sum,
+         acquiring_fee_sum = t.acquiring_fee_sum + EXCLUDED.acquiring_fee_sum,
+         retail_amount_sum = t.retail_amount_sum + EXCLUDED.retail_amount_sum,
          updated_at        = NOW()`,
       values,
     );
   }
 
-  /** Удаляет недели начиная с weekStartFrom (включительно) — для чистой пере-синки диапазона. */
-  async clearAcquiringWeeklyFrom(weekStartFrom: string): Promise<void> {
+  /** Удаляет одну отчётную неделю (по week_start) — чистка перед накоплением в прогоне. */
+  async clearAcquiringWeek(weekStart: string): Promise<void> {
     await this.getPool().query(
       `DELETE FROM ${this.tableName("wb_product_acquiring_weekly")}
-       WHERE week_start >= $1::DATE`,
-      [weekStartFrom],
+       WHERE week_start = $1::DATE`,
+      [weekStart],
     );
   }
 
