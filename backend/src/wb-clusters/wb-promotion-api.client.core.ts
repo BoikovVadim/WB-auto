@@ -42,6 +42,7 @@ import {
 import type {
   PromotionCampaignCountResponse,
   PromotionCampaignDetailsResponse,
+  PromotionAdvUpdResponse,
   PromotionDailyNormQueryStatsResponse,
   PromotionFullstatsResponse,
   PromotionKeywordStatsResponse,
@@ -190,6 +191,15 @@ export class WbPromotionApiClient {
       return { items: [] satisfies NonNullable<PromotionDailyNormQueryStatsResponse["items"]> };
     }
     return this.request<PromotionDailyNormQueryStatsResponse>({ method: "POST", path: "/adv/v1/normquery/stats", body: params });
+  }
+
+  async getAdvUpd(params: { from: string; to: string }) {
+    // GET /adv/v1/upd — история затрат за период (дешёвый pre-filter тративших РК).
+    return this.request<PromotionAdvUpdResponse>({
+      method: "GET",
+      path: "/adv/v1/upd",
+      query: { from: params.from, to: params.to },
+    });
   }
 
   async getFullstats(params: { advertIds: number[]; from: string; to: string }) {

@@ -242,19 +242,22 @@ export const appEnv = {
     "6500",
   ),
   // GET /adv/v3/fullstats (полный расход кампании, как в кабинете). Лимит WB —
-  // ~200 запросов/сутки на аккаунт; держим минутный интервал как страховку от
-  // 429. Число запросов снижаем фильтром кампаний по остаткам в самом синке.
+  // ~200 запросов/сутки на аккаунт; держим минутный интервал как страховку от 429.
+  // Число запросов снижаем pre-фильтром /adv/v1/upd (только реально тратившие РК).
   wbPromotionFullstatsMinIntervalMs: parsePositiveIntegerEnv(
     "WB_PROMOTION_FULLSTATS_MIN_INTERVAL_MS",
     "60000",
   ),
   // Сколько advertId (ids через запятую) за один GET /adv/v3/fullstats.
+  // WB ограничивает 50 кампаний на запрос ("number of advert cannot be more than 50").
   wbPromotionFullstatsChunkSize: parsePositiveIntegerEnv(
     "WB_PROMOTION_FULLSTATS_CHUNK_SIZE",
-    "100",
+    "50",
     1,
   ),
-  // Часовой крон полного расхода рекламы из GET /adv/v3/fullstats (в начале каждого часа МСК).
+  // Часовой крон полного расхода рекламы (в начале каждого часа МСК). Pre-фильтр
+  // /adv/v1/upd оставляет лишь тративших РК (~80 из ~1000) → ~1 upd + 2 fullstats
+  // на прогон = ~72 запроса/сутки, с большим запасом под лимит WB (~200).
   wbPromotionFullstatsSyncCron:
     getOptionalEnv("WB_PROMOTION_FULLSTATS_SYNC_CRON", "0 0 * * * *").trim() ||
     "0 0 * * * *",

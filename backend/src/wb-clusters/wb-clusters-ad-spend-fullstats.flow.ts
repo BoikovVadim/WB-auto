@@ -1,21 +1,24 @@
 import { appEnv } from "../common/env";
-import type { PromotionFullstatsResponse } from "./wb-clusters.types";
-import type { WbClustersRepository } from "./wb-clusters.repository";
+import type {
+  PromotionAdvUpdResponse,
+  PromotionFullstatsResponse,
+} from "./wb-clusters.types";
 
 // Локальный any-alias, как в остальных phase/flow-файлах: даёт доступ к
 // protected-полям сервиса (wbClustersRepository, wbPromotionApiClient,
 // wbRuntimeConfigService, logger, getStatsPeriod, chunkArray) без отдельного
 // контекст-интерфейса.
 type WbClustersService = any;
-type StoredCampaignInventoryEntry =
-  Awaited<ReturnType<WbClustersRepository["getStoredCampaignInventory"]>>[number];
 
 /**
  * Тянет ПОЛНЫЙ расход рекламы из WB GET /adv/v3/fullstats (как в кабинете) и
  * пишет в wb_advert_daily_spend по (advert × товар × день). Запускается часовым
- * кроном отдельно от основного 10-мин синка. Чтобы уложиться в суточный лимит
- * запросов WB (~200/аккаунт), шлём в fullstats только кампании товаров с
- * остатком > 0 (активный ассортимент), а не всю историю кампаний.
+ * кроном отдельно от основного 10-мин синка.
+ *
+ * Чтобы уложиться в суточный лимит fullstats (~200 запросов/аккаунт) и не гонять
+ * тысячу кампаний инвентаря, сначала одним дешёвым запросом /adv/v1/upd (история
+ * затрат) узнаём, у каких РК реально был расход за период, и fullstats зовём
+ * только по ним. На практике это ~80 кампаний из ~1000 → 2 запроса fullstats.
  */
 export async function runAdSpendFullstatsSync(self: WbClustersService): Promise<void> {
   if (!appEnv.wbPromotionSyncEnabled) return;
@@ -26,44 +29,46 @@ export async function runAdSpendFullstatsSync(self: WbClustersService): Promise<
   }
   await self.wbClustersRepository.ensureSchema();
 
-  const inventory: StoredCampaignInventoryEntry[] =
-    await self.wbClustersRepository.getStoredCampaignInventory();
+  const period = self.getStatsPeriod();
 
-  // Шлём в fullstats только кампании, рекламирующие товары с остатком > 0:
-  // у WB /adv/v3/fullstats жёсткий суточный лимит (~200 запросов/аккаунт), а в
-  // инвентаре копятся все кампании за историю (включая завершённые). Товары без
-  // остатка сейчас не продаются — их расход для дашборда не интересен. Это режет
-  // 1000 кампаний до активного ассортимента и позволяет часовой крон.
-  const stocks: Array<{ nmId: number; quantity: number }> =
-    await self.wbClustersRepository.getLatestStocks();
-  const inStockNmIds = new Set<number>();
-  for (const s of stocks) {
-    if (s.quantity > 0) inStockNmIds.add(s.nmId);
+  // Шаг 1 — дешёвый pre-filter: /adv/v1/upd отдаёт список списаний за период.
+  // Берём кампании с расходом (updSum > 0); валюту тоже из upd.
+  let updResponse: PromotionAdvUpdResponse | null = null;
+  try {
+    updResponse = await self.wbPromotionApiClient.getAdvUpd({
+      from: period.from,
+      to: period.to,
+    });
+  } catch (err) {
+    self.logger.warn(`Ad-spend fullstats sync: /adv/v1/upd ошибка: ${(err as Error).message}`);
+    return;
   }
 
   const currencyByAdvertId = new Map<number, string | null>();
-  const advertIds: number[] = [];
-  for (const item of inventory) {
-    const hasStockedProduct = (item.products as Array<{ nmId: number }>).some((p) =>
-      inStockNmIds.has(p.nmId),
-    );
-    if (!hasStockedProduct) continue;
-    advertIds.push(item.advertId);
-    currencyByAdvertId.set(item.advertId, item.currency);
+  const spentAdvertIds = new Set<number>();
+  for (const rec of updResponse ?? []) {
+    const advertId = Number(rec.advertId);
+    if (!Number.isFinite(advertId)) continue;
+    if (Number(rec.updSum) > 0) {
+      spentAdvertIds.add(advertId);
+      if (rec.currency && !currencyByAdvertId.has(advertId)) {
+        currencyByAdvertId.set(advertId, rec.currency);
+      }
+    }
   }
+  const advertIds = Array.from(spentAdvertIds);
   if (advertIds.length === 0) {
     self.logger.log(
-      "Ad-spend fullstats sync: нет кампаний с товарами в наличии, пропускаю.",
+      "Ad-spend fullstats sync: за период не было расходов (по /adv/v1/upd), пропускаю.",
     );
     return;
   }
 
-  const period = self.getStatsPeriod();
   self.logger.log(
-    `Ad-spend fullstats sync: ${advertIds.length}/${inventory.length} кампаний (фильтр по остаткам), период ${period.from} → ${period.to}`,
+    `Ad-spend fullstats sync: ${advertIds.length} кампаний с расходом (из /adv/v1/upd), период ${period.from} → ${period.to}`,
   );
 
-  // Накопитель расхода по (advert, nm, date). fullstats дробит расход по
+  // Шаг 2 — полный расход с разбивкой по товарам. fullstats дробит расход по
   // площадкам (apps), поэтому суммируем nm.sum по всем apps одного дня.
   const spendByKey = new Map<
     string,

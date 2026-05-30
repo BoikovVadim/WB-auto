@@ -16,6 +16,7 @@ export type {
 } from "./types/core.types";
 
 export type {
+  PromotionAdvUpdResponse,
   PromotionCampaignCountGroup,
   PromotionCampaignCountResponse,
   PromotionCampaignDetailsItem,

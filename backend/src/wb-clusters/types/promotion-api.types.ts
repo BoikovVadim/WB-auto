@@ -159,6 +159,25 @@ export type PromotionFullstatsResponse = Array<{
   }> | null;
 }>;
 
+/**
+ * Ответ GET /adv/v1/upd — история затрат (списаний) по кампаниям за период.
+ * Одна запись = одно списание: advertId, updSum (сумма ₽), updTime, источник
+ * (paymentType: «Баланс»/«Счет»). Используем как дешёвый pre-filter: один запрос
+ * даёт список кампаний, у которых реально был расход → fullstats зовём только по
+ * ним. Параметры: from/to в YYYY-MM-DD.
+ */
+export type PromotionAdvUpdResponse = Array<{
+  updTime?: string;
+  campName?: string;
+  paymentType?: string;
+  updNum?: number;
+  updSum?: number;
+  advertId: number;
+  advertType?: number;
+  advertStatus?: number;
+  currency?: string;
+}>;
+
 export interface PromotionKeywordStatsResponse {
   keywords: Array<{
     date: string;
