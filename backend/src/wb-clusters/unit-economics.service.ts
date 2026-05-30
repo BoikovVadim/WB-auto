@@ -86,6 +86,32 @@ function assertGlobalPercentMetric(metric: string): GlobalPercentMetric {
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 
+/** ₽ вычета: процент от цены со скидкой (per-component round2, как в колонках). null% → не применяется. */
+function chargeRub(priceWithDiscount: number, percent: number | null): number | null {
+  return percent != null ? round2(priceWithDiscount * (percent / 100)) : null;
+}
+
+/**
+ * Маржа на единицу при заданной цене со скидкой — ЕДИНАЯ формула для колонки «Маржа»
+ * и калькулятора «цена → маржа» (одна логика, без расхождений). Вычеты округляются
+ * покомпонентно (как в колонках комиссии/эквайринга/ДРР/налога), незаданные = 0:
+ *   маржа₽ = цена − с/с − Σ round2(цена × ставка%/100),  маржа% = маржа₽ / цена × 100.
+ */
+function marginAt(
+  priceWithDiscount: number,
+  cost: number,
+  b: Pick<UnitEconomicsBase, "commissionPercent" | "acquiringPercent" | "drrPercent" | "taxPercent">,
+): { marginRub: number; marginPercent: number | null } {
+  const deductions =
+    (chargeRub(priceWithDiscount, b.commissionPercent) ?? 0) +
+    (chargeRub(priceWithDiscount, b.acquiringPercent) ?? 0) +
+    (chargeRub(priceWithDiscount, b.drrPercent) ?? 0) +
+    (chargeRub(priceWithDiscount, b.taxPercent) ?? 0);
+  const marginRub = round2(priceWithDiscount - cost - deductions);
+  const marginPercent = priceWithDiscount > 0 ? round2((marginRub / priceWithDiscount) * 100) : null;
+  return { marginRub, marginPercent };
+}
+
 /**
  * Юнит-экономика: настройки (комиссия по предметам + эквайринг) и производные
  * суммы в ₽ на товар. Единый источник истины для формул — здесь, на сервере; фронт
@@ -146,26 +172,19 @@ export class UnitEconomicsService {
   }
 
   /**
-   * Комиссия, эквайринг, ДРР и маржа в ₽/% на каждый товар. База — цена со скидкой
-   * (price × (1 − discount/100)), как в колонке «Цена». Комиссия берётся по
-   * предмету товара; эквайринг и ДРР — глобальные %. null, если для предмета нет %
-   * или метрика не задана (фронт рисует «—»). Товары без текущей цены пропускаются.
-   *
-   * Маржа = цена со скидкой − себестоимость − комиссия − эквайринг − ДРР − налог (до
-   * логистики/хранения — этих данных пока нет). Незаданные вычеты считаются как 0; без
-   * себестоимости маржа = null (прибыль без с/с не определить).
-   */
-  /**
-   * Базис юнит-экономики по каждому товару с текущей ценой: цена со скидкой, с/с и
-   * применённые %-ставки вычетов. Общий промежуточный слой для charges и калькуляторов
-   * (формула цены/ставок описана в одном месте). Эквайринг — факт за последнюю закрытую
-   * неделю (Σfee/Σretail), иначе ручной глобальный %.
+   * Базис юнит-экономики по каждому товару: ЭФФЕКТИВНАЯ цена со скидкой, с/с и применённые
+   * %-ставки вычетов. Общий промежуточный слой для charges и калькуляторов (формула в одном
+   * месте). Эффективная цена = ровно то, что показывает колонка «Цена»: оптимистичный
+   * desiredFinal из очереди изменения цены (если пользователь её менял), иначе суточный
+   * снапшот round2(price×(1−discount/100)). Без единого источника цены маржа и калькулятор
+   * расходились с колонкой «Цена». Эквайринг — факт за неделю (Σfee/Σretail), иначе ручной %.
    */
   private async loadUnitEconomicsBase(): Promise<Map<number, UnitEconomicsBase>> {
-    const [catalog, latestPrices, commissions, global, costPrices, acquiringWeekly] =
+    const [catalog, latestPrices, priceChanges, commissions, global, costPrices, acquiringWeekly] =
       await Promise.all([
         this.repository.listProductCatalogItems(),
         this.repository.getLatestPrices(),
+        this.repository.getPriceChangeRows(),
         this.repository.getSubjectCommissions(),
         this.repository.getGlobalSettings(),
         this.repository.getAllCurrentCostPrices(),
@@ -173,15 +192,24 @@ export class UnitEconomicsService {
       ]);
     const commissionBySubject = new Map(commissions.map((c) => [c.subjectName, c.commissionPercent]));
     const priceByNmId = new Map(latestPrices.map((p) => [p.nmId, p]));
+    // nmId → оптимистичная цена со скидкой, выставленная пользователем (что видно в «Цене»).
+    const desiredFinalByNmId = new Map(priceChanges.map((c) => [c.nmId, c.desiredFinal]));
     const costByNmId = new Map(costPrices.map((c) => [c.nmId, c.costValue]));
     // nmId → фактический эквайринг за последнюю закрытую неделю (суммы fee/retail).
     const acquiringByNmId = new Map(acquiringWeekly.map((a) => [a.nmId, a]));
 
     const base = new Map<number, UnitEconomicsBase>();
     for (const product of catalog) {
-      const price = priceByNmId.get(product.nmId);
-      if (!price) continue;
-      const priceWithDiscount = round2(price.price * (1 - price.discount / 100));
+      // Эффективная цена со скидкой = как в колонке «Цена»: overlay desiredFinal, иначе снапшот.
+      const desiredFinal = desiredFinalByNmId.get(product.nmId);
+      const snapshot = priceByNmId.get(product.nmId);
+      const priceWithDiscount =
+        desiredFinal != null
+          ? round2(desiredFinal)
+          : snapshot
+            ? round2(snapshot.price * (1 - snapshot.discount / 100))
+            : null;
+      if (priceWithDiscount == null) continue;
       const commissionPercent =
         product.subjectName != null ? commissionBySubject.get(product.subjectName) ?? null : null;
       // Эквайринг: фактический средневзвешенный % за последнюю закрытую неделю
@@ -209,25 +237,18 @@ export class UnitEconomicsService {
     if (!this.repository.isConfigured()) return { items: [] };
     await this.repository.ensureSchema();
     const base = await this.loadUnitEconomicsBase();
-    const applyPercent = (price: number, percent: number | null): number | null =>
-      percent != null ? round2(price * (percent / 100)) : null;
 
     const items: UnitEconomicsChargeItem[] = [];
     for (const [nmId, b] of base) {
-      const commissionRub = applyPercent(b.priceWithDiscount, b.commissionPercent);
-      const acquiringRub = applyPercent(b.priceWithDiscount, b.acquiringPercent);
-      const drrRub = applyPercent(b.priceWithDiscount, b.drrPercent);
-      const taxRub = applyPercent(b.priceWithDiscount, b.taxPercent);
+      const commissionRub = chargeRub(b.priceWithDiscount, b.commissionPercent);
+      const acquiringRub = chargeRub(b.priceWithDiscount, b.acquiringPercent);
+      const drrRub = chargeRub(b.priceWithDiscount, b.drrPercent);
+      const taxRub = chargeRub(b.priceWithDiscount, b.taxPercent);
 
-      let marginRub: number | null = null;
-      let marginPercent: number | null = null;
-      if (b.cost != null) {
-        const deductions =
-          (commissionRub ?? 0) + (acquiringRub ?? 0) + (drrRub ?? 0) + (taxRub ?? 0);
-        marginRub = round2(b.priceWithDiscount - b.cost - deductions);
-        marginPercent =
-          b.priceWithDiscount > 0 ? round2((marginRub / b.priceWithDiscount) * 100) : null;
-      }
+      // Маржа — через общий marginAt (та же формула, что у калькулятора «цена → маржа»).
+      const margin = b.cost != null ? marginAt(b.priceWithDiscount, b.cost, b) : null;
+      const marginRub = margin?.marginRub ?? null;
+      const marginPercent = margin?.marginPercent ?? null;
 
       if (
         taxRub === null &&
@@ -254,11 +275,13 @@ export class UnitEconomicsService {
   }
 
   /**
-   * Калькуляторы юнит-экономики на тех же значениях, что и колонка маржи (один базис).
-   * Маржа определена как marginRub / цена-со-скидкой × 100; все вычеты линейны по цене
-   * (комиссия/эквайринг/ДРР/налог — проценты от цены со скидкой), поэтому:
-   *   маржа% = (1 − k)·100 − с/с·100/цена,   где k = Σставок/100
-   *   цена   = с/с / (1 − k − маржа%/100)    (знаменатель ≤ 0 → маржа недостижима)
+   * Калькуляторы юнит-экономики на ТОМ ЖЕ базисе (та же эффективная цена и с/с, что у
+   * колонок маржи/«Цена») — одна логика, без расхождений:
+   *   • «цена → маржа»: marginAt(цена) — ровно формула колонки «Маржа» (покомпонентное
+   *     округление), поэтому при вводе цены товара получается ровно его маржа из колонки;
+   *   • «маржа → цена»: closed-form инверсия цена = с/с / (1 − k − маржа%/100), k = Σставок/100
+   *     (знаменатель ≤ 0 → маржа недостижима). Линейная инверсия — погрешность покомпонентного
+   *     округления < 0.05 ₽, на уровне «ввели округлённый %».
    * Без себестоимости результат не определён (null/feasible=false), как и сама маржа.
    */
   async computeCalc(input: UnitEconomicsCalcInput): Promise<UnitEconomicsCalcResult> {
@@ -286,8 +309,7 @@ export class UnitEconomicsService {
     const priceToMargin: PriceToMarginResult[] = input.priceToMargin.map(({ nmId, price }) => {
       const b = base.get(nmId);
       if (!b || b.cost == null || price <= 0) return { nmId, marginPercent: null };
-      const marginRub = price * (1 - rate(b)) - b.cost;
-      return { nmId, marginPercent: round2((marginRub / price) * 100) };
+      return { nmId, marginPercent: marginAt(price, b.cost, b).marginPercent };
     });
 
     return { marginToPrice, priceToMargin };
