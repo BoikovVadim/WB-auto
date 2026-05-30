@@ -2,8 +2,8 @@ import { apiClient, buildWbClustersWriteHeaders } from "./syncClientHttp";
 
 // ─── Настройки юнит-экономики ────────────────────────────────────────────────
 
-export type UnitEconomicsCategorySetting = {
-  category: string;
+export type UnitEconomicsSubjectSetting = {
+  subject: string;
   commissionPercent: number | null;
 };
 
@@ -11,7 +11,7 @@ export type UnitEconomicsCategorySetting = {
 export type GlobalPercentMetric = "acquiring" | "drr";
 
 export type UnitEconomicsSettings = {
-  categories: UnitEconomicsCategorySetting[];
+  subjects: UnitEconomicsSubjectSetting[];
   acquiringPercent: number | null;
   drrPercent: number | null;
 };
@@ -20,23 +20,23 @@ export async function fetchUnitEconomicsSettings(): Promise<UnitEconomicsSetting
   const response = await apiClient.get<UnitEconomicsSettings>(
     "/wb-clusters/unit-economics/settings",
   );
-  return response.data ?? { categories: [], acquiringPercent: null };
+  return response.data ?? { subjects: [], acquiringPercent: null, drrPercent: null };
 }
 
-export async function saveCategoryCommission(
-  category: string,
+export async function saveSubjectCommission(
+  subject: string,
   commissionPercent: number,
 ): Promise<void> {
   await apiClient.put(
-    "/wb-clusters/unit-economics/category-commission",
-    { category, commissionPercent },
+    "/wb-clusters/unit-economics/subject-commission",
+    { subject, commissionPercent },
     { headers: buildWbClustersWriteHeaders() },
   );
 }
 
-export async function clearCategoryCommission(category: string): Promise<void> {
-  await apiClient.delete("/wb-clusters/unit-economics/category-commission", {
-    params: { category },
+export async function clearSubjectCommission(subject: string): Promise<void> {
+  await apiClient.delete("/wb-clusters/unit-economics/subject-commission", {
+    params: { subject },
     headers: buildWbClustersWriteHeaders(),
   });
 }

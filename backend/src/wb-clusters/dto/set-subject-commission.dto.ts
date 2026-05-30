@@ -1,9 +1,10 @@
 import { IsNumber, IsString, Max, Min, MinLength } from "class-validator";
 
-export class SetCategoryCommissionDto {
+/** Установка комиссии (%) для предмета (subjectName) каталога. */
+export class SetSubjectCommissionDto {
   @IsString()
   @MinLength(1)
-  category!: string;
+  subject!: string;
 
   @IsNumber()
   @Min(0)

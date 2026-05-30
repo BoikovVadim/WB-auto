@@ -3,13 +3,13 @@ import { Inject, Injectable } from "@nestjs/common";
 import { WbClustersRepository } from "./wb-clusters.repository";
 import type { GlobalPercentMetric } from "./wb-clusters.repository.unit-economics";
 
-export type UnitEconomicsCategorySetting = {
-  category: string;
+export type UnitEconomicsSubjectSetting = {
+  subject: string;
   commissionPercent: number | null;
 };
 
 export type UnitEconomicsSettings = {
-  categories: UnitEconomicsCategorySetting[];
+  subjects: UnitEconomicsSubjectSetting[];
   acquiringPercent: number | null;
   drrPercent: number | null;
 };
@@ -33,7 +33,7 @@ function assertGlobalPercentMetric(metric: string): GlobalPercentMetric {
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 
 /**
- * Юнит-экономика: настройки (комиссия по категориям + эквайринг) и производные
+ * Юнит-экономика: настройки (комиссия по предметам + эквайринг) и производные
  * суммы в ₽ на товар. Единый источник истины для формул — здесь, на сервере; фронт
  * только рисует. Отдельный сервис (а не god-WbClustersService), как ProductCatalogService.
  */
@@ -44,40 +44,40 @@ export class UnitEconomicsService {
     private readonly repository: WbClustersRepository,
   ) {}
 
-  /** Категории каталога с их комиссией (% или null) + глобальные %-метрики. */
+  /** Предметы каталога с их комиссией (% или null) + глобальные %-метрики. */
   async getSettings(): Promise<UnitEconomicsSettings> {
     if (!this.repository.isConfigured()) {
-      return { categories: [], acquiringPercent: null, drrPercent: null };
+      return { subjects: [], acquiringPercent: null, drrPercent: null };
     }
     await this.repository.ensureSchema();
-    const [categories, commissions, global] = await Promise.all([
-      this.repository.getDistinctCategoryNames(),
-      this.repository.getCategoryCommissions(),
+    const [subjects, commissions, global] = await Promise.all([
+      this.repository.getDistinctSubjectNames(),
+      this.repository.getSubjectCommissions(),
       this.repository.getGlobalSettings(),
     ]);
-    const byCategory = new Map(commissions.map((c) => [c.categoryName, c.commissionPercent]));
+    const bySubject = new Map(commissions.map((c) => [c.subjectName, c.commissionPercent]));
     return {
-      categories: categories.map((category) => ({
-        category,
-        commissionPercent: byCategory.get(category) ?? null,
+      subjects: subjects.map((subject) => ({
+        subject,
+        commissionPercent: bySubject.get(subject) ?? null,
       })),
       acquiringPercent: global.acquiringPercent,
       drrPercent: global.drrPercent,
     };
   }
 
-  async setCategoryCommission(category: string, commissionPercent: number) {
+  async setSubjectCommission(subject: string, commissionPercent: number) {
     if (!this.repository.isConfigured()) throw new Error("PostgreSQL не настроен.");
     await this.repository.ensureSchema();
     const value = round2(commissionPercent);
-    await this.repository.upsertCategoryCommission(category, value);
-    return { category, commissionPercent: value };
+    await this.repository.upsertSubjectCommission(subject, value);
+    return { subject, commissionPercent: value };
   }
 
-  async clearCategoryCommission(category: string) {
+  async clearSubjectCommission(subject: string) {
     if (!this.repository.isConfigured()) throw new Error("PostgreSQL не настроен.");
     await this.repository.ensureSchema();
-    await this.repository.deleteCategoryCommission(category);
+    await this.repository.deleteSubjectCommission(subject);
   }
 
   /** Запись глобальной %-метрики (acquiring/drr); null очищает. */
@@ -93,7 +93,7 @@ export class UnitEconomicsService {
   /**
    * Комиссия, эквайринг и ДРР в ₽ на каждый товар. База — цена со скидкой
    * (price × (1 − discount/100)), как в колонке «Цена». Комиссия берётся по
-   * категории товара; эквайринг и ДРР — глобальные %. null, если для категории нет %
+   * предмету товара; эквайринг и ДРР — глобальные %. null, если для предмета нет %
    * или метрика не задана (фронт рисует «—»). Товары без текущей цены пропускаются.
    */
   async getCharges(): Promise<{ items: UnitEconomicsChargeItem[] }> {
@@ -102,10 +102,10 @@ export class UnitEconomicsService {
     const [catalog, latestPrices, commissions, global] = await Promise.all([
       this.repository.listProductCatalogItems(),
       this.repository.getLatestPrices(),
-      this.repository.getCategoryCommissions(),
+      this.repository.getSubjectCommissions(),
       this.repository.getGlobalSettings(),
     ]);
-    const commissionByCategory = new Map(commissions.map((c) => [c.categoryName, c.commissionPercent]));
+    const commissionBySubject = new Map(commissions.map((c) => [c.subjectName, c.commissionPercent]));
     const priceByNmId = new Map(latestPrices.map((p) => [p.nmId, p]));
     const applyPercent = (base: number, percent: number | null): number | null =>
       percent != null ? round2(base * (percent / 100)) : null;
@@ -116,7 +116,7 @@ export class UnitEconomicsService {
       if (!price) continue;
       const priceWithDiscount = round2(price.price * (1 - price.discount / 100));
       const commissionPercent =
-        product.categoryName != null ? commissionByCategory.get(product.categoryName) ?? null : null;
+        product.subjectName != null ? commissionBySubject.get(product.subjectName) ?? null : null;
       const commissionRub = applyPercent(priceWithDiscount, commissionPercent);
       const acquiringRub = applyPercent(priceWithDiscount, global.acquiringPercent);
       const drrRub = applyPercent(priceWithDiscount, global.drrPercent);

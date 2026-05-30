@@ -120,7 +120,7 @@ export function DashboardUnitEconomicsSettingsSection({
           <div>
             <h2>{ui.viewUnitEconomicsTitle}</h2>
             <p className="wb-card-meta">
-              Комиссия применяется по категории товара; общие метрики (эквайринг, ДРР) — ко всем
+              Комиссия применяется по предмету товара; общие метрики (эквайринг, ДРР) — ко всем
               товарам. Все значения в % считаются от цены со скидкой.
             </p>
           </div>
@@ -154,28 +154,28 @@ export function DashboardUnitEconomicsSettingsSection({
           </div>
 
           <div className="wb-unit-econ-block">
-            <h3 className="wb-unit-econ-block-title">Комиссия по категориям</h3>
-            {isLoading && settings.categories.length === 0 ? (
+            <h3 className="wb-unit-econ-block-title">Комиссия по предметам</h3>
+            {isLoading && settings.subjects.length === 0 ? (
               <p className="wb-card-meta">Загрузка…</p>
-            ) : settings.categories.length === 0 ? (
-              <p className="wb-card-meta">Категории появятся после синхронизации каталога.</p>
+            ) : settings.subjects.length === 0 ? (
+              <p className="wb-card-meta">Предметы появятся после синхронизации каталога.</p>
             ) : (
               <table className="wb-data-table wb-unit-econ-table">
                 <thead>
                   <tr>
-                    <th style={{ textAlign: "left" }}>Категория</th>
+                    <th style={{ textAlign: "left" }}>Предмет</th>
                     <th style={{ textAlign: "right", width: 170 }}>Комиссия, %</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {settings.categories.map((c) => (
-                    <tr key={c.category}>
-                      <td>{c.category}</td>
+                  {settings.subjects.map((s) => (
+                    <tr key={s.subject}>
+                      <td>{s.subject}</td>
                       <td style={{ textAlign: "right" }}>
                         <PercentInput
-                          value={c.commissionPercent}
-                          ariaLabel={`Комиссия для категории ${c.category}`}
-                          onCommit={(next) => saveCommission(c.category, next)}
+                          value={s.commissionPercent}
+                          ariaLabel={`Комиссия для предмета ${s.subject}`}
+                          onCommit={(next) => saveCommission(s.subject, next)}
                         />
                       </td>
                     </tr>

@@ -1,12 +1,12 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Put, Query, UseGuards } from "@nestjs/common";
 
 import { WbClustersWriteGuard } from "../common/guards/wb-clusters-write.guard";
-import { SetCategoryCommissionDto } from "./dto/set-category-commission.dto";
+import { SetSubjectCommissionDto } from "./dto/set-subject-commission.dto";
 import { SetGlobalPercentDto } from "./dto/set-global-percent.dto";
 import { UnitEconomicsService } from "./unit-economics.service";
 
 /**
- * Роуты настроек юнит-экономики (комиссия по категориям + эквайринг) и производных
+ * Роуты настроек юнит-экономики (комиссия по предметам + эквайринг) и производных
  * сумм в ₽ на товар. Отдельный контроллер, чтобы не раздувать god-WbClustersController.
  */
 @Controller("wb-clusters/unit-economics")
@@ -16,7 +16,7 @@ export class UnitEconomicsController {
     private readonly unitEconomicsService: UnitEconomicsService,
   ) {}
 
-  /** Категории каталога с их комиссией (% или null) + глобальный эквайринг. */
+  /** Предметы каталога с их комиссией (% или null) + глобальный эквайринг. */
   @Get("settings")
   getSettings() {
     return this.unitEconomicsService.getSettings();
@@ -28,17 +28,17 @@ export class UnitEconomicsController {
     return this.unitEconomicsService.getCharges();
   }
 
-  @Put("category-commission")
+  @Put("subject-commission")
   @UseGuards(WbClustersWriteGuard)
-  setCategoryCommission(@Body() body: SetCategoryCommissionDto) {
-    return this.unitEconomicsService.setCategoryCommission(body.category, body.commissionPercent);
+  setSubjectCommission(@Body() body: SetSubjectCommissionDto) {
+    return this.unitEconomicsService.setSubjectCommission(body.subject, body.commissionPercent);
   }
 
-  @Delete("category-commission")
+  @Delete("subject-commission")
   @UseGuards(WbClustersWriteGuard)
   @HttpCode(204)
-  async clearCategoryCommission(@Query("category") category: string) {
-    await this.unitEconomicsService.clearCategoryCommission(category);
+  async clearSubjectCommission(@Query("subject") subject: string) {
+    await this.unitEconomicsService.clearSubjectCommission(subject);
   }
 
   /** Глобальная %-метрика юнит-экономики (acquiring/drr): value=null очищает. */
