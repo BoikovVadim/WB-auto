@@ -154,11 +154,11 @@ export const CostInputCell = memo(function CostInputCell({
   );
 });
 
-// ─── Калькулятор: всегда-редактируемый инпут (целевая маржа % / гипотетическая цена) ──
-// В отличие от cost/price это не «правка значения с сохранением», а ввод «что если»:
-// всегда инпут (без карандаша), локальный draft (набор не дёргает ре-рендер таблицы),
-// родитель дебаунсит и считает обратную величину на бэке. Расчёт рисует соседняя
-// read-only колонка. Во время фокуса проп игнорируется (как PercentInput в настройках).
+// ─── Калькулятор: ячейка-ввод «что если» (целевая маржа % / гипотетическая цена) ──
+// Поведение как в Google Sheets: пока печатаешь — только локальный draft, расчёт НЕ идёт;
+// значение применяется (и расчёт запускается) при выходе из ячейки — Enter или клик вне
+// (blur). Escape — отмена правки и возврат к прежнему значению. Во время фокуса проп
+// игнорируется (как PercentInput в настройках). Расчёт рисует соседняя read-only колонка.
 
 export const CalcInputCell = memo(function CalcInputCell({
   nmId,
@@ -173,6 +173,12 @@ export const CalcInputCell = memo(function CalcInputCell({
 }) {
   const [draft, setDraft] = useState(savedValue !== null ? String(savedValue) : "");
   const focusedRef = useRef(false);
+  // Escape ставит флаг, чтобы blur-коммит после отмены не применил откатанный draft.
+  const skipCommitRef = useRef(false);
+  const savedValueRef = useRef(savedValue);
+  useEffect(() => {
+    savedValueRef.current = savedValue;
+  }, [savedValue]);
 
   // Перечитываем проп только вне фокуса (скролл-возврат / внешнее изменение); во время
   // набора локальный draft — источник истины.
@@ -180,19 +186,16 @@ export const CalcInputCell = memo(function CalcInputCell({
     if (!focusedRef.current) setDraft(savedValue !== null ? String(savedValue) : "");
   }, [savedValue]);
 
-  const emit = useCallback(
-    (raw: string) => {
-      setDraft(raw);
-      const trimmed = raw.trim().replace(",", ".");
-      if (trimmed === "") {
-        onChange(nmId, null);
-        return;
-      }
-      const parsed = Number(trimmed);
-      onChange(nmId, Number.isFinite(parsed) ? parsed : null);
-    },
-    [nmId, onChange],
-  );
+  // Применяем введённое: пусто → сброс (null), иначе число. Зовётся на Enter/blur, не на ввод.
+  const commit = useCallback(() => {
+    const trimmed = draft.trim().replace(",", ".");
+    if (trimmed === "") {
+      onChange(nmId, null);
+      return;
+    }
+    const parsed = Number(trimmed);
+    onChange(nmId, Number.isFinite(parsed) ? parsed : null);
+  }, [draft, nmId, onChange]);
 
   return (
     <input
@@ -201,11 +204,26 @@ export const CalcInputCell = memo(function CalcInputCell({
       inputMode="decimal"
       value={draft}
       placeholder="—"
-      onChange={(e) => emit(e.target.value)}
+      onChange={(e) => setDraft(e.target.value)}
       onFocus={() => { focusedRef.current = true; }}
-      onBlur={() => { focusedRef.current = false; }}
+      onBlur={() => {
+        focusedRef.current = false;
+        if (skipCommitRef.current) {
+          skipCommitRef.current = false;
+          return;
+        }
+        commit();
+      }}
       onKeyDown={(e) => {
-        if (e.key === "Escape") (e.target as HTMLInputElement).blur();
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.currentTarget.blur(); // выход из ячейки → blur применит значение и запустит расчёт
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          skipCommitRef.current = true;
+          setDraft(savedValueRef.current !== null ? String(savedValueRef.current) : "");
+          e.currentTarget.blur();
+        }
         e.stopPropagation();
       }}
       onClick={(e) => e.stopPropagation()}

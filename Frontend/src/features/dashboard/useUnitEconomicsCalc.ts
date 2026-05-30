@@ -5,8 +5,9 @@ import { fetchUnitEconomicsCalc } from "../../api/syncClientUnitEconomics";
 // Вводы калькулятора — планировочный «что если», переживают перезагрузку/навигацию.
 const MARGIN_LS_KEY = "wb-unit-econ-calc-target-margin";
 const PRICE_LS_KEY = "wb-unit-econ-calc-price";
-// Считаем на бэке после паузы в наборе — без запроса на каждый символ.
-const DEBOUNCE_MS = 300;
+// Коммит идёт по Enter/blur (выход из ячейки), не на каждый символ — небольшой дебаунс
+// лишь схлопывает быстрый перебор нескольких ячеек подряд в один запрос.
+const DEBOUNCE_MS = 120;
 
 export type UseUnitEconomicsCalcResult = {
   /** Введённая целевая маржа % по nmId (для seed инпута и сортировки). */
@@ -65,6 +66,9 @@ export function useUnitEconomicsCalc(enabled: boolean): UseUnitEconomicsCalcResu
 
   const mountedRef = useRef(true);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Последовательность запросов: применяем только ответ самого свежего (Enter-коммиты
+  // могут гоняться — без guard поздно пришедший старый ответ затёр бы новый расчёт).
+  const requestSeqRef = useRef(0);
 
   const commit = useCallback(() => {
     const margin = new Map(marginRef.current);
@@ -79,6 +83,7 @@ export function useUnitEconomicsCalc(enabled: boolean): UseUnitEconomicsCalcResu
       setMarginResults(new Map());
       return;
     }
+    const seq = ++requestSeqRef.current;
     fetchUnitEconomicsCalc({
       marginToPrice: Array.from(margin, ([nmId, targetMarginPercent]) => ({
         nmId,
@@ -87,7 +92,7 @@ export function useUnitEconomicsCalc(enabled: boolean): UseUnitEconomicsCalcResu
       priceToMargin: Array.from(price, ([nmId, value]) => ({ nmId, price: value })),
     })
       .then((res) => {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || seq !== requestSeqRef.current) return;
         const priceMap = new Map<number, number | null>();
         for (const it of res.marginToPrice) priceMap.set(it.nmId, it.feasible ? it.price : null);
         const marginMap = new Map<number, number | null>();
