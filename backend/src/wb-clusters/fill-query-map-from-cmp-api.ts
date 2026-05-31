@@ -41,7 +41,11 @@ import {
   loadSafariImportEnv,
 } from "./safari-import.env";
 import { ensureDarwinSafariRuntime } from "./safari-import.runtime";
-import { executeAppleScript } from "./wb-cmp-safari.client.apple-script";
+import {
+  ensureCmpAuth,
+  ensureCmpWindowId,
+  injectIntoWindow,
+} from "./fill-query-map-cmp-window";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -144,104 +148,8 @@ function buildPollScript(maxItems: number): string {
 })()`.trim();
 }
 
-// ---------------------------------------------------------------------------
-// Safari helpers
-// ---------------------------------------------------------------------------
-
-async function runAppleScript(script: string, timeoutMs = 30_000): Promise<string> {
-  return executeAppleScript(script, { timeoutMs, errorContext: "fill-query-map-from-cmp-api" });
-}
-
-async function ensureCmpWindowId(): Promise<number> {
-  const script = `
-tell application "Safari"
-  set foundId to 0
-  repeat with w in windows
-    repeat with tr in tabs of w
-      try
-        if (URL of tr) contains "cmp.wildberries.ru" then
-          set foundId to id of w
-          exit repeat
-        end if
-      on error
-      end try
-    end repeat
-    if foundId > 0 then exit repeat
-  end repeat
-  if foundId > 0 then return foundId as text
-
-  make new document with properties {URL:"https://cmp.wildberries.ru/campaigns/list"}
-  delay 0.5
-  set nw to front window
-  repeat 160 times
-    try
-      if (do JavaScript "document.readyState" in current tab of nw) is "complete" then exit repeat
-    on error
-    end try
-    delay 0.25
-  end repeat
-  return (id of nw) as text
-end tell`.trim();
-
-  const raw = await runAppleScript(script, 50_000);
-  const id = Number.parseInt(raw.trim(), 10);
-  if (!Number.isInteger(id) || id <= 0) throw new Error(`Unexpected Safari window id: "${raw}"`);
-  return id;
-}
-
-async function injectIntoWindow(windowId: number, js: string, timeoutMs = 20_000): Promise<string> {
-  const script = `
-set jsCode to ${JSON.stringify(js)}
-tell application "Safari"
-  return do JavaScript jsCode in current tab of window id ${windowId}
-end tell`.trim();
-  return runAppleScript(script, timeoutMs);
-}
-
-// ---------------------------------------------------------------------------
-// Auth resilience
-// ---------------------------------------------------------------------------
-// cmp-токен (access-token в localStorage origin cmp.wildberries.ru) короткоживущий:
-// по ходу прогона он протухает, fetch ловит 401, и WB-SPA редиректит окно на
-// seller.wildberries.ru — там cmp-токена нет, и остаток прогона падает. Ниже —
-// проверка/восстановление: ре-навигация на cmp/campaigns/list, чтобы SPA по живой
-// session-cookie переавторизовался и выдал свежий токен.
-
-async function probeCmpAuth(windowId: number): Promise<{ onCmp: boolean; ready: boolean; token: number }> {
-  const js = `(function(){ try { return JSON.stringify({ host: location.host, ready: document.readyState, token: (localStorage.getItem("access-token")||"").length }); } catch (e) { return JSON.stringify({ host: "", ready: "", token: 0 }); } })()`;
-  try {
-    const raw = await injectIntoWindow(windowId, js, 10_000);
-    const s = JSON.parse(raw) as { host?: string; ready?: string; token?: number };
-    return {
-      onCmp: typeof s.host === "string" && s.host.includes("cmp.wildberries.ru"),
-      ready: s.ready === "complete",
-      token: typeof s.token === "number" ? s.token : 0,
-    };
-  } catch {
-    return { onCmp: false, ready: false, token: 0 };
-  }
-}
-
-/**
- * Гарантирует, что окно на cmp и cmp-токен жив. Если нет — ре-навигирует на cmp и
- * ждёт свежий токен (до ~60с). false → сессия мертва (нужен ручной ре-логин).
- */
-async function ensureCmpAuth(windowId: number): Promise<boolean> {
-  const initial = await probeCmpAuth(windowId);
-  if (initial.onCmp && initial.token > 0) return true;
-
-  await runAppleScript(
-    `tell application "Safari" to set URL of current tab of window id ${windowId} to "https://cmp.wildberries.ru/campaigns/list"`,
-    20_000,
-  );
-
-  for (let i = 0; i < 30; i += 1) {
-    await sleep(2000);
-    const s = await probeCmpAuth(windowId);
-    if (s.onCmp && s.ready && s.token > 0) return true;
-  }
-  return false;
-}
+// Safari-автоматизация окна cmp + восстановление cmp-сессии вынесены в
+// ./fill-query-map-cmp-window.ts (см. импорт сверху).
 
 // ---------------------------------------------------------------------------
 // DB helpers
@@ -328,6 +236,9 @@ async function main() {
   const client = pgConfig ? new Client(pgConfig) : null;
   if (client) {
     await client.connect();
+    // Крупные РК дают долгий UNNEST-INSERT; дефолтный statement_timeout прода рубил
+    // сохранение ("canceling statement due to statement timeout"). Поднимаем для сессии импорта.
+    await client.query("SET statement_timeout = '180s'");
     console.log("Connected to PostgreSQL directly.");
   } else {
     console.log(`No direct DB — uploading via API: ${apiBaseUrl}`);
@@ -347,7 +258,7 @@ async function main() {
       `Batch config: BATCH_SIZE=${BATCH_SIZE} CONCURRENCY=${CONCURRENCY} POLL_MS=${POLL_INTERVAL_MS}`,
     );
 
-    const windowId = await ensureCmpWindowId();
+    let windowId = await ensureCmpWindowId();
     console.log(`Safari window id: ${windowId}. Starting batch processing...\n`);
 
     let succeededAdverts = 0;
@@ -366,11 +277,16 @@ async function main() {
       );
 
       // Проактивно проверяем, что окно на cmp и токен жив (он короткоживущий).
-      if (!(await ensureCmpAuth(windowId))) {
-        throw new Error(
-          "WB-сессия cmp.wildberries.ru недоступна (токен не обновился). " +
-            "Залогинься в cmp.wildberries.ru в Safari и перезапусти.",
-        );
+      // ensureCmpAuth может вернуть ДРУГОЙ id (если окно пере-захвачено) — обновляем.
+      {
+        const wid = await ensureCmpAuth(windowId);
+        if (wid == null) {
+          throw new Error(
+            "WB-сессия cmp.wildberries.ru недоступна (токен не обновился). " +
+              "Залогинься в cmp.wildberries.ru в Safari и перезапусти.",
+          );
+        }
+        windowId = wid;
       }
 
       // Inject start script (resets window state for this batch)
@@ -378,12 +294,14 @@ async function main() {
       if (startResult.startsWith("auth-error:")) {
         // Токен мог протухнуть между проверкой и стартом — обновляем и повторяем батч раз.
         console.warn("\n  auth-error на старте батча — обновляю cmp-сессию и повторяю...");
-        if (!(await ensureCmpAuth(windowId))) {
+        const wid = await ensureCmpAuth(windowId);
+        if (wid == null) {
           throw new Error(
             "WB-сессия cmp.wildberries.ru потеряна и не восстановилась. " +
               "Залогинься в cmp.wildberries.ru в Safari и перезапусти.",
           );
         }
+        windowId = wid;
         startResult = await injectIntoWindow(windowId, buildBatchStartScript(batchIds), 20_000);
         if (startResult.startsWith("auth-error:")) {
           throw new Error(`WB auth всё ещё отсутствует после обновления сессии: ${startResult}`);
@@ -413,12 +331,14 @@ async function main() {
           const remaining = batchIds.filter((id) => !(id in batchDone));
           if (remaining.length === 0) break;
           console.warn(`\n  Page reset/redirect — re-auth + re-injecting ${remaining.length} adverts...`);
-          if (!(await ensureCmpAuth(windowId))) {
+          const wid = await ensureCmpAuth(windowId);
+          if (wid == null) {
             throw new Error(
               "WB-сессия потеряна посреди батча и не восстановилась. " +
                 "Залогинься в cmp.wildberries.ru в Safari и перезапусти.",
             );
           }
+          windowId = wid;
           await injectIntoWindow(windowId, buildBatchStartScript(remaining), 20_000);
           continue;
         }
