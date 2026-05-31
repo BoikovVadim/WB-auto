@@ -16,7 +16,9 @@ export async function executeAppleScript(
   try {
     const { stdout, stderr } = await execFileAsync("osascript", ["-e", appleScript], {
       timeout: options.timeoutMs,
-      maxBuffer: 12 * 1024 * 1024,
+      // Батч words-clusters из ~40 РК возвращает base64 на десятки МБ; 12 МБ не хватало
+      // ("stdout maxBuffer length exceeded") и прогон падал на середине. 256 МБ с запасом.
+      maxBuffer: 256 * 1024 * 1024,
     });
 
     if (stderr.trim()) {
