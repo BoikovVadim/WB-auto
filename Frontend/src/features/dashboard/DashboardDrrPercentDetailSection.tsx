@@ -70,23 +70,26 @@ export function DashboardDrrPercentDetailSection({
     return m;
   }, [drrMatrix.dates]);
 
-  // «Итого» за сегодня — взвешенно: Σ расход / Σ выручка × 100 (по товарам с тем и другим).
+  // «Итого» за сегодня — взвешенно: Σ общий расход / Σ общая выручка × 100. Расход берём по
+  // всем товарам, у кого он есть (включая безвыручечных, чья строка = 100%); выручку — где
+  // есть. Нет выручки ни у кого, но есть расход → 100%.
   const todayTotalDisplay = useMemo(() => {
     let spendSum = 0;
     let revSum = 0;
     for (const p of products) {
       if (p.nmId === null) continue;
       const spend = adSpendValues.get(p.nmId);
+      if (spend == null || spend <= 0) continue;
+      spendSum += spend;
       const rev = revenueValues.get(p.nmId);
-      if (spend != null && spend > 0 && rev != null && rev > 0) {
-        spendSum += spend;
-        revSum += rev;
-      }
+      if (rev != null && rev > 0) revSum += rev;
     }
-    return revSum > 0 ? formatPercent((spendSum / revSum) * 100) : "—";
+    if (revSum > 0) return formatPercent((spendSum / revSum) * 100);
+    return spendSum > 0 ? formatPercent(100) : "—";
   }, [products, adSpendValues, revenueValues]);
 
   // «Итого» по прошлым дням — взвешенно из матрицы: Σ spend(день) / Σ revenue(день) × 100.
+  // spend идёт в числитель по всем ячейкам с расходом (revenue=null у безвыручечных).
   const pastTotalsByDate = useMemo(() => {
     const totals = new Map<string, string>();
     for (const d of pastDates) {
@@ -99,13 +102,12 @@ export function DashboardDrrPercentDetailSection({
       let revSum = 0;
       for (const row of drrMatrix.products) {
         const spend = row.spend[idx];
+        if (spend == null || spend <= 0) continue;
+        spendSum += spend;
         const rev = row.revenue[idx];
-        if (spend != null && rev != null && rev > 0) {
-          spendSum += spend;
-          revSum += rev;
-        }
+        if (rev != null && rev > 0) revSum += rev;
       }
-      totals.set(d, revSum > 0 ? formatPercent((spendSum / revSum) * 100) : "—");
+      totals.set(d, revSum > 0 ? formatPercent((spendSum / revSum) * 100) : spendSum > 0 ? formatPercent(100) : "—");
     }
     return totals;
   }, [pastDates, matrixIdxByDate, drrMatrix.products]);

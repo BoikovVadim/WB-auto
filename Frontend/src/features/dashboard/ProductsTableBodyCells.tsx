@@ -321,7 +321,7 @@ export function renderProductsBodyCell(
     case "adSpend":
       return moneyCell(key, nmId !== null ? ctx.adSpendValues.get(nmId) : undefined, true);
     case "drrPercent": {
-      // ДРР приходит с бэка только при наличии расхода и выручки (>0) → есть значение = показываем.
+      // ДРР приходит с бэка при наличии расхода (>0); без выручки (нет заказов) = 100%. Нет расхода = прочерк.
       const drr = nmId !== null ? ctx.drrPercentValues.get(nmId) : undefined;
       return (
         <div key={key} className="wb-pg-cell wb-pg-cell--num">

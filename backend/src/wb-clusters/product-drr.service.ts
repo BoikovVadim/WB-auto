@@ -9,19 +9,23 @@ import { WbClustersService } from "./wb-clusters.service";
  * расход рекламы, знаменатель — выручка; обе метрики уже считаются в WbClustersService
  * (getTodayAdSpend/getAdSpendMatrixCompact и getTodayRevenue/getRevenueMatrixCompact),
  * поэтому ДРР переиспользует их как есть — один источник истины, ДРР всегда сходится с
- * колонками «Реклама» и «Выручка». Значение есть только когда есть И расход (>0), И
- * выручка (>0): без выручки делить не на что, без расхода товар не продвигается.
+ * колонками «Реклама» и «Выручка». Значение есть, как только есть расход (>0): если при
+ * этом нет выручки (нет заказов) — ДРР = 100% (вся реклама без отдачи), иначе
+ * расход/выручка × 100. Без расхода товар не рекламируется — ячейки нет.
  *
  * Отдельной таблицы/крона нет — расход и выручка уже хранятся по дням, ретроспектива
- * «за неделю и далее» получается из их пересечения сама (расход ~30 дней, выручка —
- * накопленное окно % выкупа). Вынесено отдельным сервисом-сиблингом (а не в god-файл
- * WbClustersService), как UnitEconomicsService.
+ * «за неделю и далее» получается из расхода (revenue добавляется как знаменатель, где
+ * есть). Вынесено отдельным сервисом-сиблингом (а не в god-файл WbClustersService),
+ * как UnitEconomicsService.
  */
 @Injectable()
 export class ProductDrrService {
   constructor(private readonly wbClustersService: WbClustersService) {}
 
-  /** Сегодняшний ДРР по товарам: расход(today) / выручка(today) × 100. */
+  /**
+   * Сегодняшний ДРР по товарам. Есть расход (>0) → есть значение: с выручкой —
+   * расход/выручка × 100; без выручки (нет заказов) — 100% (вся реклама без отдачи).
+   */
   async getTodayDrr(): Promise<{ items: { nmId: number; drr: number }[] }> {
     const [adSpend, revenue] = await Promise.all([
       this.wbClustersService.getTodayAdSpend(),
@@ -33,8 +37,8 @@ export class ProductDrrService {
     for (const s of adSpend.items) {
       if (s.spend <= 0) continue;
       const rev = revenueByNmId.get(s.nmId);
-      if (rev == null || rev <= 0) continue;
-      items.push({ nmId: s.nmId, drr: (s.spend / rev) * 100 });
+      const drr = rev != null && rev > 0 ? (s.spend / rev) * 100 : 100;
+      items.push({ nmId: s.nmId, drr });
     }
     return { items };
   }
@@ -42,9 +46,10 @@ export class ProductDrrService {
   /**
    * Compact-матрица «товары × даты» ДРР. На товар — параллельные массивы: `drr` (%) для
    * отображения ячейки и `spend`/`revenue` (₽) — компоненты ВЗВЕШЕННОГО «Итого» по столбцу
-   * (Σspend / Σrevenue × 100), как у маржи/эквайринга. Колонки = дни, где у товара есть И
-   * расход, И выручка. «Сегодня» сюда не попадает (у выручки нет снапшота % выкупа за
-   * сегодня) — фронт рисует его live из getTodayDrr.
+   * (Σspend / Σrevenue × 100), как у маржи/эквайринга. Колонки = дни, где у товара есть
+   * расход (>0); если в этот день нет выручки, ячейка = 100% и `revenue` = null (в Σrevenue
+   * не идёт, но spend идёт в Σspend → «Итого» = общий расход / общая выручка). «Сегодня»
+   * сюда не попадает (у выручки нет снапшота % выкупа за сегодня) — фронт рисует его live.
    */
   async getDrrMatrixCompact(): Promise<{
     dates: string[];
@@ -80,20 +85,24 @@ export class ProductDrrService {
       if (m.size > 0) revByNm.set(p.nmId, m);
     }
 
-    // ДРР существует только для (товар, день) с И расходом, И выручкой.
+    // ДРР существует для (товар, день) с расходом (>0). С выручкой — расход/выручка × 100;
+    // без выручки (нет заказов) — 100%, revenue = null (не идёт в Σrevenue «Итого»).
     const cellsByNm = new Map<
       number,
-      Map<string, { drr: number; spend: number; revenue: number }>
+      Map<string, { drr: number; spend: number; revenue: number | null }>
     >();
     const datesSet = new Set<string>();
     for (const [nmId, spendDates] of spendByNm) {
       const revDates = revByNm.get(nmId);
-      if (!revDates) continue;
-      const cells = new Map<string, { drr: number; spend: number; revenue: number }>();
+      const cells = new Map<string, { drr: number; spend: number; revenue: number | null }>();
       for (const [date, spend] of spendDates) {
-        const rev = revDates.get(date);
-        if (rev == null || rev <= 0) continue;
-        cells.set(date, { drr: (spend / rev) * 100, spend, revenue: rev });
+        const rev = revDates?.get(date);
+        const hasRev = rev != null && rev > 0;
+        cells.set(date, {
+          drr: hasRev ? (spend / rev) * 100 : 100,
+          spend,
+          revenue: hasRev ? rev : null,
+        });
         datesSet.add(date);
       }
       if (cells.size > 0) cellsByNm.set(nmId, cells);
