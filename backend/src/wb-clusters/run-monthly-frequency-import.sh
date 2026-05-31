@@ -10,8 +10,14 @@ BACKEND_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LOG_PREFIX="[wb-freq-import]"
 TUNNEL_PORT=15432
 REMOTE_HOST="root@95.163.226.154"
-DB_URL="postgres://wb_admin:99OKeJPaQFUfIfGdpfMEX5Z2dRekUoRa@127.0.0.1:${TUNNEL_PORT}/wb_automation"
 TUNNEL_PID_FILE="/tmp/wb-freq-ssh-tunnel.pid"
+
+# DATABASE_URL берётся из gitignored .env в корне проекта (НЕ коммитится).
+# Пример строки в .env:
+#   DATABASE_URL=postgres://wb_admin:****@127.0.0.1:15432/wb_automation
+ROOT_ENV="${BACKEND_DIR}/../.env"
+if [ -f "${ROOT_ENV}" ]; then set -a; . "${ROOT_ENV}"; set +a; fi
+: "${DATABASE_URL:?DATABASE_URL must be set in ${ROOT_ENV} (gitignored)}"
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 log() { echo "${LOG_PREFIX} $*"; }
@@ -60,7 +66,7 @@ start_tunnel
 log "Running frequency import..."
 cd "${BACKEND_DIR}"
 
-export DATABASE_URL="${DB_URL}"
+export DATABASE_URL
 export WB_CLUSTERS_WRITE_API_KEY="0bf0490b634fd6576824c23ad7b6adc0b0f3fd5fbe667c51b21265bb43d7ba2f"
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 

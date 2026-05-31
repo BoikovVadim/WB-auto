@@ -14,7 +14,13 @@ BACKEND_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LOG_PREFIX="[wb-query-map-update]"
 TUNNEL_PORT=15432
 REMOTE_HOST="root@95.163.226.154"
-DB_URL="postgres://wb_admin:99OKeJPaQFUfIfGdpfMEX5Z2dRekUoRa@127.0.0.1:${TUNNEL_PORT}/wb_automation"
+
+# DATABASE_URL берётся из gitignored .env в корне проекта (НЕ коммитится).
+# Пример строки в .env:
+#   DATABASE_URL=postgres://wb_admin:****@127.0.0.1:15432/wb_automation
+ROOT_ENV="${BACKEND_DIR}/../.env"
+if [ -f "${ROOT_ENV}" ]; then set -a; . "${ROOT_ENV}"; set +a; fi
+: "${DATABASE_URL:?DATABASE_URL must be set in ${ROOT_ENV} (gitignored)}"
 
 log() { echo "${LOG_PREFIX} $*"; }
 
@@ -52,7 +58,7 @@ start_tunnel
 log "Starting fast query-map update (concurrency: ${WB_CMP_CONCURRENCY:-10})..."
 cd "${BACKEND_DIR}"
 
-export DATABASE_URL="${DB_URL}"
+export DATABASE_URL
 export WB_CMP_CONCURRENCY="${WB_CMP_CONCURRENCY:-10}"
 export WB_CMP_POLL_MS="${WB_CMP_POLL_MS:-2000}"
 export WB_CMP_RESULTS_BATCH="${WB_CMP_RESULTS_BATCH:-5}"

@@ -1,35 +1,40 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  macOS LaunchAgent — еженедельное обновление карты запросов кластеров.
+  macOS LaunchAgent — ЕЖЕДНЕВНОЕ обновление карты запросов кластеров.
 
-  Что делает каждое воскресенье в 10:00 по местному времени:
+  Что делает каждый день в 10:00 по местному времени:
     1. Открывает SSH-туннель к production PostgreSQL (порт 15432).
     2. Загружает все уникальные advertId из wb_campaign_products.
-    3. Открывает единственное окно Safari на cmp.wildberries.ru.
-    4. Батчами по 40 advertId запускает параллельные fetch() в браузере
-       (concurrency=10), скачивая /api/v5/words-clusters для каждой РК.
-    5. Сохраняет результаты в wb_cabinet_cluster_queries через UNNEST.
+    3. Открывает единственное окно Safari на cmp.wildberries.ru (фоном, без вывода
+       на передний план).
+    4. Батчами запускает параллельные fetch() в браузере, скачивая
+       /api/v5/words-clusters для каждой РК.
+    5. Сохраняет результаты в wb_cabinet_cluster_queries.
     6. Закрывает SSH-туннель.
 
   Предварительные требования:
     - Safari должен быть открыт с авторизованной сессией cmp.wildberries.ru.
       Если начнут появляться ошибки auth-error — войти вручную.
+    - В Safari → Develop → включить "Allow JavaScript from Apple Events".
     - SSH-ключ должен разрешать вход без пароля на root@95.163.226.154.
+    - DATABASE_URL должен лежать в gitignored .env в корне проекта (НЕ в репозитории).
+    - При первом ручном запуске macOS может спросить разрешение «управлять Safari» —
+      подтвердить (Automation / Apple Events), иначе фоновый запуск будет молча падать.
 
   Установка:
     cp com.wb-automation.query-map-update.plist ~/Library/LaunchAgents/
     launchctl load ~/Library/LaunchAgents/com.wb-automation.query-map-update.plist
 
-  Запустить немедленно (без ожидания воскресенья):
+  Запустить немедленно (без ожидания расписания):
     launchctl start com.wb-automation.query-map-update
 
   Отключить:
     launchctl unload ~/Library/LaunchAgents/com.wb-automation.query-map-update.plist
 
   Логи:
-    tail -f ~/Downloads/wb-query-map-update.log
-    tail -f ~/Downloads/wb-query-map-update-error.log
+    tail -f ~/wb-automation/logs/wb-query-map-update.log
+    tail -f ~/wb-automation/logs/wb-query-map-update-error.log
 -->
 <plist version="1.0">
 <dict>
@@ -39,17 +44,15 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/elizavetabojkova/Downloads/Маркетплейс/backend/src/wb-clusters/run-query-map-update.sh</string>
+        <string>/Users/elizavetabojkova/wb-automation/backend/src/wb-clusters/run-query-map-update.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/elizavetabojkova/Downloads/Маркетплейс/backend</string>
+    <string>/Users/elizavetabojkova/wb-automation/backend</string>
 
-    <!-- Каждое воскресенье в 10:00 по местному времени (Weekday=0 = воскресенье) -->
+    <!-- Каждый день в 10:00 по местному времени -->
     <key>StartCalendarInterval</key>
     <dict>
-        <key>Weekday</key>
-        <integer>0</integer>
         <key>Hour</key>
         <integer>10</integer>
         <key>Minute</key>
@@ -57,10 +60,10 @@
     </dict>
 
     <key>StandardOutPath</key>
-    <string>/Users/elizavetabojkova/Downloads/wb-query-map-update.log</string>
+    <string>/Users/elizavetabojkova/wb-automation/logs/wb-query-map-update.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/elizavetabojkova/Downloads/wb-query-map-update-error.log</string>
+    <string>/Users/elizavetabojkova/wb-automation/logs/wb-query-map-update-error.log</string>
 
     <!-- Не запускать при загрузке, только по расписанию -->
     <key>RunAtLoad</key>

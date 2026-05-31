@@ -40,11 +40,11 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/elizavetabojkova/Downloads/Маркетплейс/backend/src/wb-clusters/run-monthly-frequency-import.sh</string>
+        <string>/Users/elizavetabojkova/wb-automation/backend/src/wb-clusters/run-monthly-frequency-import.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/elizavetabojkova/Downloads/Маркетплейс/backend</string>
+    <string>/Users/elizavetabojkova/wb-automation/backend</string>
 
     <!-- Run every day at 09:00 local time -->
     <key>StartCalendarInterval</key>
@@ -56,10 +56,10 @@
     </dict>
 
     <key>StandardOutPath</key>
-    <string>/Users/elizavetabojkova/Downloads/wb-frequency-import.log</string>
+    <string>/Users/elizavetabojkova/wb-automation/logs/wb-frequency-import.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/elizavetabojkova/Downloads/wb-frequency-import-error.log</string>
+    <string>/Users/elizavetabojkova/wb-automation/logs/wb-frequency-import-error.log</string>
 
     <!-- Do not run on load, only at the scheduled time -->
     <key>RunAtLoad</key>
