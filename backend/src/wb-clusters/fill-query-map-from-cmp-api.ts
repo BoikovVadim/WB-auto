@@ -159,12 +159,18 @@ type AdvertNmMap = Map<number, number[]>;
 
 async function loadAdvertNmMap(client: Client): Promise<AdvertNmMap> {
   // Only active (9) and paused (11) campaigns — archived (7) are skipped.
+  // ПОРЯДОК — «самые несвежие первыми» (captured_at ASC, NULL=никогда → первыми):
+  // WB-сессия живёт ограниченно (~45 мин), за прогон успевает ~30-40 РК, поэтому
+  // важно ротировать — иначе хвост по advert_id никогда бы не обновлялся.
   const { rows } = await client.query<{ advert_id: string; nm_id: string }>(
     `SELECT cp.advert_id::text, cp.nm_id::text
      FROM public.wb_campaign_products cp
      JOIN public.wb_campaigns c ON c.advert_id = cp.advert_id
+     LEFT JOIN public.wb_cabinet_cluster_queries q
+       ON q.advert_id = cp.advert_id AND q.nm_id = cp.nm_id
      WHERE c.campaign_status IN (9, 11)
-     ORDER BY cp.advert_id, cp.nm_id`,
+     GROUP BY cp.advert_id, cp.nm_id
+     ORDER BY MAX(q.captured_at) ASC NULLS FIRST, cp.advert_id, cp.nm_id`,
   );
   const map: AdvertNmMap = new Map();
   for (const row of rows) {
