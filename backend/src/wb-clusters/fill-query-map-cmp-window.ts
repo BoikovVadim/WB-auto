@@ -81,37 +81,55 @@ export async function probeCmpAuth(
   }
 }
 
+async function openFreshCmpWindow(): Promise<number> {
+  const raw = await runAppleScript(
+    `tell application "Safari"
+  make new document with properties {URL:"https://cmp.wildberries.ru/campaigns/list"}
+  delay 0.4
+  return id of front window as text
+end tell`,
+    30_000,
+  );
+  const id = Number.parseInt(raw.trim(), 10);
+  if (!Number.isInteger(id) || id <= 0) throw new Error(`Unexpected Safari window id: "${raw}"`);
+  return id;
+}
+
+async function closeWindowQuietly(windowId: number): Promise<void> {
+  try {
+    await runAppleScript(`tell application "Safari" to close (windows whose id is ${windowId})`, 8_000);
+  } catch {
+    // окно уже закрыто/недоступно — игнорируем
+  }
+}
+
 /**
- * Гарантирует, что окно на cmp и cmp-токен жив. Если нет — ре-навигирует на cmp и
- * ждёт свежий токен (до ~60с). Возвращает валидный id окна (может отличаться, если
- * окно пере-захвачено) или null, если сессия мертва (нужен ручной ре-логин).
+ * Гарантирует окно на cmp с живым токеном. Сессия кабинета держится на cookie (пароль
+ * НЕ нужен), поэтому СВЕЖАЯ cmp-вкладка мгновенно переавторизуется и получает токен.
+ * Если текущее окно без токена (протухло/редирект на seller) — открываем свежее
+ * cmp-окно, ждём токен и закрываем старое зависшее (чтобы не плодить вкладки).
+ * Возвращает id рабочего окна; null — только если даже свежая вкладка не получила
+ * токен (т.е. сессия-cookie реально истекла и нужен ручной логин).
  */
 export async function ensureCmpAuth(windowId: number): Promise<number | null> {
   const initial = await probeCmpAuth(windowId);
   if (initial.onCmp && initial.token > 0) return windowId;
 
-  // Окно могло быть закрыто/передёрнуто WB на seller (id больше не валиден).
-  // Пытаемся ре-навигировать текущее окно; если osascript падает — пере-захватываем
-  // (находим/создаём) cmp-окно через ensureCmpWindowId. Любая ошибка здесь не должна
-  // ронять весь прогон.
-  let targetId = windowId;
+  let freshId: number;
   try {
-    await runAppleScript(
-      `tell application "Safari" to set URL of current tab of window id ${targetId} to "https://cmp.wildberries.ru/campaigns/list"`,
-      20_000,
-    );
+    freshId = await openFreshCmpWindow();
   } catch {
-    try {
-      targetId = await ensureCmpWindowId();
-    } catch {
-      return null;
-    }
+    return null;
   }
 
-  for (let i = 0; i < 30; i += 1) {
-    await sleep(2000);
-    const s = await probeCmpAuth(targetId);
-    if (s.onCmp && s.ready && s.token > 0) return targetId;
+  for (let i = 0; i < 20; i += 1) {
+    await sleep(1500);
+    const s = await probeCmpAuth(freshId);
+    if (s.onCmp && s.ready && s.token > 0) {
+      if (freshId !== windowId) await closeWindowQuietly(windowId);
+      return freshId;
+    }
   }
+  await closeWindowQuietly(freshId);
   return null;
 }
