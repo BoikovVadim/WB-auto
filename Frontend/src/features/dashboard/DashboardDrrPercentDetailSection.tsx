@@ -70,17 +70,17 @@ export function DashboardDrrPercentDetailSection({
     return m;
   }, [drrMatrix.dates]);
 
-  // «Итого» за сегодня — взвешенно: Σ общий расход / Σ общая выручка × 100. Расход берём по
-  // всем товарам, у кого он есть (включая безвыручечных, чья строка = 100%); выручку — где
-  // есть. Нет выручки ни у кого, но есть расход → 100%.
+  // «Итого» за сегодня — доля рекламы в общей выручке: Σ расход(всех рекламируемых) /
+  // Σ выручка(ВСЕХ товаров) × 100. Знаменатель — полная выручка магазина, поэтому итог
+  // сходится с «расход ÷ выручка» из колонок, а не с средним % строк. Нет выручки, но
+  // есть расход → 100%.
   const todayTotalDisplay = useMemo(() => {
     let spendSum = 0;
     let revSum = 0;
     for (const p of products) {
       if (p.nmId === null) continue;
       const spend = adSpendValues.get(p.nmId);
-      if (spend == null || spend <= 0) continue;
-      spendSum += spend;
+      if (spend != null && spend > 0) spendSum += spend;
       const rev = revenueValues.get(p.nmId);
       if (rev != null && rev > 0) revSum += rev;
     }
@@ -88,8 +88,8 @@ export function DashboardDrrPercentDetailSection({
     return spendSum > 0 ? formatPercent(100) : "—";
   }, [products, adSpendValues, revenueValues]);
 
-  // «Итого» по прошлым дням — взвешенно из матрицы: Σ spend(день) / Σ revenue(день) × 100.
-  // spend идёт в числитель по всем ячейкам с расходом (revenue=null у безвыручечных).
+  // «Итого» по прошлым дням — Σ spend(всех рекламируемых за день) / полная выручка магазина
+  // за день (revenueTotals) × 100. Знаменатель — общая выручка, а не сумма по строкам ДРР.
   const pastTotalsByDate = useMemo(() => {
     const totals = new Map<string, string>();
     for (const d of pastDates) {
@@ -99,18 +99,22 @@ export function DashboardDrrPercentDetailSection({
         continue;
       }
       let spendSum = 0;
-      let revSum = 0;
       for (const row of drrMatrix.products) {
         const spend = row.spend[idx];
-        if (spend == null || spend <= 0) continue;
-        spendSum += spend;
-        const rev = row.revenue[idx];
-        if (rev != null && rev > 0) revSum += rev;
+        if (spend != null && spend > 0) spendSum += spend;
       }
-      totals.set(d, revSum > 0 ? formatPercent((spendSum / revSum) * 100) : spendSum > 0 ? formatPercent(100) : "—");
+      const revTotal = drrMatrix.revenueTotals[idx] ?? 0;
+      totals.set(
+        d,
+        revTotal > 0
+          ? formatPercent((spendSum / revTotal) * 100)
+          : spendSum > 0
+            ? formatPercent(100)
+            : "—",
+      );
     }
     return totals;
-  }, [pastDates, matrixIdxByDate, drrMatrix.products]);
+  }, [pastDates, matrixIdxByDate, drrMatrix.products, drrMatrix.revenueTotals]);
 
   const pinnedCol: DateColumn = useMemo(
     () => ({

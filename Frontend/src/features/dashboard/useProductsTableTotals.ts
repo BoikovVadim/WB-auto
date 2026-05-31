@@ -136,18 +136,17 @@ export function useProductsTableTotals(input: Input): ProductsTableTotals {
     [filteredProducts, adSpendValues],
   );
 
-  // ДРР «Итого» — взвешенный: Σ общий расход / Σ общая выручка × 100, а НЕ среднее % строк
-  // (исказило бы при разных масштабах). Расход берём по всем товарам, у кого он есть (>0),
-  // включая безвыручечных (их строка = 100%) — их расход идёт в числитель, выручки нет.
-  // Если выручки нет ни у кого, но расход есть → 100% (вся реклама без отдачи).
+  // ДРР «Итого» — доля рекламы в общей выручке: Σ расход(всех рекламируемых) / Σ выручка
+  // (ВСЕХ товаров) × 100, а НЕ среднее % строк. Знаменатель — полная выручка (включая
+  // нерекламируемые товары), поэтому итог = «расход ÷ выручка» из колонок. Нет выручки, но
+  // есть расход → 100%.
   const totalDrrPercent = useMemo(() => {
     let spendSum = 0;
     let revenueSum = 0;
     for (const p of filteredProducts) {
       if (p.nmId === null) continue;
       const spend = adSpendValues.get(p.nmId);
-      if (spend === undefined || spend <= 0) continue;
-      spendSum += spend;
+      if (spend !== undefined && spend > 0) spendSum += spend;
       const revenue = revenueValues.get(p.nmId);
       if (revenue !== undefined && revenue > 0) revenueSum += revenue;
     }

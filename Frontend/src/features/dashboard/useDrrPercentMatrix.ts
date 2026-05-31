@@ -19,6 +19,8 @@ export type DrrMatrix = {
     spend: (number | null)[];
     revenue: (number | null)[];
   }[];
+  /** Полная выручка магазина по каждому дню (по индексам dates) — знаменатель «Итого». */
+  revenueTotals: number[];
 };
 
 export type UseDrrPercentMatrixResult = {
@@ -66,10 +68,11 @@ function fromCompact(c: DrrMatrixCompact): DrrMatrix {
     spend: keepIdx.map((i) => p.spend[i] ?? null),
     revenue: keepIdx.map((i) => p.revenue[i] ?? null),
   }));
-  return { dates, products };
+  const revenueTotals = keepIdx.map((i) => c.revenueTotals[i] ?? 0);
+  return { dates, products, revenueTotals };
 }
 
-const EMPTY_MATRIX: DrrMatrix = { dates: [], products: [] };
+const EMPTY_MATRIX: DrrMatrix = { dates: [], products: [], revenueTotals: [] };
 
 export function useDrrPercentMatrix(enabled = true): UseDrrPercentMatrixResult {
   const [drrMatrix, setDrrMatrix] = useState<DrrMatrix>(() => readCache() ?? EMPTY_MATRIX);

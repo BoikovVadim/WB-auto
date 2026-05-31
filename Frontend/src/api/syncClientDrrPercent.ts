@@ -18,9 +18,9 @@ export async function fetchTodayDrr(): Promise<TodayDrr[]> {
 }
 
 /**
- * Compact-матрица ДРР: dates[] общие для всех товаров; на товар — параллельные массивы:
- * drr[i] (%, для отображения ячейки) + spend[i]/revenue[i] (₽, для ВЗВЕШЕННОГО «Итого»
- * по столбцу = Σspend / Σrevenue × 100). Всё считается на бэкенде из расхода и выручки;
+ * Compact-матрица ДРР: dates[] = дни окна выручки; на товар — массивы drr[i] (%, ячейка) +
+ * spend[i]/revenue[i] (₽). revenueTotals[i] — полная выручка магазина за день (знаменатель
+ * «Итого» столбца = Σspend / revenueTotals × 100). Всё с бэкенда из расхода и выручки;
  * «сегодня» сюда не попадает (нет снапшота % выкупа за сегодня) — фронт рисует его live.
  */
 export type DrrMatrixCompact = {
@@ -31,6 +31,7 @@ export type DrrMatrixCompact = {
     spend: (number | null)[];
     revenue: (number | null)[];
   }[];
+  revenueTotals: number[];
 };
 
 export async function fetchDrrMatrixCompact(): Promise<DrrMatrixCompact> {
@@ -38,5 +39,5 @@ export async function fetchDrrMatrixCompact(): Promise<DrrMatrixCompact> {
     "/wb-clusters/products/drr-matrix-compact",
     { timeout: matrixApiTimeoutMs },
   );
-  return response.data ?? { dates: [], products: [] };
+  return response.data ?? { dates: [], products: [], revenueTotals: [] };
 }

@@ -44,12 +44,13 @@ export class ProductDrrService {
   }
 
   /**
-   * Compact-матрица «товары × даты» ДРР. На товар — параллельные массивы: `drr` (%) для
-   * отображения ячейки и `spend`/`revenue` (₽) — компоненты ВЗВЕШЕННОГО «Итого» по столбцу
-   * (Σspend / Σrevenue × 100), как у маржи/эквайринга. Колонки = дни, где у товара есть
-   * расход (>0); если в этот день нет выручки, ячейка = 100% и `revenue` = null (в Σrevenue
-   * не идёт, но spend идёт в Σspend → «Итого» = общий расход / общая выручка). «Сегодня»
-   * сюда не попадает (у выручки нет снапшота % выкупа за сегодня) — фронт рисует его live.
+   * Compact-матрица «товары × даты» ДРР. На товар — `drr` (%) для ячейки + `spend`/`revenue`
+   * (₽). Колонки = дни ОКНА ВЫРУЧКИ (где выручка есть хоть у кого-то); более старые дни
+   * расхода без выручки отбрасываются, чтобы не было колонок сплошных 100%. Внутри окна
+   * товар с расходом без своей выручки = 100% (revenue=null). «Итого» по столбцу считается
+   * на фронте как Σspend(всех рекламируемых) / `revenueTotals[день]`(полная выручка магазина)
+   * × 100 — доля рекламы в общей выручке, а не среднее % строк. «Сегодня» сюда не попадает
+   * (нет снапшота % выкупа за сегодня) — фронт рисует его live.
    */
   async getDrrMatrixCompact(): Promise<{
     dates: string[];
@@ -59,6 +60,8 @@ export class ProductDrrService {
       spend: (number | null)[];
       revenue: (number | null)[];
     }[];
+    /** Полная выручка магазина по каждому дню (по ВСЕМ товарам) — знаменатель «Итого» столбца. */
+    revenueTotals: number[];
   }> {
     const [adSpend, revenue] = await Promise.all([
       this.wbClustersService.getAdSpendMatrixCompact(),
@@ -75,18 +78,27 @@ export class ProductDrrService {
       }
       if (m.size > 0) spendByNm.set(p.nmId, m);
     }
+    // revByNm — выручка по товару/дню; revenueTotalByDate — полная выручка магазина по дню
+    // (по ВСЕМ товарам, в т.ч. без рекламы). Расход берётся ~30 дней, а выручка существует
+    // только в накопленном окне % выкупа — поэтому дни с выручкой и задают набор колонок:
+    // день без выручки ни у кого в матрицу НЕ попадает (иначе была бы колонка сплошных 100%).
     const revByNm = new Map<number, Map<string, number>>();
+    const revenueTotalByDate = new Map<string, number>();
     for (const p of revenue.products) {
       const m = new Map<string, number>();
       for (let i = 0; i < revenue.dates.length; i++) {
         const v = p.vals[i];
-        if (v != null && v > 0) m.set(revenue.dates[i]!, v);
+        if (v != null && v > 0) {
+          const d = revenue.dates[i]!;
+          m.set(d, v);
+          revenueTotalByDate.set(d, (revenueTotalByDate.get(d) ?? 0) + v);
+        }
       }
       if (m.size > 0) revByNm.set(p.nmId, m);
     }
 
-    // ДРР существует для (товар, день) с расходом (>0). С выручкой — расход/выручка × 100;
-    // без выручки (нет заказов) — 100%, revenue = null (не идёт в Σrevenue «Итого»).
+    // ДРР существует для (товар, день) с расходом (>0) В ОКНЕ ВЫРУЧКИ. С выручкой —
+    // расход/выручка × 100; без своей выручки (нет заказов у товара) — 100%, revenue = null.
     const cellsByNm = new Map<
       number,
       Map<string, { drr: number; spend: number; revenue: number | null }>
@@ -96,6 +108,7 @@ export class ProductDrrService {
       const revDates = revByNm.get(nmId);
       const cells = new Map<string, { drr: number; spend: number; revenue: number | null }>();
       for (const [date, spend] of spendDates) {
+        if (!revenueTotalByDate.has(date)) continue; // день вне окна выручки → колонки нет
         const rev = revDates?.get(date);
         const hasRev = rev != null && rev > 0;
         cells.set(date, {
@@ -125,6 +138,7 @@ export class ProductDrrService {
       }
       return { nmId, drr, spend, revenue: revenueArr };
     });
-    return { dates, products };
+    const revenueTotals = dates.map((d) => revenueTotalByDate.get(d) ?? 0);
+    return { dates, products, revenueTotals };
   }
 }
