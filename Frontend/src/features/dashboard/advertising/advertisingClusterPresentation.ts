@@ -14,7 +14,10 @@ export function getAdvertisingClusterQueryCount(
   row: ProductAdvertisingWorkspaceClusterRow,
   queries: ProductAdvertisingClusterQuery[],
 ) {
-  return queries.length > 0 ? queries.length : row.queryCount ?? 0;
+  // Раскрытый кластер показывает реальный 7-дневный состав (queries.length).
+  // Свёрнутый — тот же 7-дневный счётчик из бэкенда (jamQueryCount = окно состава),
+  // с fallback на полный кабинетный queryCount, чтобы не было пусто.
+  return queries.length > 0 ? queries.length : row.jamQueryCount ?? row.queryCount ?? 0;
 }
 
 export function formatAdvertisingClusterQueryCount(queryCount: number) {

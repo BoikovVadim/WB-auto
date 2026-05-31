@@ -8,6 +8,14 @@ import {
 import { WbClustersRepositoryAdvertisingSheetBuilder } from "./wb-clusters.repository.advertising-sheet-builder";
 
 /**
+ * Окно СОСТАВА кластера: какие запросы показывать определяет короткое свежее окно
+ * (последние N дней от конца выбранного периода), независимо от окна ЧИСЕЛ. Общий
+ * источник истины для drill-down (getWorkspaceClusterQueriesSQL) и счётчика на строке
+ * кластера (jam_query_count в getProductWorkspaceCampaignRowsSQL).
+ */
+export const CLUSTER_COMPOSITION_LOOKBACK_DAYS = 7;
+
+/**
  * SQL-direct fast path для drill-down запросов кластера (раскрытие кластера) и
  * для поискового индекса запросов. Вынесено из wb-clusters.repository.workspace-fast-sql.ts
  * как отдельная ответственность «чтение запросов внутри кластера», чтобы тот файл
@@ -95,7 +103,6 @@ export abstract class WbClustersRepositoryClusterQueriesSql extends WbClustersRe
     // актуальнее), при этом числа рядом по-прежнему суммируются за весь период.
     // Период по отдельной фразе есть ТОЛЬКО в JAM-снапшотах (подневные), поэтому
     // 7-дневный состав берём оттуда; кабинетная принадлежность периода не имеет.
-    const COMPOSITION_LOOKBACK_DAYS = 7;
     const compositionCte = hasPeriod
       ? `,
         composition_jam AS (
@@ -105,7 +112,7 @@ export abstract class WbClustersRepositoryClusterQueriesSql extends WbClustersRe
             ON r.snapshot_key = s.snapshot_key
           WHERE s.nm_id = $1
             AND s.start_date = s.end_date
-            AND s.start_date BETWEEN ($5::date - ${COMPOSITION_LOOKBACK_DAYS - 1}) AND $5::date
+            AND s.start_date BETWEEN ($5::date - ${CLUSTER_COMPOSITION_LOOKBACK_DAYS - 1}) AND $5::date
         )`
       : "";
     // Оставляем запрос, только если по нему была JAM-активность в окне состава.
