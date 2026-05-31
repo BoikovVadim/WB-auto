@@ -199,6 +199,51 @@ end tell`.trim();
 }
 
 // ---------------------------------------------------------------------------
+// Auth resilience
+// ---------------------------------------------------------------------------
+// cmp-токен (access-token в localStorage origin cmp.wildberries.ru) короткоживущий:
+// по ходу прогона он протухает, fetch ловит 401, и WB-SPA редиректит окно на
+// seller.wildberries.ru — там cmp-токена нет, и остаток прогона падает. Ниже —
+// проверка/восстановление: ре-навигация на cmp/campaigns/list, чтобы SPA по живой
+// session-cookie переавторизовался и выдал свежий токен.
+
+async function probeCmpAuth(windowId: number): Promise<{ onCmp: boolean; ready: boolean; token: number }> {
+  const js = `(function(){ try { return JSON.stringify({ host: location.host, ready: document.readyState, token: (localStorage.getItem("access-token")||"").length }); } catch (e) { return JSON.stringify({ host: "", ready: "", token: 0 }); } })()`;
+  try {
+    const raw = await injectIntoWindow(windowId, js, 10_000);
+    const s = JSON.parse(raw) as { host?: string; ready?: string; token?: number };
+    return {
+      onCmp: typeof s.host === "string" && s.host.includes("cmp.wildberries.ru"),
+      ready: s.ready === "complete",
+      token: typeof s.token === "number" ? s.token : 0,
+    };
+  } catch {
+    return { onCmp: false, ready: false, token: 0 };
+  }
+}
+
+/**
+ * Гарантирует, что окно на cmp и cmp-токен жив. Если нет — ре-навигирует на cmp и
+ * ждёт свежий токен (до ~60с). false → сессия мертва (нужен ручной ре-логин).
+ */
+async function ensureCmpAuth(windowId: number): Promise<boolean> {
+  const initial = await probeCmpAuth(windowId);
+  if (initial.onCmp && initial.token > 0) return true;
+
+  await runAppleScript(
+    `tell application "Safari" to set URL of current tab of window id ${windowId} to "https://cmp.wildberries.ru/campaigns/list"`,
+    20_000,
+  );
+
+  for (let i = 0; i < 30; i += 1) {
+    await sleep(2000);
+    const s = await probeCmpAuth(windowId);
+    if (s.onCmp && s.ready && s.token > 0) return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // DB helpers
 // ---------------------------------------------------------------------------
 
@@ -320,10 +365,29 @@ async function main() {
         `[Batch ${batchNum}/${totalBatches}] ${batchIds.length} adverts...`,
       );
 
+      // Проактивно проверяем, что окно на cmp и токен жив (он короткоживущий).
+      if (!(await ensureCmpAuth(windowId))) {
+        throw new Error(
+          "WB-сессия cmp.wildberries.ru недоступна (токен не обновился). " +
+            "Залогинься в cmp.wildberries.ru в Safari и перезапусти.",
+        );
+      }
+
       // Inject start script (resets window state for this batch)
-      const startResult = await injectIntoWindow(windowId, buildBatchStartScript(batchIds), 20_000);
+      let startResult = await injectIntoWindow(windowId, buildBatchStartScript(batchIds), 20_000);
       if (startResult.startsWith("auth-error:")) {
-        throw new Error(`WB auth missing in Safari: ${startResult}`);
+        // Токен мог протухнуть между проверкой и стартом — обновляем и повторяем батч раз.
+        console.warn("\n  auth-error на старте батча — обновляю cmp-сессию и повторяю...");
+        if (!(await ensureCmpAuth(windowId))) {
+          throw new Error(
+            "WB-сессия cmp.wildberries.ru потеряна и не восстановилась. " +
+              "Залогинься в cmp.wildberries.ru в Safari и перезапусти.",
+          );
+        }
+        startResult = await injectIntoWindow(windowId, buildBatchStartScript(batchIds), 20_000);
+        if (startResult.startsWith("auth-error:")) {
+          throw new Error(`WB auth всё ещё отсутствует после обновления сессии: ${startResult}`);
+        }
       }
 
       // Poll until all batch fetches complete AND all results collected
@@ -345,10 +409,16 @@ async function main() {
         };
 
         if (!poll.alive) {
-          // Page was reset — re-inject for remaining adverts in this batch
+          // Page was reset OR WB redirected to seller.wildberries.ru (token expired).
           const remaining = batchIds.filter((id) => !(id in batchDone));
           if (remaining.length === 0) break;
-          console.warn(`\n  Page reset detected — re-injecting ${remaining.length} adverts...`);
+          console.warn(`\n  Page reset/redirect — re-auth + re-injecting ${remaining.length} adverts...`);
+          if (!(await ensureCmpAuth(windowId))) {
+            throw new Error(
+              "WB-сессия потеряна посреди батча и не восстановилась. " +
+                "Залогинься в cmp.wildberries.ru в Safari и перезапусти.",
+            );
+          }
           await injectIntoWindow(windowId, buildBatchStartScript(remaining), 20_000);
           continue;
         }

@@ -62,6 +62,9 @@ export DATABASE_URL
 export WB_CMP_CONCURRENCY="${WB_CMP_CONCURRENCY:-10}"
 export WB_CMP_POLL_MS="${WB_CMP_POLL_MS:-2000}"
 export WB_CMP_RESULTS_BATCH="${WB_CMP_RESULTS_BATCH:-5}"
+# Меньший батч, чтобы успевать в короткую жизнь cmp-токена (перед каждым батчем
+# скрипт ещё и проактивно обновляет сессию).
+export WB_CMP_BATCH_SIZE="${WB_CMP_BATCH_SIZE:-15}"
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 npx ts-node \
