@@ -59,6 +59,29 @@ export class ProductCpoService {
   }
 
   /**
+   * CPO одного товара (для шапки рекламного воркспейса). `maxCpo` = CPO × 2 — максимальная
+   * планка цены за заказ, которую можно закладывать в ставки кластеров. ×2 считается ЗДЕСЬ
+   * (на сервере), фронт только рисует. Возвращает null-значения, если CPO не считается
+   * (нет целевого ДРР / выручки / заказов).
+   */
+  async getProductCpo(nmId: number): Promise<{
+    nmId: number;
+    cpo: number | null;
+    maxCpo: number | null;
+    drrPercent: number | null;
+  }> {
+    const today = await this.getTodayCpo();
+    const item = today.items.find((i) => i.nmId === nmId);
+    const cpo = item ? item.cpo : null;
+    return {
+      nmId,
+      cpo,
+      maxCpo: cpo !== null ? cpo * 2 : null,
+      drrPercent: today.drrPercent,
+    };
+  }
+
+  /**
    * Compact-матрица «товары × даты» CPO. На товар — `cpo` (₽) для ячейки + `revenue`/`orders`
    * (для взвешенного «Итого»). Колонки = дни ОКНА ВЫРУЧКИ (там, где есть снапшот % выкупа);
    * заказы за тот же день берутся из матрицы заказов. CPO есть, когда выручка >0 и заказы >0.

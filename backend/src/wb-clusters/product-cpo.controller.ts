@@ -1,4 +1,4 @@
-import { Controller, Get } from "@nestjs/common";
+import { Controller, Get, Param, ParseIntPipe } from "@nestjs/common";
 
 import { ProductCpoService } from "./product-cpo.service";
 
@@ -20,5 +20,11 @@ export class ProductCpoController {
   @Get("cpo-matrix-compact")
   getCpoMatrixCompact() {
     return this.productCpoService.getCpoMatrixCompact();
+  }
+
+  /** CPO одного товара + максимальная планка maxCpo (= CPO × 2) для шапки рекламного воркспейса. */
+  @Get(":nmId/cpo")
+  getProductCpo(@Param("nmId", ParseIntPipe) nmId: number) {
+    return this.productCpoService.getProductCpo(nmId);
   }
 }

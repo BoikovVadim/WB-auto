@@ -47,3 +47,21 @@ export async function fetchCpoMatrixCompact(): Promise<CpoMatrixCompact> {
   );
   return response.data ?? { drrPercent: null, dates: [], products: [] };
 }
+
+/**
+ * CPO одного товара + максимальная планка `maxCpo` (= CPO × 2) для шапки рекламного
+ * воркспейса. ×2 считает бэкенд, фронт только отображает.
+ */
+export type ProductCpo = {
+  nmId: number;
+  cpo: number | null;
+  maxCpo: number | null;
+  drrPercent: number | null;
+};
+
+export async function fetchProductCpo(nmId: number): Promise<ProductCpo> {
+  const response = await apiClient.get<ProductCpo>(
+    `/wb-clusters/products/${nmId}/cpo`,
+  );
+  return response.data ?? { nmId, cpo: null, maxCpo: null, drrPercent: null };
+}
