@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { formatMoney } from "../../../formatters";
 import { ui } from "../copy";
 import { useProductMaxCpo } from "../useProductMaxCpo";
+import { useClusterAutomation } from "./useClusterAutomation";
 import { ProductAdvertisingDateFilter } from "./ProductAdvertisingDateFilter";
 import { ProductAdvertisingChangeLogPanel } from "./ProductAdvertisingChangeLogPanel";
 import type { ProductAdvertisingClusterTableSectionProps } from "./ProductAdvertisingClusterTableSection";
@@ -97,6 +98,18 @@ export function ProductAdvertisingClusterOverview(
 
   // Планка CPO товара (= CPO × 2, считается на бэке) — на одной линии с «Активные».
   const { maxCpo } = useProductMaxCpo(props.nmId);
+
+  // Автоматизация управления кластерами по CPO для выбранной (активной) кампании.
+  const automationAdvertId = props.selectedCampaignAdvertId;
+  const { status: automation, isBusy: automationBusy, setMode: setAutomationMode } =
+    useClusterAutomation(props.nmId, automationAdvertId);
+  const autoCounts = {
+    active: automation.clusters.filter(
+      (c) => c.state === "active" || c.state === "manual_protected",
+    ).length,
+    high: automation.clusters.filter((c) => c.state === "excluded_high").length,
+    dropped: automation.clusters.filter((c) => c.state === "dropped").length,
+  };
 
   // Close panel when campaign changes
   useEffect(() => {
@@ -201,14 +214,51 @@ export function ProductAdvertisingClusterOverview(
                 </svg>
                 Активные ({activeCampaigns.length})
               </button>
-              {maxCpo !== null && (
-                <span
-                  title="Максимальная планка CPO для ставок кластеров = CPO × 2"
-                  style={{ fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap", color: "var(--wb-text-main)" }}
-                >
-                  Макс. CPO: {formatMoney(maxCpo)}
-                </span>
-              )}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
+                {maxCpo !== null && (
+                  <span
+                    title="Максимальная планка CPO для ставок кластеров = CPO × 2"
+                    style={{ fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap", color: "var(--wb-text-main)" }}
+                  >
+                    Макс. CPO: {formatMoney(maxCpo)}
+                  </span>
+                )}
+                {automationAdvertId !== null && (
+                  <label
+                    title="Автоматическое вкл/выкл кластеров по CPO каждые 10 минут"
+                    style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", cursor: "pointer", whiteSpace: "nowrap" }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={automation.mode !== "off"}
+                      disabled={automationBusy}
+                      onChange={(e) => setAutomationMode(e.target.checked ? "preview" : "off")}
+                    />
+                    Автоматизация
+                    {automation.mode === "preview" && (
+                      <span style={{ color: "var(--wb-text-muted)" }}>· предпросмотр</span>
+                    )}
+                    {automation.mode === "live" && (
+                      <span style={{ color: "#c0392b", fontWeight: 600 }}>· боевой</span>
+                    )}
+                  </label>
+                )}
+                {automation.mode !== "off" && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", color: "var(--wb-text-muted)", whiteSpace: "nowrap" }}>
+                    <span title="Кластеры, которые автоматика держит активными">актив {autoCounts.active}</span>
+                    <span title="Исключены: CPO выше макс">искл. по CPO {autoCounts.high}</span>
+                    <span title="Выбыли: нет данных / месяц без активности">выбыло {autoCounts.dropped}</span>
+                    <button
+                      type="button"
+                      disabled={automationBusy}
+                      onClick={() => setAutomationMode(automation.mode === "live" ? "preview" : "live")}
+                      style={{ fontSize: "11px", padding: "2px 8px", cursor: "pointer", border: "1px solid var(--wb-border, #ddd)", borderRadius: "6px", background: automation.mode === "live" ? "#fff" : "#c0392b", color: automation.mode === "live" ? "var(--wb-text-main)" : "#fff" }}
+                    >
+                      {automation.mode === "live" ? "В предпросмотр" : "Включить боевой"}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             {isActiveExpanded && (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "6px", marginLeft: "16px" }}>

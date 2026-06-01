@@ -13,6 +13,8 @@ import { ProductDrrController } from "./product-drr.controller";
 import { ProductDrrService } from "./product-drr.service";
 import { ProductCpoController } from "./product-cpo.controller";
 import { ProductCpoService } from "./product-cpo.service";
+import { ProductClusterAutomationController } from "./product-cluster-automation.controller";
+import { ProductClusterAutomationService } from "./product-cluster-automation.service";
 import { WbClustersActionQueueService } from "./wb-clusters-action-queue.service";
 import { WbClustersBidQueueService } from "./wb-clusters-bid-queue.service";
 import { WbClustersRepository } from "./wb-clusters.repository";
@@ -40,7 +42,7 @@ import { WbPromotionApiClient } from "./wb-promotion-api.client";
 
 @Module({
   imports: [WbRuntimeConfigModule],
-  controllers: [WbClustersController, UnitEconomicsController, ProductDrrController, ProductCpoController],
+  controllers: [WbClustersController, UnitEconomicsController, ProductDrrController, ProductCpoController, ProductClusterAutomationController],
   providers: [
     WbCabinetPrivateApiClient,
     WbCmpSafariClient,
@@ -57,6 +59,7 @@ import { WbPromotionApiClient } from "./wb-promotion-api.client";
     WbClustersService,
     ProductDrrService,
     ProductCpoService,
+    ProductClusterAutomationService,
     AcquiringSyncService,
     ProductAdvertisingReadRepository,
     PromotionSyncRepository,

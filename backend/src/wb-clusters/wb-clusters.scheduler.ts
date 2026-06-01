@@ -4,6 +4,7 @@ import { Cron } from "@nestjs/schedule";
 import { appEnv } from "../common/env";
 import { AcquiringSyncService } from "./acquiring-sync.service";
 import { ProductCatalogService } from "./product-catalog.service";
+import { ProductClusterAutomationService } from "./product-cluster-automation.service";
 import { UnitEconomicsService } from "./unit-economics.service";
 import { WbClustersService } from "./wb-clusters.service";
 
@@ -16,6 +17,7 @@ export class WbClustersScheduler implements OnModuleInit {
     private readonly productCatalogService: ProductCatalogService,
     private readonly acquiringSyncService: AcquiringSyncService,
     private readonly unitEconomicsService: UnitEconomicsService,
+    private readonly productClusterAutomationService: ProductClusterAutomationService,
   ) {}
 
   async onModuleInit() {
@@ -60,6 +62,15 @@ export class WbClustersScheduler implements OnModuleInit {
   @Cron("*/15 * * * * *")
   async handleProductPresetSnapshotQueue() {
     await this.wbClustersService.handleProductPresetSnapshotQueue();
+  }
+
+  // Автоматизация управления кластерами по CPO: каждые 10 минут пересчёт решений
+  // для кампаний с включённой автоматизацией (preview — без записи в WB, live — с записью).
+  @Cron("0 */10 * * * *")
+  async handleClusterAutomation() {
+    await this.productClusterAutomationService.runAll().catch((err: Error) => {
+      this.logger.warn(`handleClusterAutomation error: ${err.message}`);
+    });
   }
 
   // Prune expired in-memory cache entries every 5 minutes to prevent

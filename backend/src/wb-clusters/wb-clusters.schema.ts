@@ -42,6 +42,7 @@ import {
   getUnitEconomicsMarginSnapshotCreateStatements,
   getUnitEconomicsSettingsCreateStatements,
 } from "./wb-clusters.schema.unit-economics";
+import { getClusterAutomationCreateStatements } from "./wb-clusters.schema.automation";
 import type { WbClustersSchemaContext } from "./wb-clusters.schema.types";
 
 export async function initializeWbClustersSchema(input: {
@@ -85,4 +86,5 @@ export async function initializeWbClustersSchema(input: {
   await executeSchemaStatements(context, getProductAcquiringWeeklyCreateStatements(context));
   await executeSchemaStatements(context, getUnitEconomicsSettingsCreateStatements(context));
   await executeSchemaStatements(context, getUnitEconomicsMarginSnapshotCreateStatements(context));
+  await executeSchemaStatements(context, getClusterAutomationCreateStatements(context));
 }
