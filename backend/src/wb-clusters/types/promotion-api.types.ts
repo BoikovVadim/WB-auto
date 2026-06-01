@@ -148,6 +148,10 @@ export type PromotionFullstatsResponse = Array<{
   advertId: number;
   days?: Array<{
     date: string;
+    // Авторитетный расход РК за день (как в кабинете WB), уже округлённый WB до
+    // копеек. Используем как истину тотала дня и нормируем к нему сумму per-nm,
+    // иначе Σ округлённых nm.sum уезжает от кабинета на копейки.
+    sum?: number;
     apps?: Array<{
       appType?: number;
       // v3: товары лежат в поле `nms` (в v2 было `nm`).

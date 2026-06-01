@@ -74,6 +74,11 @@ export async function runAdSpendFullstatsSync(self: WbClustersService): Promise<
     string,
     { advertId: number; nmId: number; statDate: string; spend: number }
   >();
+  // Авторитетный расход РК за день (day.sum из WB, как в кабинете) и сырая сумма
+  // округлённых nm.sum за тот же день — нужны, чтобы нормировать товарную
+  // разбивку к day.sum (иначе Σ копеечно-округлённых nm.sum ≠ тоталу кабинета).
+  const authoritativeDaySum = new Map<string, number>();
+  const rawDaySum = new Map<string, number>();
   let chunksFailed = 0;
 
   const chunks = self.chunkArray(advertIds, appEnv.wbPromotionFullstatsChunkSize) as number[][];
@@ -101,11 +106,15 @@ export async function runAdSpendFullstatsSync(self: WbClustersService): Promise<
       for (const day of campaign.days ?? []) {
         const statDate = String(day.date).slice(0, 10);
         if (statDate.length !== 10) continue;
+        const dayKey = `${advertId}|${statDate}`;
+        const daySum = Number(day.sum);
+        if (Number.isFinite(daySum) && daySum > 0) authoritativeDaySum.set(dayKey, daySum);
         for (const app of day.apps ?? []) {
           for (const nm of app.nms ?? []) {
             const nmId = Number(nm.nmId);
             const sum = Number(nm.sum);
             if (!Number.isFinite(nmId) || !Number.isFinite(sum)) continue;
+            rawDaySum.set(dayKey, (rawDaySum.get(dayKey) ?? 0) + sum);
             const key = `${advertId}|${nmId}|${statDate}`;
             const existing = spendByKey.get(key);
             if (existing) {
@@ -119,13 +128,24 @@ export async function runAdSpendFullstatsSync(self: WbClustersService): Promise<
     }
   }
 
-  const rows = Array.from(spendByKey.values()).map((r) => ({
-    advertId: r.advertId,
-    nmId: r.nmId,
-    statDate: r.statDate,
-    spend: r.spend,
-    currency: currencyByAdvertId.get(r.advertId) ?? null,
-  }));
+  // Нормировка к авторитетному day.sum: масштабируем per-nm расход коэффициентом
+  // day.sum / Σ(nm.sum за день РК), чтобы расход РК совпал с кабинетом, а товарная
+  // разбивка в сумме давала ровно day.sum. Где WB не дал day.sum (или 0) —
+  // оставляем сырую сумму nm.sum как fallback (поведение не меняется).
+  const rows = Array.from(spendByKey.values()).map((r) => {
+    const dayKey = `${r.advertId}|${r.statDate}`;
+    const daySum = authoritativeDaySum.get(dayKey);
+    const raw = rawDaySum.get(dayKey);
+    const spend =
+      daySum !== undefined && raw !== undefined && raw > 0 ? r.spend * (daySum / raw) : r.spend;
+    return {
+      advertId: r.advertId,
+      nmId: r.nmId,
+      statDate: r.statDate,
+      spend,
+      currency: currencyByAdvertId.get(r.advertId) ?? null,
+    };
+  });
 
   const upserted = await self.wbClustersRepository.upsertAdvertDailySpend(rows);
   self.logger.log(
