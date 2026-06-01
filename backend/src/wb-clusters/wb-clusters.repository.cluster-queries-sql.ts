@@ -8,6 +8,14 @@ import {
 import { WbClustersRepositoryAdvertisingSheetBuilder } from "./wb-clusters.repository.advertising-sheet-builder";
 
 /**
+ * Окно СОСТАВА кластера: какие запросы показывать определяет короткое свежее окно
+ * (последние N дней от конца выбранного периода), независимо от окна ЧИСЕЛ. Общий
+ * источник истины для drill-down (getWorkspaceClusterQueriesSQL) и счётчика на строке
+ * кластера (jam_query_count в getProductWorkspaceCampaignRowsSQL).
+ */
+export const CLUSTER_COMPOSITION_LOOKBACK_DAYS = 7;
+
+/**
  * SQL-direct fast path для drill-down запросов кластера (раскрытие кластера) и
  * для поискового индекса запросов. Вынесено из wb-clusters.repository.workspace-fast-sql.ts
  * как отдельная ответственность «чтение запросов внутри кластера», чтобы тот файл
@@ -88,12 +96,13 @@ export abstract class WbClustersRepositoryClusterQueriesSql extends WbClustersRe
         GROUP BY r.normalized_query_text
       )`;
 
-    // Окно СОСТАВА кластера = ВЕСЬ выбранный период (как и окно ЧИСЕЛ). В раскрытом
-    // кластере видны все запросы, по которым товар был релевантен за период (при
-    // дефолтном пресете «месяц» — за ~30 дней, максимум, что отдаёт WB). Это держит
-    // сумму jam-заказов в drill-down согласованной со строкой кластера, где orders
-    // тоже суммируются за весь период. Период по отдельной фразе есть ТОЛЬКО в
-    // JAM-снапшотах (подневные); кабинетная принадлежность периода не имеет.
+    // Окно СОСТАВА кластера расцеплено с окном ЧИСЕЛ выше. Какие запросы попадают
+    // в строки — определяет КОРОТКОЕ свежее окно (последние 7 дней от конца
+    // выбранного периода), а не весь период. Цель: в раскрытом кластере видны
+    // только запросы, по которым товар реально был релевантен недавно (меньше и
+    // актуальнее), при этом числа рядом по-прежнему суммируются за весь период.
+    // Период по отдельной фразе есть ТОЛЬКО в JAM-снапшотах (подневные), поэтому
+    // 7-дневный состав берём оттуда; кабинетная принадлежность периода не имеет.
     const compositionCte = hasPeriod
       ? `,
         composition_jam AS (
@@ -103,11 +112,11 @@ export abstract class WbClustersRepositoryClusterQueriesSql extends WbClustersRe
             ON r.snapshot_key = s.snapshot_key
           WHERE s.nm_id = $1
             AND s.start_date = s.end_date
-            AND s.start_date BETWEEN $4::date AND $5::date
+            AND s.start_date BETWEEN ($5::date - ${CLUSTER_COMPOSITION_LOOKBACK_DAYS - 1}) AND $5::date
         )`
       : "";
-    // Оставляем запрос, только если по нему была JAM-активность за период.
-    // Fallback: если за период у товара вообще НЕТ подневного JAM
+    // Оставляем запрос, только если по нему была JAM-активность в окне состава.
+    // Fallback: если за последние 7 дней у товара вообще НЕТ подневного JAM
     // (composition_jam пуст) — показываем полный кабинетный список, чтобы кластер
     // не выглядел пустым/сломанным.
     const compositionFilter = hasPeriod
