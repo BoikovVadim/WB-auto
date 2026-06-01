@@ -252,8 +252,10 @@ export function ProductAdvertisingClusterOverview(
                     style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", color: "var(--wb-text-muted)", whiteSpace: "nowrap", visibility: automation.mode !== "off" ? "visible" : "hidden" }}
                   >
                     <span title="Кластеры, которые автоматика держит активными">актив {autoCounts.active}</span>
-                    <span title="Исключены: CPO выше макс">искл. по CPO {autoCounts.high}</span>
-                    <span title="Выбыли: нет данных / месяц без активности">выбыло {autoCounts.dropped}</span>
+                    <span title="Исключены по CPO (включая тех, у кого расход уже вытек из окна после исключения)">искл. по CPO {autoCounts.high}</span>
+                    {autoCounts.dropped > 0 && (
+                      <span title="Выбыли (legacy): пересчитаются в «искл. по CPO» при ближайшем прогоне автоматики">выбыло {autoCounts.dropped}</span>
+                    )}
                     <button
                       type="button"
                       disabled={automationBusy || automation.mode === "off"}
