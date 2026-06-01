@@ -239,7 +239,7 @@ export function ProductAdvertisingClusterOverview(
                       <span style={{ color: "var(--wb-text-muted)" }}>· предпросмотр</span>
                     )}
                     {automation.mode === "live" && (
-                      <span style={{ color: "#c0392b", fontWeight: 600 }}>· боевой</span>
+                      <span style={{ color: "#1f8a4c", fontWeight: 600 }}>· включена</span>
                     )}
                   </label>
                 )}
@@ -251,19 +251,19 @@ export function ProductAdvertisingClusterOverview(
                     aria-hidden={automation.mode === "off"}
                     style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", color: "var(--wb-text-muted)", whiteSpace: "nowrap", visibility: automation.mode !== "off" ? "visible" : "hidden" }}
                   >
-                    <span title="Кластеры, которые автоматика держит активными">актив {autoCounts.active}</span>
-                    <span title="Исключены по CPO (включая тех, у кого расход уже вытек из окна после исключения)">искл. по CPO {autoCounts.high}</span>
+                    <span title="Активные + кандидаты без данных по расходу (даём шанс набрать данные)">актив {autoCounts.active}</span>
+                    <span title="Исключены: реальный расход и CPO выше макс. Кластеры без данных по расходу сюда НЕ попадают">искл. по CPO {autoCounts.high}</span>
                     {autoCounts.dropped > 0 && (
-                      <span title="Выбыли (legacy): пересчитаются в «искл. по CPO» при ближайшем прогоне автоматики">выбыло {autoCounts.dropped}</span>
+                      <span title="Выбыли (legacy): пересчитаются при ближайшем прогоне автоматики">выбыло {autoCounts.dropped}</span>
                     )}
                     <button
                       type="button"
                       disabled={automationBusy || automation.mode === "off"}
                       tabIndex={automation.mode === "off" ? -1 : 0}
                       onClick={() => setAutomationMode(automation.mode === "live" ? "preview" : "live")}
-                      style={{ fontSize: "11px", padding: "2px 8px", cursor: "pointer", border: "1px solid var(--wb-border, #ddd)", borderRadius: "6px", background: automation.mode === "live" ? "#fff" : "#c0392b", color: automation.mode === "live" ? "var(--wb-text-main)" : "#fff" }}
+                      style={{ fontSize: "11px", padding: "2px 8px", cursor: "pointer", border: "1px solid var(--wb-border, #ddd)", borderRadius: "6px", background: automation.mode === "live" ? "#fff" : "#1f8a4c", color: automation.mode === "live" ? "var(--wb-text-main)" : "#fff" }}
                     >
-                      {automation.mode === "live" ? "В предпросмотр" : "Включить боевой"}
+                      {automation.mode === "live" ? "В предпросмотр" : "Включить автоматизацию"}
                     </button>
                   </div>
                 )}
