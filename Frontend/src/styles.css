@@ -3041,6 +3041,45 @@ input {
   font-variant-numeric: tabular-nums;
   color: var(--wb-text-muted);
 }
+.wb-filter-role {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 0;
+}
+.wb-filter-role__btn {
+  font-size: 10px;
+  line-height: 1;
+  padding: 4px 7px;
+  border: 1px solid var(--wb-border);
+  border-left-width: 0;
+  background: var(--wb-surface);
+  color: var(--wb-text-muted);
+  cursor: pointer;
+}
+.wb-filter-role__btn:first-child {
+  border-left-width: 1px;
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+}
+.wb-filter-role__btn:last-child {
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+.wb-filter-role__btn.is-active {
+  background: var(--wb-text-main);
+  color: var(--wb-surface);
+  border-color: var(--wb-text-main);
+}
+.wb-filter-role__btn--white.is-active {
+  background: #1f8a4c;
+  border-color: #1f8a4c;
+  color: #fff;
+}
+.wb-filter-role__btn--black.is-active {
+  background: #c0392b;
+  border-color: #c0392b;
+  color: #fff;
+}
 .wb-filter-settings__empty {
   padding: 28px 16px;
   text-align: center;

@@ -16,7 +16,8 @@ import type { WbClustersSchemaContext } from "./wb-clusters.schema.types";
  *   last_cpo — последний эффективный CPO; last_decision — include|exclude|noop (для preview-UI).
  *
  * wb_cluster_automation_override — ручные override пользователя поверх движка на (advert, nm,
- *   cluster). is_protected — кластер нельзя отключать (полный приоритет над CPO-правилом).
+ *   cluster). is_protected — «белый список»: кластер нельзя отключать; is_blacklisted —
+ *   «чёрный список»: кластер нельзя включать. Приоритет: чёрный > белый > CPO-правило.
  */
 export function getClusterAutomationCreateStatements({
   tableName,
@@ -53,9 +54,15 @@ export function getClusterAutomationCreateStatements({
         normalized_cluster_name TEXT         NOT NULL,
         cluster_name            TEXT         NOT NULL,
         is_protected            BOOLEAN      NOT NULL DEFAULT FALSE,
+        is_blacklisted          BOOLEAN      NOT NULL DEFAULT FALSE,
         updated_at              TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
         PRIMARY KEY (advert_id, nm_id, normalized_cluster_name)
       )
+    `,
+    // is_blacklisted добавлен позже — ALTER для уже созданных таблиц (идемпотентно).
+    `
+      ALTER TABLE ${tableName("wb_cluster_automation_override")}
+        ADD COLUMN IF NOT EXISTS is_blacklisted BOOLEAN NOT NULL DEFAULT FALSE
     `,
   ];
 }

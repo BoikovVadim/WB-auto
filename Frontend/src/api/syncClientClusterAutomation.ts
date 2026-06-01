@@ -6,7 +6,8 @@ export type ClusterAutomationState =
   | "excluded_high"
   | "dropped"
   | "manual_protected"
-  | "protected";
+  | "protected"
+  | "blacklisted";
 
 export type ClusterAutomationStatus = {
   mode: AutomationMode;
@@ -53,9 +54,13 @@ export type ClusterFilterRow = {
   clusterName: string;
   lastCpo: number | null;
   state: ClusterAutomationState | null;
+  /** Белый список — нельзя выключать. */
   isProtected: boolean;
+  /** Чёрный список — нельзя включать (приоритет над белым). */
+  isBlacklisted: boolean;
 };
 
+export type ClusterFilterItem = { normalizedClusterName: string; clusterName: string };
 export type ClusterFilterConfig = { clusters: ClusterFilterRow[] };
 
 const EMPTY_CONFIG: ClusterFilterConfig = { clusters: [] };
@@ -70,14 +75,14 @@ export async function fetchClusterFilterConfig(
   return response.data ?? EMPTY_CONFIG;
 }
 
-export async function setProtectedClusters(
+export async function setClusterFilters(
   nmId: number,
   advertId: number,
-  protectedClusters: { normalizedClusterName: string; clusterName: string }[],
+  input: { protected: ClusterFilterItem[]; blacklisted: ClusterFilterItem[] },
 ): Promise<ClusterFilterConfig> {
   const response = await apiClient.put<ClusterFilterConfig>(
     `/wb-clusters/products/${nmId}/campaigns/${advertId}/automation/config`,
-    { protected: protectedClusters },
+    input,
     { headers: buildWbClustersWriteHeaders() },
   );
   return response.data ?? EMPTY_CONFIG;

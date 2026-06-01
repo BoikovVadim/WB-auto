@@ -6,15 +6,23 @@ export type ClusterAutomationStateValue =
   | "excluded_high"
   | "dropped"
   | "manual_protected"
-  | "protected";
+  | "protected"
+  | "blacklisted";
 
-/** Строка пикера «Настройка фильтров»: кластер + его текущее состояние и флаг защиты. */
+/** Строка пикера «Настройка фильтров»: кластер + его состояние и роли (белый/чёрный). */
 export interface ClusterOverridePickerRow {
   normalizedClusterName: string;
   clusterName: string;
   lastCpo: number | null;
   state: ClusterAutomationStateValue | null;
   isProtected: boolean;
+  isBlacklisted: boolean;
+}
+
+/** Один override-элемент при сохранении набора (имя + отображаемое имя). */
+export interface ClusterOverrideItem {
+  normalizedClusterName: string;
+  clusterName: string;
 }
 
 /** Вход для расчёта CPO кластера за окно (скользящие 30 дней). */
@@ -278,16 +286,29 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
     );
   }
 
-  /** Нормализованные имена защищённых кластеров (advert, nm) — для движка. */
-  async getProtectedClusterNames(advertId: number, nmId: number): Promise<Set<string>> {
+  /** Роли override (белый/чёрный список) одним запросом — для движка. */
+  async getClusterOverrideRoles(
+    advertId: number,
+    nmId: number,
+  ): Promise<{ protectedNames: Set<string>; blacklistedNames: Set<string> }> {
     await this.ensureSchemaOrThrow();
-    const result = await this.getPool().query<{ normalized_cluster_name: string }>(
-      `SELECT normalized_cluster_name
+    const result = await this.getPool().query<{
+      normalized_cluster_name: string;
+      is_protected: boolean;
+      is_blacklisted: boolean;
+    }>(
+      `SELECT normalized_cluster_name, is_protected, is_blacklisted
        FROM ${this.tableName("wb_cluster_automation_override")}
-       WHERE advert_id = $1 AND nm_id = $2 AND is_protected = TRUE`,
+       WHERE advert_id = $1 AND nm_id = $2 AND (is_protected = TRUE OR is_blacklisted = TRUE)`,
       [advertId, nmId],
     );
-    return new Set(result.rows.map((r) => r.normalized_cluster_name));
+    const protectedNames = new Set<string>();
+    const blacklistedNames = new Set<string>();
+    for (const r of result.rows) {
+      if (r.is_blacklisted) blacklistedNames.add(r.normalized_cluster_name);
+      else if (r.is_protected) protectedNames.add(r.normalized_cluster_name);
+    }
+    return { protectedNames, blacklistedNames };
   }
 
   /**
@@ -305,13 +326,15 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       last_cpo: string | null;
       state: ClusterAutomationStateValue | null;
       is_protected: boolean;
+      is_blacklisted: boolean;
     }>(
       `SELECT
          c.normalized_cluster_name,
          MAX(c.cluster_name)                                AS cluster_name,
          MAX(s.last_cpo)::text                              AS last_cpo,
          MAX(s.state)                                       AS state,
-         BOOL_OR(COALESCE(o.is_protected, FALSE))           AS is_protected
+         BOOL_OR(COALESCE(o.is_protected, FALSE))           AS is_protected,
+         BOOL_OR(COALESCE(o.is_blacklisted, FALSE))         AS is_blacklisted
        FROM ${this.tableName("wb_clusters")} c
        LEFT JOIN ${this.tableName("wb_cluster_actions")} a
          ON a.advert_id = c.advert_id AND a.nm_id = c.nm_id
@@ -338,40 +361,58 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       lastCpo: r.last_cpo != null ? Number(r.last_cpo) : null,
       state: r.state,
       isProtected: r.is_protected,
+      isBlacklisted: r.is_blacklisted,
     }));
   }
 
   /**
-   * Полная замена набора защищённых кластеров (advert, nm). Транзакция: снять защиту со
-   * всех не из списка, затем проставить is_protected=TRUE переданным (idempotent).
+   * Полная замена наборов белого (protected) и чёрного (blacklisted) списков (advert, nm).
+   * Транзакция: сбросить обе роли у всех, кого нет в новых наборах, затем проставить роли
+   * переданным (idempotent). Чёрный приоритетнее: при пересечении кластер уходит в чёрный.
    */
-  async setProtectedClusters(
+  async setClusterFilters(
     advertId: number,
     nmId: number,
-    items: { normalizedClusterName: string; clusterName: string }[],
+    input: { protected: ClusterOverrideItem[]; blacklisted: ClusterOverrideItem[] },
   ): Promise<void> {
     await this.ensureSchemaOrThrow();
     const table = this.tableName("wb_cluster_automation_override");
-    const keep = items.map((i) => i.normalizedClusterName);
+    // Чёрный приоритетнее белого: если кластер передан в обоих, считаем его только чёрным.
+    const blacklistedKeys = new Set(input.blacklisted.map((i) => i.normalizedClusterName));
+    const protectedItems = input.protected.filter(
+      (i) => !blacklistedKeys.has(i.normalizedClusterName),
+    );
+    const roleByKey = new Map<string, { item: ClusterOverrideItem; isProtected: boolean; isBlacklisted: boolean }>();
+    for (const item of protectedItems) {
+      roleByKey.set(item.normalizedClusterName, { item, isProtected: true, isBlacklisted: false });
+    }
+    for (const item of input.blacklisted) {
+      roleByKey.set(item.normalizedClusterName, { item, isProtected: false, isBlacklisted: true });
+    }
+    const keep = [...roleByKey.keys()];
+
     const client = await this.getPool().connect();
     try {
       await client.query("BEGIN");
+      // Сбросить роли у всех, кого нет в новых наборах.
       await client.query(
-        `UPDATE ${table} SET is_protected = FALSE, updated_at = NOW()
-         WHERE advert_id = $1 AND nm_id = $2 AND is_protected = TRUE
+        `UPDATE ${table} SET is_protected = FALSE, is_blacklisted = FALSE, updated_at = NOW()
+         WHERE advert_id = $1 AND nm_id = $2
+           AND (is_protected = TRUE OR is_blacklisted = TRUE)
            AND NOT (normalized_cluster_name = ANY($3::text[]))`,
         [advertId, nmId, keep],
       );
-      for (const item of items) {
+      for (const { item, isProtected, isBlacklisted } of roleByKey.values()) {
         await client.query(
           `INSERT INTO ${table}
-             (advert_id, nm_id, normalized_cluster_name, cluster_name, is_protected, updated_at)
-           VALUES ($1, $2, $3, $4, TRUE, NOW())
+             (advert_id, nm_id, normalized_cluster_name, cluster_name, is_protected, is_blacklisted, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW())
            ON CONFLICT (advert_id, nm_id, normalized_cluster_name) DO UPDATE SET
-             is_protected = TRUE,
+             is_protected = EXCLUDED.is_protected,
+             is_blacklisted = EXCLUDED.is_blacklisted,
              cluster_name = EXCLUDED.cluster_name,
              updated_at = NOW()`,
-          [advertId, nmId, item.normalizedClusterName, item.clusterName],
+          [advertId, nmId, item.normalizedClusterName, item.clusterName, isProtected, isBlacklisted],
         );
       }
       await client.query("COMMIT");

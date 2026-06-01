@@ -15,12 +15,16 @@ type Props = {
   onClose: () => void;
 };
 
-const ROW_HEIGHT = 34;
+type Role = "auto" | "protected" | "blacklisted";
+
+const ROW_HEIGHT = 38;
 
 function stateLabel(state: ClusterAutomationState | null): string {
   switch (state) {
     case "protected":
-      return "защищён";
+      return "белый список";
+    case "blacklisted":
+      return "чёрный список";
     case "active":
     case "manual_protected":
       return "активен";
@@ -31,22 +35,43 @@ function stateLabel(state: ClusterAutomationState | null): string {
   }
 }
 
+function initialRole(row: ClusterFilterRow): Role {
+  if (row.isBlacklisted) return "blacklisted";
+  if (row.isProtected) return "protected";
+  return "auto";
+}
+
 export function ProductAdvertisingFilterSettingsModal({ nmId, advertId, onClose }: Props) {
-  const { config, isLoading, isSaving, error, saveProtected } = useClusterAutomationFilters(
+  const { config, isLoading, isSaving, error, saveFilters } = useClusterAutomationFilters(
     nmId,
     advertId,
   );
   const [search, setSearch] = useState("");
-  // Локальный набор выбранных (защищённых) — инициализируется из конфига при загрузке.
-  const [protectedKeys, setProtectedKeys] = useState<Set<string> | null>(null);
+  // Локальные изменения ролей поверх пришедшего конфига (key → role).
+  const [overrides, setOverrides] = useState<Map<string, Role>>(new Map());
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Синхронизация локального выбора с пришедшим конфигом (один раз, пока пользователь не трогал).
-  const initialKeys = useMemo(
-    () => new Set(config.clusters.filter((c) => c.isProtected).map((c) => c.normalizedClusterName)),
-    [config.clusters],
-  );
-  const effectiveKeys = protectedKeys ?? initialKeys;
+  const roleOf = (row: ClusterFilterRow): Role =>
+    overrides.get(row.normalizedClusterName) ?? initialRole(row);
+
+  const setRole = (row: ClusterFilterRow, role: Role) => {
+    setOverrides((prev) => {
+      const next = new Map(prev);
+      next.set(row.normalizedClusterName, role);
+      return next;
+    });
+  };
+
+  const counts = useMemo(() => {
+    let white = 0;
+    let black = 0;
+    for (const row of config.clusters) {
+      const role = overrides.get(row.normalizedClusterName) ?? initialRole(row);
+      if (role === "protected") white += 1;
+      else if (role === "blacklisted") black += 1;
+    }
+    return { white, black };
+  }, [config.clusters, overrides]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -66,31 +91,26 @@ export function ProductAdvertisingFilterSettingsModal({ nmId, advertId, onClose 
   const bottomSpacer =
     virtualItems.length > 0 ? totalSize - (virtualItems[virtualItems.length - 1]?.end ?? 0) : 0;
 
-  const toggle = (row: ClusterFilterRow) => {
-    setProtectedKeys((prev) => {
-      const next = new Set(prev ?? initialKeys);
-      if (next.has(row.normalizedClusterName)) next.delete(row.normalizedClusterName);
-      else next.add(row.normalizedClusterName);
-      return next;
-    });
-  };
-
   const handleSave = () => {
-    const rows = config.clusters.filter((c) => effectiveKeys.has(c.normalizedClusterName));
-    void saveProtected(rows)
+    const protectedRows: ClusterFilterRow[] = [];
+    const blacklistedRows: ClusterFilterRow[] = [];
+    for (const row of config.clusters) {
+      const role = overrides.get(row.normalizedClusterName) ?? initialRole(row);
+      if (role === "protected") protectedRows.push(row);
+      else if (role === "blacklisted") blacklistedRows.push(row);
+    }
+    void saveFilters({ protected: protectedRows, blacklisted: blacklistedRows })
       .then(() => onClose())
       .catch(() => {
         /* ошибка показана в error */
       });
   };
 
-  const protectedCount = effectiveKeys.size;
-
   return (
     <Modal
       title="Настройка фильтров"
       onClose={onClose}
-      width={640}
+      width={680}
       footer={
         <>
           {error ? (
@@ -116,11 +136,14 @@ export function ProductAdvertisingFilterSettingsModal({ nmId, advertId, onClose 
       }
     >
       <p className="wb-filter-settings__section-title">
-        Защищённые кластеры{protectedCount > 0 ? ` · ${String(protectedCount)}` : ""}
+        Списки кластеров
+        {counts.white > 0 ? ` · белый ${String(counts.white)}` : ""}
+        {counts.black > 0 ? ` · чёрный ${String(counts.black)}` : ""}
       </p>
       <p className="wb-filter-settings__hint">
-        Эти кластеры автоматика никогда не отключает — всегда держит активными, даже при высоком
-        CPO. Если кластер сейчас исключён на WB, в боевом режиме он будет включён.
+        <strong>Белый</strong> — кластер нельзя выключать (автоматика всегда держит активным,
+        даже при высоком CPO). <strong>Чёрный</strong> — кластер нельзя включать (всегда
+        выключен). Чёрный приоритетнее белого. <strong>Авто</strong> — решает автоматика по CPO.
       </p>
 
       <input
@@ -144,15 +167,14 @@ export function ProductAdvertisingFilterSettingsModal({ nmId, advertId, onClose 
             {virtualItems.map((vi) => {
               const row = filtered[vi.index];
               if (!row) return null;
-              const checked = effectiveKeys.has(row.normalizedClusterName);
+              const role = roleOf(row);
               const label = stateLabel(row.state);
               return (
-                <label
+                <div
                   key={row.normalizedClusterName}
                   className="wb-filter-settings__row"
                   style={{ height: ROW_HEIGHT }}
                 >
-                  <input type="checkbox" checked={checked} onChange={() => toggle(row)} />
                   <span className="wb-filter-settings__row-name" title={row.clusterName}>
                     {row.clusterName}
                     {label ? (
@@ -162,7 +184,30 @@ export function ProductAdvertisingFilterSettingsModal({ nmId, advertId, onClose 
                   <span className="wb-filter-settings__row-cpo">
                     {row.lastCpo !== null ? formatMoney(row.lastCpo) : "—"}
                   </span>
-                </label>
+                  <span className="wb-filter-role" role="group" aria-label="Роль кластера">
+                    <button
+                      type="button"
+                      className={`wb-filter-role__btn${role === "auto" ? " is-active" : ""}`}
+                      onClick={() => setRole(row, "auto")}
+                    >
+                      Авто
+                    </button>
+                    <button
+                      type="button"
+                      className={`wb-filter-role__btn wb-filter-role__btn--white${role === "protected" ? " is-active" : ""}`}
+                      onClick={() => setRole(row, "protected")}
+                    >
+                      Белый
+                    </button>
+                    <button
+                      type="button"
+                      className={`wb-filter-role__btn wb-filter-role__btn--black${role === "blacklisted" ? " is-active" : ""}`}
+                      onClick={() => setRole(row, "blacklisted")}
+                    >
+                      Чёрный
+                    </button>
+                  </span>
+                </div>
               );
             })}
             <div style={{ height: bottomSpacer }} />

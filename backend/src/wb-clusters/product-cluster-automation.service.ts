@@ -5,6 +5,7 @@ import type {
   AutomationMode,
   ClusterAutomationStateValue,
   ClusterCpoInput,
+  ClusterOverrideItem,
   ClusterOverridePickerRow,
 } from "./wb-clusters.repository.automation";
 import { WbClustersRepository } from "./wb-clusters.repository";
@@ -93,15 +94,15 @@ export class ProductClusterAutomationService {
   }
 
   /**
-   * Полная замена набора защищённых кластеров. Если автоматика включена — сразу прогон,
-   * чтобы защита применилась без ожидания крона (в live реально включит исключённые).
+   * Полная замена белого и чёрного списков. Если автоматика включена — сразу прогон, чтобы
+   * списки применились без ожидания крона (в live реально вкл/выкл соответствующие кластеры).
    */
-  async setProtectedClusters(
+  async setClusterFilters(
     advertId: number,
     nmId: number,
-    items: { normalizedClusterName: string; clusterName: string }[],
+    input: { protected: ClusterOverrideItem[]; blacklisted: ClusterOverrideItem[] },
   ): Promise<{ clusters: ClusterOverridePickerRow[] }> {
-    await this.repository.setProtectedClusters(advertId, nmId, items);
+    await this.repository.setClusterFilters(advertId, nmId, input);
     const mode = await this.repository.getAutomationMode(advertId, nmId);
     if (mode !== "off") {
       await this.evaluateOne(advertId, nmId, mode).catch((e: unknown) => {
@@ -127,21 +128,18 @@ export class ProductClusterAutomationService {
     const maxCpo = (await this.productCpoService.getProductCpo(nmId)).maxCpo;
     if (maxCpo == null) return []; // нет порога (нет цены/выкупа/ДРР) — решать не на чем
 
-    const [inputs, prevStates, protectedNames] = await Promise.all([
+    const [inputs, prevStates, roles] = await Promise.all([
       this.repository.getClusterCpoInputs(advertId, nmId),
       this.repository.getClusterAutomationStates(advertId, nmId),
-      this.repository.getProtectedClusterNames(advertId, nmId),
+      this.repository.getClusterOverrideRoles(advertId, nmId),
     ]);
     const prevByCluster = new Map(prevStates.map((s) => [s.normalizedClusterName, s]));
 
     const decisions = inputs.map((input) =>
-      this.decideForCluster(
-        input,
-        maxCpo,
-        prevByCluster.get(input.normalizedClusterName),
-        mode,
-        protectedNames.has(input.normalizedClusterName),
-      ),
+      this.decideForCluster(input, maxCpo, prevByCluster.get(input.normalizedClusterName), mode, {
+        isProtected: roles.protectedNames.has(input.normalizedClusterName),
+        isBlacklisted: roles.blacklistedNames.has(input.normalizedClusterName),
+      }),
     );
 
     // Применяем к WB только в live и только при отличии от текущего состояния.
@@ -169,20 +167,34 @@ export class ProductClusterAutomationService {
     maxCpo: number,
     prev: { state: ClusterAutomationStateValue; manualProtected: boolean; lastDecision: string | null } | undefined,
     mode: AutomationMode,
-    isProtected: boolean,
+    roles: { isProtected: boolean; isBlacklisted: boolean },
   ): ClusterDecision {
     const isExcludedNow = input.currentSourceKind === "excluded";
+    const orders = Math.max(input.ordersRk, input.ordersJam);
+    const displayCpo = orders > 0 ? input.spend / orders : null;
+    const effectiveCpoForDisplay =
+      displayCpo != null && Number.isFinite(displayCpo) ? round2(displayCpo) : null;
 
-    // Защищённый кластер («Настройка фильтров») — полный приоритет над CPO-правилом:
-    // всегда активен. Если сейчас исключён на WB — включаем; иначе noop. Считаем CPO только
-    // для отображения, на решение он не влияет.
-    if (isProtected) {
-      const orders = Math.max(input.ordersRk, input.ordersJam);
-      const cpo = orders > 0 ? input.spend / orders : null;
+    // Чёрный список — наивысший приоритет: кластер никогда не должен быть включён.
+    // Если сейчас активен на WB — исключаем; иначе noop.
+    if (roles.isBlacklisted) {
       return {
         normalizedClusterName: input.normalizedClusterName,
         clusterName: input.clusterName,
-        effectiveCpo: cpo != null && Number.isFinite(cpo) ? round2(cpo) : null,
+        effectiveCpo: effectiveCpoForDisplay,
+        state: "blacklisted",
+        manualProtected: false,
+        decision: isExcludedNow ? "noop" : "exclude",
+      };
+    }
+
+    // Белый список — приоритет над CPO-правилом: кластер всегда активен. Если сейчас
+    // исключён на WB — включаем; иначе noop. CPO считаем только для отображения.
+    if (roles.isProtected) {
+      return {
+        normalizedClusterName: input.normalizedClusterName,
+        clusterName: input.clusterName,
+        effectiveCpo: effectiveCpoForDisplay,
         state: "protected",
         manualProtected: false,
         decision: isExcludedNow ? "include" : "noop",
@@ -199,7 +211,7 @@ export class ProductClusterAutomationService {
     // CPO = расход / БОЛЬШЕЕ из (заказы РК, заказы JAM). Один расход делим на больший
     // знаменатель → CPO получается меньше (благоприятнее для кластера). Расход без
     // заказов вовсе → ∞ (исключить); нет ни расхода, ни заказов → null (выбыл).
-    const orders = Math.max(input.ordersRk, input.ordersJam);
+    // orders/displayCpo посчитаны выше; здесь добавляем ∞-семантику для CPO-решения.
     const effectiveCpo = orders > 0 ? input.spend / orders : input.spend > 0 ? Infinity : null;
 
     let desiredActive: boolean;

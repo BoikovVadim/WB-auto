@@ -114,6 +114,7 @@ export function ProductAdvertisingClusterOverview(
     high: automation.clusters.filter((c) => c.state === "excluded_high").length,
     dropped: automation.clusters.filter((c) => c.state === "dropped").length,
     protected: automation.clusters.filter((c) => c.state === "protected").length,
+    blacklisted: automation.clusters.filter((c) => c.state === "blacklisted").length,
   };
 
   // Close panel when campaign changes
@@ -258,7 +259,10 @@ export function ProductAdvertisingClusterOverview(
                   >
                     <span title="Активные + кандидаты без данных по расходу (даём шанс набрать данные)">актив {autoCounts.active}</span>
                     {autoCounts.protected > 0 && (
-                      <span title="Защищённые кластеры — автоматика всегда держит активными">защищено {autoCounts.protected}</span>
+                      <span title="Белый список — автоматика всегда держит активными">белый {autoCounts.protected}</span>
+                    )}
+                    {autoCounts.blacklisted > 0 && (
+                      <span title="Чёрный список — автоматика всегда держит выключенными">чёрный {autoCounts.blacklisted}</span>
                     )}
                     <span title="Исключены: реальный расход и CPO выше макс. Кластеры без данных по расходу сюда НЕ попадают">искл. по CPO {autoCounts.high}</span>
                     {autoCounts.dropped > 0 && (

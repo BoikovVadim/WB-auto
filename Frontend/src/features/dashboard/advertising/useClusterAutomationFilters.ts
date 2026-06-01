@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   fetchClusterFilterConfig,
-  setProtectedClusters as apiSetProtectedClusters,
+  setClusterFilters as apiSetClusterFilters,
   type ClusterFilterConfig,
   type ClusterFilterRow,
 } from "../../../api/syncClientClusterAutomation";
@@ -14,13 +14,16 @@ export type UseClusterAutomationFiltersResult = {
   isLoading: boolean;
   isSaving: boolean;
   error: string | null;
-  /** Полная замена набора защищённых кластеров (optimistic + ревалидация). */
-  saveProtected: (protectedRows: ClusterFilterRow[]) => Promise<void>;
+  /** Полная замена белого и чёрного списков (optimistic + ревалидация). */
+  saveFilters: (input: {
+    protected: ClusterFilterRow[];
+    blacklisted: ClusterFilterRow[];
+  }) => Promise<void>;
 };
 
 /**
  * Данные модалки «Настройка фильтров» для (nmId, advertId): список кластеров с CPO/статусом
- * и флагом защиты. saveProtected — оптимистично проставляет isProtected, шлёт PUT,
+ * и ролями (белый/чёрный список). saveFilters — оптимистично проставляет роли, шлёт PUT,
  * синхронизируется ответом, откатывается при ошибке.
  */
 export function useClusterAutomationFilters(
@@ -56,29 +59,36 @@ export function useClusterAutomationFilters(
     };
   }, [nmId, advertId]);
 
-  const saveProtected = useCallback(
-    async (protectedRows: ClusterFilterRow[]) => {
+  const saveFilters = useCallback(
+    async (input: { protected: ClusterFilterRow[]; blacklisted: ClusterFilterRow[] }) => {
       if (nmId === null || advertId === null) return;
-      const protectedKeys = new Set(protectedRows.map((r) => r.normalizedClusterName));
+      const protectedKeys = new Set(input.protected.map((r) => r.normalizedClusterName));
+      const blacklistedKeys = new Set(input.blacklisted.map((r) => r.normalizedClusterName));
       const prev = config;
-      // optimistic: пометить выбранные защищёнными
+      // optimistic: проставить роли (чёрный приоритетнее белого)
       setConfig((c) => ({
-        clusters: c.clusters.map((row) => ({
-          ...row,
-          isProtected: protectedKeys.has(row.normalizedClusterName),
-        })),
+        clusters: c.clusters.map((row) => {
+          const black = blacklistedKeys.has(row.normalizedClusterName);
+          return {
+            ...row,
+            isBlacklisted: black,
+            isProtected: !black && protectedKeys.has(row.normalizedClusterName),
+          };
+        }),
       }));
       setIsSaving(true);
       setError(null);
       try {
-        const next = await apiSetProtectedClusters(
-          nmId,
-          advertId,
-          protectedRows.map((r) => ({
+        const next = await apiSetClusterFilters(nmId, advertId, {
+          protected: input.protected.map((r) => ({
             normalizedClusterName: r.normalizedClusterName,
             clusterName: r.clusterName,
           })),
-        );
+          blacklisted: input.blacklisted.map((r) => ({
+            normalizedClusterName: r.normalizedClusterName,
+            clusterName: r.clusterName,
+          })),
+        });
         if (isMountedRef.current) setConfig(next);
       } catch (e: unknown) {
         if (isMountedRef.current) {
@@ -93,5 +103,5 @@ export function useClusterAutomationFilters(
     [nmId, advertId, config],
   );
 
-  return { config, isLoading, isSaving, error, saveProtected };
+  return { config, isLoading, isSaving, error, saveFilters };
 }

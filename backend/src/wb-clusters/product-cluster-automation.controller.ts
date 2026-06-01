@@ -44,7 +44,10 @@ export class ProductClusterAutomationController {
     return this.service.getFilterConfig(advertId, nmId);
   }
 
-  /** Полная замена набора защищённых кластеров (всегда активны, приоритет над CPO). */
+  /**
+   * Полная замена белого (нельзя выключать) и чёрного (нельзя включать) списков.
+   * Чёрный приоритетнее белого, оба — приоритетнее CPO-правила.
+   */
   @Put(":nmId/campaigns/:advertId/automation/config")
   @UseGuards(WbClustersWriteGuard)
   setFilterConfig(
@@ -52,6 +55,9 @@ export class ProductClusterAutomationController {
     @Param("advertId", ParseIntPipe) advertId: number,
     @Body() body: SetClusterFiltersDto,
   ) {
-    return this.service.setProtectedClusters(advertId, nmId, body.protected);
+    return this.service.setClusterFilters(advertId, nmId, {
+      protected: body.protected,
+      blacklisted: body.blacklisted,
+    });
   }
 }

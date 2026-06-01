@@ -1,8 +1,8 @@
 import { Type } from "class-transformer";
 import { IsArray, IsString, MinLength, ValidateNested } from "class-validator";
 
-/** Один защищённый кластер: нормализованное имя (ключ) + отображаемое имя. */
-export class ProtectedClusterDto {
+/** Один кластер в наборе фильтра: нормализованное имя (ключ) + отображаемое имя. */
+export class ClusterFilterItemDto {
   @IsString()
   @MinLength(1)
   normalizedClusterName!: string;
@@ -12,10 +12,18 @@ export class ProtectedClusterDto {
   clusterName!: string;
 }
 
-/** Полная замена набора защищённых кластеров кампании (idempotent). */
+/**
+ * Полная замена наборов белого (protected — нельзя выключать) и чёрного
+ * (blacklisted — нельзя включать) списков кампании (idempotent).
+ */
 export class SetClusterFiltersDto {
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => ProtectedClusterDto)
-  protected!: ProtectedClusterDto[];
+  @Type(() => ClusterFilterItemDto)
+  protected!: ClusterFilterItemDto[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ClusterFilterItemDto)
+  blacklisted!: ClusterFilterItemDto[];
 }
