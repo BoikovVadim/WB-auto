@@ -31,8 +31,8 @@ interface ClusterDecision {
  * автоматизацией пересчитывает CPO каждого кластера и приводит состав к правилу
  * «CPO ≤ макс. CPO товара → включить, CPO > макс → исключить».
  *
- * CPO кластера = max(spend/orders_РК, spend/orders_JAM) за скользящие 30 дней (берём
- * больший — консервативно). Расход без заказов → CPO = ∞ → исключить. Нет расхода и
+ * CPO кластера = spend / max(orders_РК, orders_JAM) за скользящие 30 дней (делим на
+ * большее число заказов → CPO меньше). Расход без заказов → CPO = ∞ → исключить. Нет расхода и
  * заказов → «выбыл» (исключён, сам не вернётся; сотрудник может включить вручную —
  * тогда иммунитет к выбыванию по «нет данных», пока не наберёт CPO > макс).
  *
@@ -140,11 +140,11 @@ export class ProductClusterAutomationService {
       manualProtected = true;
     }
 
-    // CPO = max(spend/orders_РК, spend/orders_JAM). Расход без заказов → ∞ (исключить).
-    const cpoRk = input.ordersRk > 0 ? input.spend / input.ordersRk : input.spend > 0 ? Infinity : null;
-    const cpoJam = input.ordersJam > 0 ? input.spend / input.ordersJam : input.spend > 0 ? Infinity : null;
-    const candidates = [cpoRk, cpoJam].filter((c): c is number => c !== null);
-    const effectiveCpo = candidates.length > 0 ? Math.max(...candidates) : null;
+    // CPO = расход / БОЛЬШЕЕ из (заказы РК, заказы JAM). Один расход делим на больший
+    // знаменатель → CPO получается меньше (благоприятнее для кластера). Расход без
+    // заказов вовсе → ∞ (исключить); нет ни расхода, ни заказов → null (выбыл).
+    const orders = Math.max(input.ordersRk, input.ordersJam);
+    const effectiveCpo = orders > 0 ? input.spend / orders : input.spend > 0 ? Infinity : null;
 
     let desiredActive: boolean;
     let state: ClusterAutomationStateValue;
