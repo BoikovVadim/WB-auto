@@ -128,6 +128,14 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
           ON a.advert_id = c.advert_id AND a.nm_id = c.nm_id
          AND a.normalized_cluster_name = c.normalized_cluster_name
         WHERE c.advert_id = $1 AND c.nm_id = $2
+          -- Только «управляемые» кластеры — тот же предикат, что у таблицы РК
+          -- (workspace-fast-sql), иначе автоматика считает фантомные строки
+          -- wb_clusters и «выбыло» не сходится с «Все N».
+          AND (
+            a.action_key IS NOT NULL
+            OR c.source_kind IN ('active', 'excluded')
+            OR c.is_active = FALSE
+          )
         GROUP BY c.normalized_cluster_name
       )
       SELECT
@@ -171,6 +179,52 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       `SELECT normalized_cluster_name, state, manual_protected, last_cpo::text, last_decision
        FROM ${this.tableName("wb_cluster_automation_state")}
        WHERE advert_id = $1 AND nm_id = $2`,
+      [advertId, nmId],
+    );
+    return result.rows.map((r) => ({
+      normalizedClusterName: r.normalized_cluster_name,
+      state: r.state,
+      manualProtected: r.manual_protected,
+      lastCpo: r.last_cpo != null ? Number(r.last_cpo) : null,
+      lastDecision: r.last_decision,
+    }));
+  }
+
+  /**
+   * Состояния автоматики только для «управляемых» сейчас кластеров (тот же предикат,
+   * что у таблицы РК). Таблица wb_cluster_automation_state копит строки и никогда не
+   * чистит исторические/фантомные кластеры — без этого фильтра счётчики на дисплее
+   * («актив/искл/выбыло») не сходятся с «Все N». Для дисплея, не для оценки.
+   */
+  async getManagedClusterAutomationStates(
+    advertId: number,
+    nmId: number,
+  ): Promise<ClusterAutomationStateRow[]> {
+    await this.ensureSchemaOrThrow();
+    const result = await this.getPool().query<{
+      normalized_cluster_name: string;
+      state: ClusterAutomationStateValue;
+      manual_protected: boolean;
+      last_cpo: string | null;
+      last_decision: string | null;
+    }>(
+      `SELECT s.normalized_cluster_name, s.state, s.manual_protected, s.last_cpo::text, s.last_decision
+       FROM ${this.tableName("wb_cluster_automation_state")} s
+       WHERE s.advert_id = $1 AND s.nm_id = $2
+         AND EXISTS (
+           SELECT 1
+           FROM ${this.tableName("wb_clusters")} c
+           LEFT JOIN ${this.tableName("wb_cluster_actions")} a
+             ON a.advert_id = c.advert_id AND a.nm_id = c.nm_id
+            AND a.normalized_cluster_name = c.normalized_cluster_name
+           WHERE c.advert_id = s.advert_id AND c.nm_id = s.nm_id
+             AND c.normalized_cluster_name = s.normalized_cluster_name
+             AND (
+               a.action_key IS NOT NULL
+               OR c.source_kind IN ('active', 'excluded')
+               OR c.is_active = FALSE
+             )
+         )`,
       [advertId, nmId],
     );
     return result.rows.map((r) => ({

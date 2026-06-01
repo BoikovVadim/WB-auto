@@ -74,7 +74,9 @@ export class ProductClusterAutomationService {
     const [mode, productCpo, states] = await Promise.all([
       this.repository.getAutomationMode(advertId, nmId),
       this.productCpoService.getProductCpo(nmId),
-      this.repository.getClusterAutomationStates(advertId, nmId),
+      // Только управляемые сейчас кластеры — чтобы счётчики «актив/искл/выбыло»
+      // сходились с «Все N» таблицы РК (исторические строки state не считаем).
+      this.repository.getManagedClusterAutomationStates(advertId, nmId),
     ]);
     return { mode, maxCpo: productCpo.maxCpo, clusters: states };
   }

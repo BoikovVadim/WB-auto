@@ -243,14 +243,21 @@ export function ProductAdvertisingClusterOverview(
                     )}
                   </label>
                 )}
-                {automation.mode !== "off" && (
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", color: "var(--wb-text-muted)", whiteSpace: "nowrap" }}>
+                {/* Строка счётчиков всегда занимает место (visibility, не условный рендер),
+                    чтобы вкл/выкл «Автоматизации» не сдвигал layout — иначе над линией
+                    «Активные» появлялось пустое пространство и всё уезжало вниз. */}
+                {automationAdvertId !== null && (
+                  <div
+                    aria-hidden={automation.mode === "off"}
+                    style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", color: "var(--wb-text-muted)", whiteSpace: "nowrap", visibility: automation.mode !== "off" ? "visible" : "hidden" }}
+                  >
                     <span title="Кластеры, которые автоматика держит активными">актив {autoCounts.active}</span>
                     <span title="Исключены: CPO выше макс">искл. по CPO {autoCounts.high}</span>
                     <span title="Выбыли: нет данных / месяц без активности">выбыло {autoCounts.dropped}</span>
                     <button
                       type="button"
-                      disabled={automationBusy}
+                      disabled={automationBusy || automation.mode === "off"}
+                      tabIndex={automation.mode === "off" ? -1 : 0}
                       onClick={() => setAutomationMode(automation.mode === "live" ? "preview" : "live")}
                       style={{ fontSize: "11px", padding: "2px 8px", cursor: "pointer", border: "1px solid var(--wb-border, #ddd)", borderRadius: "6px", background: automation.mode === "live" ? "#fff" : "#c0392b", color: automation.mode === "live" ? "var(--wb-text-main)" : "#fff" }}
                     >
