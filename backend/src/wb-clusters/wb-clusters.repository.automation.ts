@@ -5,7 +5,17 @@ export type ClusterAutomationStateValue =
   | "active"
   | "excluded_high"
   | "dropped"
-  | "manual_protected";
+  | "manual_protected"
+  | "protected";
+
+/** Строка пикера «Настройка фильтров»: кластер + его текущее состояние и флаг защиты. */
+export interface ClusterOverridePickerRow {
+  normalizedClusterName: string;
+  clusterName: string;
+  lastCpo: number | null;
+  state: ClusterAutomationStateValue | null;
+  isProtected: boolean;
+}
 
 /** Вход для расчёта CPO кластера за окно (скользящие 30 дней). */
 export interface ClusterCpoInput {
@@ -266,5 +276,110 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
         input.lastDecision,
       ],
     );
+  }
+
+  /** Нормализованные имена защищённых кластеров (advert, nm) — для движка. */
+  async getProtectedClusterNames(advertId: number, nmId: number): Promise<Set<string>> {
+    await this.ensureSchemaOrThrow();
+    const result = await this.getPool().query<{ normalized_cluster_name: string }>(
+      `SELECT normalized_cluster_name
+       FROM ${this.tableName("wb_cluster_automation_override")}
+       WHERE advert_id = $1 AND nm_id = $2 AND is_protected = TRUE`,
+      [advertId, nmId],
+    );
+    return new Set(result.rows.map((r) => r.normalized_cluster_name));
+  }
+
+  /**
+   * Read-model для модалки «Настройка фильтров»: управляемые кластеры (тот же предикат,
+   * что у таблицы РК) + их текущее состояние/CPO движка и флаг защиты. Защищённые сверху.
+   */
+  async getClusterOverridePicker(
+    advertId: number,
+    nmId: number,
+  ): Promise<ClusterOverridePickerRow[]> {
+    await this.ensureSchemaOrThrow();
+    const result = await this.getPool().query<{
+      normalized_cluster_name: string;
+      cluster_name: string;
+      last_cpo: string | null;
+      state: ClusterAutomationStateValue | null;
+      is_protected: boolean;
+    }>(
+      `SELECT
+         c.normalized_cluster_name,
+         MAX(c.cluster_name)                                AS cluster_name,
+         MAX(s.last_cpo)::text                              AS last_cpo,
+         MAX(s.state)                                       AS state,
+         BOOL_OR(COALESCE(o.is_protected, FALSE))           AS is_protected
+       FROM ${this.tableName("wb_clusters")} c
+       LEFT JOIN ${this.tableName("wb_cluster_actions")} a
+         ON a.advert_id = c.advert_id AND a.nm_id = c.nm_id
+        AND a.normalized_cluster_name = c.normalized_cluster_name
+       LEFT JOIN ${this.tableName("wb_cluster_automation_state")} s
+         ON s.advert_id = c.advert_id AND s.nm_id = c.nm_id
+        AND s.normalized_cluster_name = c.normalized_cluster_name
+       LEFT JOIN ${this.tableName("wb_cluster_automation_override")} o
+         ON o.advert_id = c.advert_id AND o.nm_id = c.nm_id
+        AND o.normalized_cluster_name = c.normalized_cluster_name
+       WHERE c.advert_id = $1 AND c.nm_id = $2
+         AND (
+           a.action_key IS NOT NULL
+           OR c.source_kind IN ('active', 'excluded')
+           OR c.is_active = FALSE
+         )
+       GROUP BY c.normalized_cluster_name
+       ORDER BY BOOL_OR(COALESCE(o.is_protected, FALSE)) DESC, MAX(c.cluster_name) ASC`,
+      [advertId, nmId],
+    );
+    return result.rows.map((r) => ({
+      normalizedClusterName: r.normalized_cluster_name,
+      clusterName: r.cluster_name,
+      lastCpo: r.last_cpo != null ? Number(r.last_cpo) : null,
+      state: r.state,
+      isProtected: r.is_protected,
+    }));
+  }
+
+  /**
+   * Полная замена набора защищённых кластеров (advert, nm). Транзакция: снять защиту со
+   * всех не из списка, затем проставить is_protected=TRUE переданным (idempotent).
+   */
+  async setProtectedClusters(
+    advertId: number,
+    nmId: number,
+    items: { normalizedClusterName: string; clusterName: string }[],
+  ): Promise<void> {
+    await this.ensureSchemaOrThrow();
+    const table = this.tableName("wb_cluster_automation_override");
+    const keep = items.map((i) => i.normalizedClusterName);
+    const client = await this.getPool().connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `UPDATE ${table} SET is_protected = FALSE, updated_at = NOW()
+         WHERE advert_id = $1 AND nm_id = $2 AND is_protected = TRUE
+           AND NOT (normalized_cluster_name = ANY($3::text[]))`,
+        [advertId, nmId, keep],
+      );
+      for (const item of items) {
+        await client.query(
+          `INSERT INTO ${table}
+             (advert_id, nm_id, normalized_cluster_name, cluster_name, is_protected, updated_at)
+           VALUES ($1, $2, $3, $4, TRUE, NOW())
+           ON CONFLICT (advert_id, nm_id, normalized_cluster_name) DO UPDATE SET
+             is_protected = TRUE,
+             cluster_name = EXCLUDED.cluster_name,
+             updated_at = NOW()`,
+          [advertId, nmId, item.normalizedClusterName, item.clusterName],
+        );
+      }
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 }

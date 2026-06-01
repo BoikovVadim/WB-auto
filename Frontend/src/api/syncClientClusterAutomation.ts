@@ -5,7 +5,8 @@ export type ClusterAutomationState =
   | "active"
   | "excluded_high"
   | "dropped"
-  | "manual_protected";
+  | "manual_protected"
+  | "protected";
 
 export type ClusterAutomationStatus = {
   mode: AutomationMode;
@@ -43,4 +44,41 @@ export async function setClusterAutomationMode(
     { headers: buildWbClustersWriteHeaders() },
   );
   return response.data ?? { ...EMPTY, mode };
+}
+
+// --- Настройка фильтров (защищённые кластеры) ---
+
+export type ClusterFilterRow = {
+  normalizedClusterName: string;
+  clusterName: string;
+  lastCpo: number | null;
+  state: ClusterAutomationState | null;
+  isProtected: boolean;
+};
+
+export type ClusterFilterConfig = { clusters: ClusterFilterRow[] };
+
+const EMPTY_CONFIG: ClusterFilterConfig = { clusters: [] };
+
+export async function fetchClusterFilterConfig(
+  nmId: number,
+  advertId: number,
+): Promise<ClusterFilterConfig> {
+  const response = await apiClient.get<ClusterFilterConfig>(
+    `/wb-clusters/products/${nmId}/campaigns/${advertId}/automation/config`,
+  );
+  return response.data ?? EMPTY_CONFIG;
+}
+
+export async function setProtectedClusters(
+  nmId: number,
+  advertId: number,
+  protectedClusters: { normalizedClusterName: string; clusterName: string }[],
+): Promise<ClusterFilterConfig> {
+  const response = await apiClient.put<ClusterFilterConfig>(
+    `/wb-clusters/products/${nmId}/campaigns/${advertId}/automation/config`,
+    { protected: protectedClusters },
+    { headers: buildWbClustersWriteHeaders() },
+  );
+  return response.data ?? EMPTY_CONFIG;
 }

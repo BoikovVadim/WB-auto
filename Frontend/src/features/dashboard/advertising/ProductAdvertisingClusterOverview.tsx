@@ -6,6 +6,7 @@ import { useProductMaxCpo } from "../useProductMaxCpo";
 import { useClusterAutomation } from "./useClusterAutomation";
 import { ProductAdvertisingDateFilter } from "./ProductAdvertisingDateFilter";
 import { ProductAdvertisingChangeLogPanel } from "./ProductAdvertisingChangeLogPanel";
+import { ProductAdvertisingFilterSettingsModal } from "./ProductAdvertisingFilterSettingsModal";
 import type { ProductAdvertisingClusterTableSectionProps } from "./ProductAdvertisingClusterTableSection";
 import {
   getAdvertisingCampaignLabel,
@@ -91,10 +92,13 @@ export function ProductAdvertisingClusterOverview(
   const [isActiveExpanded, setIsActiveExpanded] = useState(true);
   const [isArchivedExpanded, setIsArchivedExpanded] = useState(false);
   const [isChangeLogOpen, setIsChangeLogOpen] = useState(false);
+  const [isFilterSettingsOpen, setIsFilterSettingsOpen] = useState(false);
   const hasSelectedCampaign = props.selectedCampaignAdvertId !== null;
 
   const handleOpenChangeLog = useCallback(() => setIsChangeLogOpen(true), []);
   const handleCloseChangeLog = useCallback(() => setIsChangeLogOpen(false), []);
+  const handleOpenFilterSettings = useCallback(() => setIsFilterSettingsOpen(true), []);
+  const handleCloseFilterSettings = useCallback(() => setIsFilterSettingsOpen(false), []);
 
   // Планка CPO товара (= CPO × 2, считается на бэке) — на одной линии с «Активные».
   const { maxCpo } = useProductMaxCpo(props.nmId);
@@ -105,10 +109,11 @@ export function ProductAdvertisingClusterOverview(
     useClusterAutomation(props.nmId, automationAdvertId);
   const autoCounts = {
     active: automation.clusters.filter(
-      (c) => c.state === "active" || c.state === "manual_protected",
+      (c) => c.state === "active" || c.state === "manual_protected" || c.state === "protected",
     ).length,
     high: automation.clusters.filter((c) => c.state === "excluded_high").length,
     dropped: automation.clusters.filter((c) => c.state === "dropped").length,
+    protected: automation.clusters.filter((c) => c.state === "protected").length,
   };
 
   // Close panel when campaign changes
@@ -252,6 +257,9 @@ export function ProductAdvertisingClusterOverview(
                     style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", color: "var(--wb-text-muted)", whiteSpace: "nowrap", visibility: automation.mode !== "off" ? "visible" : "hidden" }}
                   >
                     <span title="Активные + кандидаты без данных по расходу (даём шанс набрать данные)">актив {autoCounts.active}</span>
+                    {autoCounts.protected > 0 && (
+                      <span title="Защищённые кластеры — автоматика всегда держит активными">защищено {autoCounts.protected}</span>
+                    )}
                     <span title="Исключены: реальный расход и CPO выше макс. Кластеры без данных по расходу сюда НЕ попадают">искл. по CPO {autoCounts.high}</span>
                     {autoCounts.dropped > 0 && (
                       <span title="Выбыли (legacy): пересчитаются при ближайшем прогоне автоматики">выбыло {autoCounts.dropped}</span>
@@ -334,6 +342,14 @@ export function ProductAdvertisingClusterOverview(
               {`${ui.excludedClusters} ${String(props.clusterFilterCounts.excluded)}`}
             </button>
             <button
+              className={`wb-toggle-pill wb-toggle-pill--compact wb-toggle-pill--history${isFilterSettingsOpen ? " active" : ""}`}
+              type="button"
+              onClick={handleOpenFilterSettings}
+              title="Защищённые кластеры и фильтры автоматизации"
+            >
+              Настройка фильтров
+            </button>
+            <button
               className={`wb-toggle-pill wb-toggle-pill--compact wb-toggle-pill--history${isChangeLogOpen ? " active" : ""}`}
               type="button"
               onClick={handleOpenChangeLog}
@@ -404,6 +420,16 @@ export function ProductAdvertisingClusterOverview(
             nmId={props.nmId}
             advertId={props.selectedCampaignAdvertId}
             onClose={handleCloseChangeLog}
+          />
+        )}
+
+      {isFilterSettingsOpen &&
+        props.selectedCampaignAdvertId !== null &&
+        props.nmId !== null && (
+          <ProductAdvertisingFilterSettingsModal
+            nmId={props.nmId}
+            advertId={props.selectedCampaignAdvertId}
+            onClose={handleCloseFilterSettings}
           />
         )}
     </>

@@ -3,6 +3,7 @@ import { Body, Controller, Get, Param, ParseIntPipe, Put, UseGuards } from "@nes
 import { WbClustersWriteGuard } from "../common/guards/wb-clusters-write.guard";
 import { ProductClusterAutomationService } from "./product-cluster-automation.service";
 import { SetAutomationModeDto } from "./dto/set-automation-mode.dto";
+import { SetClusterFiltersDto } from "./dto/set-cluster-filters.dto";
 
 /**
  * Роуты автоматизации управления кластерами по CPO (вкладка «Реклама»). Сиблинг
@@ -32,5 +33,25 @@ export class ProductClusterAutomationController {
   ) {
     await this.service.setMode(advertId, nmId, body.mode);
     return this.service.getStatus(advertId, nmId);
+  }
+
+  /** Настройка фильтров: список кластеров + флаги защиты (для модалки). */
+  @Get(":nmId/campaigns/:advertId/automation/config")
+  getFilterConfig(
+    @Param("nmId", ParseIntPipe) nmId: number,
+    @Param("advertId", ParseIntPipe) advertId: number,
+  ) {
+    return this.service.getFilterConfig(advertId, nmId);
+  }
+
+  /** Полная замена набора защищённых кластеров (всегда активны, приоритет над CPO). */
+  @Put(":nmId/campaigns/:advertId/automation/config")
+  @UseGuards(WbClustersWriteGuard)
+  setFilterConfig(
+    @Param("nmId", ParseIntPipe) nmId: number,
+    @Param("advertId", ParseIntPipe) advertId: number,
+    @Body() body: SetClusterFiltersDto,
+  ) {
+    return this.service.setProtectedClusters(advertId, nmId, body.protected);
   }
 }

@@ -5,6 +5,7 @@ import type {
   AutomationMode,
   ClusterAutomationStateValue,
   ClusterCpoInput,
+  ClusterOverridePickerRow,
 } from "./wb-clusters.repository.automation";
 import { WbClustersRepository } from "./wb-clusters.repository";
 import { WbClustersService } from "./wb-clusters.service";
@@ -83,6 +84,33 @@ export class ProductClusterAutomationService {
     return { mode, maxCpo: productCpo.maxCpo, clusters: states };
   }
 
+  /** Read-model для модалки «Настройка фильтров»: список кластеров + защита. */
+  async getFilterConfig(advertId: number, nmId: number): Promise<{
+    clusters: ClusterOverridePickerRow[];
+  }> {
+    const clusters = await this.repository.getClusterOverridePicker(advertId, nmId);
+    return { clusters };
+  }
+
+  /**
+   * Полная замена набора защищённых кластеров. Если автоматика включена — сразу прогон,
+   * чтобы защита применилась без ожидания крона (в live реально включит исключённые).
+   */
+  async setProtectedClusters(
+    advertId: number,
+    nmId: number,
+    items: { normalizedClusterName: string; clusterName: string }[],
+  ): Promise<{ clusters: ClusterOverridePickerRow[] }> {
+    await this.repository.setProtectedClusters(advertId, nmId, items);
+    const mode = await this.repository.getAutomationMode(advertId, nmId);
+    if (mode !== "off") {
+      await this.evaluateOne(advertId, nmId, mode).catch((e: unknown) => {
+        this.logger.warn(`Filter pass failed for ${advertId}/${nmId}: ${String(e)}`);
+      });
+    }
+    return this.getFilterConfig(advertId, nmId);
+  }
+
   /** Крон-обход: один прогон по всем включённым (preview/live) кампаниям. */
   async runAll(): Promise<void> {
     const enabled = await this.repository.listEnabledAutomations();
@@ -99,14 +127,21 @@ export class ProductClusterAutomationService {
     const maxCpo = (await this.productCpoService.getProductCpo(nmId)).maxCpo;
     if (maxCpo == null) return []; // нет порога (нет цены/выкупа/ДРР) — решать не на чем
 
-    const [inputs, prevStates] = await Promise.all([
+    const [inputs, prevStates, protectedNames] = await Promise.all([
       this.repository.getClusterCpoInputs(advertId, nmId),
       this.repository.getClusterAutomationStates(advertId, nmId),
+      this.repository.getProtectedClusterNames(advertId, nmId),
     ]);
     const prevByCluster = new Map(prevStates.map((s) => [s.normalizedClusterName, s]));
 
     const decisions = inputs.map((input) =>
-      this.decideForCluster(input, maxCpo, prevByCluster.get(input.normalizedClusterName), mode),
+      this.decideForCluster(
+        input,
+        maxCpo,
+        prevByCluster.get(input.normalizedClusterName),
+        mode,
+        protectedNames.has(input.normalizedClusterName),
+      ),
     );
 
     // Применяем к WB только в live и только при отличии от текущего состояния.
@@ -134,8 +169,25 @@ export class ProductClusterAutomationService {
     maxCpo: number,
     prev: { state: ClusterAutomationStateValue; manualProtected: boolean; lastDecision: string | null } | undefined,
     mode: AutomationMode,
+    isProtected: boolean,
   ): ClusterDecision {
     const isExcludedNow = input.currentSourceKind === "excluded";
+
+    // Защищённый кластер («Настройка фильтров») — полный приоритет над CPO-правилом:
+    // всегда активен. Если сейчас исключён на WB — включаем; иначе noop. Считаем CPO только
+    // для отображения, на решение он не влияет.
+    if (isProtected) {
+      const orders = Math.max(input.ordersRk, input.ordersJam);
+      const cpo = orders > 0 ? input.spend / orders : null;
+      return {
+        normalizedClusterName: input.normalizedClusterName,
+        clusterName: input.clusterName,
+        effectiveCpo: cpo != null && Number.isFinite(cpo) ? round2(cpo) : null,
+        state: "protected",
+        manualProtected: false,
+        decision: isExcludedNow ? "include" : "noop",
+      };
+    }
 
     // Ручная защита: в live, если кластер сейчас активен, а автоматика в прошлый прогон
     // его исключала — значит сотрудник вернул вручную → иммунитет к выбыванию по «нет данных».
