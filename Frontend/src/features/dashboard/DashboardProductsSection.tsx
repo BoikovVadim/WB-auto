@@ -1,10 +1,8 @@
 import type { ReactNode } from "react";
 
-import { formatMoney } from "../../formatters";
 import { ui } from "./copy";
 import { ProductsWorkspaceSection } from "./ProductsWorkspaceSection";
 import type { ProductListItem, ProductListSortKey } from "./useDashboardProductsWorkspace";
-import { useProductMaxCpo } from "./useProductMaxCpo";
 
 type DashboardProductsSectionProps = {
   productsMode: "list" | "detail";
@@ -26,12 +24,6 @@ type DashboardProductsSectionProps = {
 };
 
 export function DashboardProductsSection(props: DashboardProductsSectionProps) {
-  // Планка CPO выбранного товара (= CPO × 2, считается на бэке) — для шапки рекламного
-  // воркспейса под кнопкой «Назад». Грузится только в detail-режиме (nmId задан).
-  const detailNmId =
-    props.productsMode === "detail" ? (props.resolvedCatalogProduct?.nmId ?? null) : null;
-  const { maxCpo } = useProductMaxCpo(detailNmId);
-
   const detailTitle = props.resolvedCatalogProduct
     ? props.resolvedCatalogProduct.nmId !== null
       ? (
@@ -52,24 +44,13 @@ export function DashboardProductsSection(props: DashboardProductsSectionProps) {
       {props.productsMode === "detail" ? (
         <div className="wb-workspace-header wb-workspace-header--products-detail">
           <h2>{detailTitle}</h2>
-          <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
-            <button
-              className="wb-secondary-button"
-              type="button"
-              onClick={props.onBackToProducts}
-            >
-              {ui.backToProducts}
-            </button>
-            {maxCpo !== null && (
-              <span
-                className="wb-products-detail-max-cpo"
-                title="Максимальная планка CPO для ставок кластеров = CPO × 2"
-                style={{ fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}
-              >
-                Макс. CPO: {formatMoney(maxCpo)}
-              </span>
-            )}
-          </div>
+          <button
+            className="wb-secondary-button"
+            type="button"
+            onClick={props.onBackToProducts}
+          >
+            {ui.backToProducts}
+          </button>
         </div>
       ) : (
         <div className="wb-workspace-header wb-workspace-header--products-list">

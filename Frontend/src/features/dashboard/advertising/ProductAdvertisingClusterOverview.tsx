@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { formatMoney } from "../../../formatters";
 import { ui } from "../copy";
+import { useProductMaxCpo } from "../useProductMaxCpo";
 import { ProductAdvertisingDateFilter } from "./ProductAdvertisingDateFilter";
 import { ProductAdvertisingChangeLogPanel } from "./ProductAdvertisingChangeLogPanel";
 import type { ProductAdvertisingClusterTableSectionProps } from "./ProductAdvertisingClusterTableSection";
@@ -93,6 +95,9 @@ export function ProductAdvertisingClusterOverview(
   const handleOpenChangeLog = useCallback(() => setIsChangeLogOpen(true), []);
   const handleCloseChangeLog = useCallback(() => setIsChangeLogOpen(false), []);
 
+  // Планка CPO товара (= CPO × 2, считается на бэке) — на одной линии с «Активные».
+  const { maxCpo } = useProductMaxCpo(props.nmId);
+
   // Close panel when campaign changes
   useEffect(() => {
     setIsChangeLogOpen(false);
@@ -180,21 +185,31 @@ export function ProductAdvertisingClusterOverview(
       <div className="wb-advertising-campaign-grid">
         {activeCampaigns.length > 0 && (
           <div style={{ width: "100%" }}>
-            <button
-              type="button"
-              className="wb-advertising-cluster-toggle__arrow-button"
-              style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px", fontWeight: 600, fontSize: "12px", color: "var(--wb-text-main)" }}
-              onClick={() => setIsActiveExpanded(!isActiveExpanded)}
-            >
-              <svg
-                className="wb-advertising-cluster-toggle__arrow"
-                style={{ transform: isActiveExpanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s ease" }}
-                width="10" height="10" viewBox="0 0 10 10" fill="none"
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "8px" }}>
+              <button
+                type="button"
+                className="wb-advertising-cluster-toggle__arrow-button"
+                style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 600, fontSize: "12px", color: "var(--wb-text-main)" }}
+                onClick={() => setIsActiveExpanded(!isActiveExpanded)}
               >
-                <path d="M3.5 2L7 5L3.5 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              Активные ({activeCampaigns.length})
-            </button>
+                <svg
+                  className="wb-advertising-cluster-toggle__arrow"
+                  style={{ transform: isActiveExpanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s ease" }}
+                  width="10" height="10" viewBox="0 0 10 10" fill="none"
+                >
+                  <path d="M3.5 2L7 5L3.5 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                Активные ({activeCampaigns.length})
+              </button>
+              {maxCpo !== null && (
+                <span
+                  title="Максимальная планка CPO для ставок кластеров = CPO × 2"
+                  style={{ fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap", color: "var(--wb-text-main)" }}
+                >
+                  Макс. CPO: {formatMoney(maxCpo)}
+                </span>
+              )}
+            </div>
             {isActiveExpanded && (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "6px", marginLeft: "16px" }}>
                 {activeCampaigns.map(renderCampaignCard)}
