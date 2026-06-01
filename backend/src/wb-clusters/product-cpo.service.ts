@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 
+import { UnitEconomicsService } from "./unit-economics.service";
 import { WbClustersRepository } from "./wb-clusters.repository";
 import { WbClustersService } from "./wb-clusters.service";
 
@@ -25,6 +26,7 @@ import { WbClustersService } from "./wb-clusters.service";
 export class ProductCpoService {
   constructor(
     private readonly wbClustersService: WbClustersService,
+    private readonly unitEconomicsService: UnitEconomicsService,
     private readonly repository: WbClustersRepository,
   ) {}
 
@@ -59,10 +61,11 @@ export class ProductCpoService {
   }
 
   /**
-   * CPO одного товара (для шапки рекламного воркспейса). `maxCpo` = CPO × 2 — максимальная
-   * планка цены за заказ, которую можно закладывать в ставки кластеров. ×2 считается ЗДЕСЬ
-   * (на сервере), фронт только рисует. Возвращает null-значения, если CPO не считается
-   * (нет целевого ДРР / выручки / заказов).
+   * CPO-планка одного товара (для шапки рекламного воркспейса). В отличие от колонки
+   * «CPO» (today-факт = выручка/заказы за сегодня, которой нет в дни без продаж), планка
+   * СТАБИЛЬНА и считается из юнитки: цена со скидкой × %выкупа (rolling 365) × ДРР%.
+   * `maxCpo` = CPO × 2 — потолок цены за заказ для ставок кластеров. ×2 и вся формула —
+   * ЗДЕСЬ, на сервере; фронт только рисует. null, если нет цены / истории выкупа / ДРР.
    */
   async getProductCpo(nmId: number): Promise<{
     nmId: number;
@@ -70,14 +73,26 @@ export class ProductCpoService {
     maxCpo: number | null;
     drrPercent: number | null;
   }> {
-    const today = await this.getTodayCpo();
-    const item = today.items.find((i) => i.nmId === nmId);
-    const cpo = item ? item.cpo : null;
+    const [prices, buyout, settings] = await Promise.all([
+      this.unitEconomicsService.getEffectivePrices(),
+      this.wbClustersService.getRollingBuyoutCounts(365),
+      this.repository.getGlobalSettings(),
+    ]);
+    const drrPercent = settings.drrPercent;
+    const price = prices.get(nmId) ?? null;
+    const b = buyout.items.find((x) => x.nmId === nmId);
+    const buyoutRatio =
+      b && b.ordersCount > 0 ? b.buyoutsCount / b.ordersCount : null;
+
+    const cpo =
+      drrPercent != null && price != null && buyoutRatio != null
+        ? price * buyoutRatio * (drrPercent / 100)
+        : null;
     return {
       nmId,
       cpo,
       maxCpo: cpo !== null ? cpo * 2 : null,
-      drrPercent: today.drrPercent,
+      drrPercent,
     };
   }
 

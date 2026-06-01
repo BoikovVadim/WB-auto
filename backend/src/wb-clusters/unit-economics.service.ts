@@ -251,6 +251,20 @@ export class UnitEconomicsService {
     return base;
   }
 
+  /**
+   * Эффективная цена со скидкой по товарам (та же, что в колонке «Цена»: overlay
+   * desiredFinal из очереди изменения цены, иначе суточный снапшот). Единый источник
+   * цены для производных метрик (CPO-планка и т.п.), чтобы не дублировать overlay-логику.
+   */
+  async getEffectivePrices(): Promise<Map<number, number>> {
+    if (!this.repository.isConfigured()) return new Map();
+    await this.repository.ensureSchema();
+    const base = await this.loadUnitEconomicsBase();
+    const prices = new Map<number, number>();
+    for (const [nmId, b] of base) prices.set(nmId, b.priceWithDiscount);
+    return prices;
+  }
+
   async getCharges(): Promise<{ items: UnitEconomicsChargeItem[] }> {
     if (!this.repository.isConfigured()) return { items: [] };
     await this.repository.ensureSchema();
