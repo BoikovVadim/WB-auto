@@ -120,6 +120,7 @@ export function WbDashboard() {
     isCostSumSheetOpen,
     isAdSpendSheetOpen,
     isDrrPercentSheetOpen,
+    isCpoSheetOpen,
     isSppSheetOpen,
     isAcquiringSheetOpen,
     isMarginRubSheetOpen,
@@ -151,6 +152,7 @@ export function WbDashboard() {
     isCostSumSheetOpen,
     isAdSpendSheetOpen,
     isDrrPercentSheetOpen,
+    isCpoSheetOpen,
     isSppSheetOpen,
     inProductsWorkspace,
     inCatalogProducts: activeSection === "catalog-products",
@@ -416,6 +418,7 @@ export function WbDashboard() {
       isCostSumSheetOpen={isCostSumSheetOpen}
       isAdSpendSheetOpen={isAdSpendSheetOpen}
       isDrrPercentSheetOpen={isDrrPercentSheetOpen}
+      isCpoSheetOpen={isCpoSheetOpen}
       isSppSheetOpen={isSppSheetOpen}
       isAcquiringSheetOpen={isAcquiringSheetOpen}
       isMarginRubSheetOpen={isMarginRubSheetOpen}

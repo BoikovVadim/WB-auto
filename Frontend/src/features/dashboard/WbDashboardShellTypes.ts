@@ -89,6 +89,8 @@ export type WbDashboardShellProps = {
   adSpendMatrix: import("./useAdSpendMatrix").AdSpendMatrix;
   drrPercentValues: Map<number, number>;
   drrMatrix: import("./useDrrPercentMatrix").DrrMatrix;
+  cpoValues: Map<number, number>;
+  cpoMatrix: import("./useCpoMatrix").CpoMatrix;
   sppValues: Map<number, number>;
   sppMatrix: import("./useSppMatrix").SppMatrix;
   taxValues: Map<number, number>;
@@ -109,6 +111,7 @@ export type WbDashboardShellProps = {
   isCostSumSheetOpen: boolean;
   isAdSpendSheetOpen: boolean;
   isDrrPercentSheetOpen: boolean;
+  isCpoSheetOpen: boolean;
   isSppSheetOpen: boolean;
   isAcquiringSheetOpen: boolean;
   isMarginRubSheetOpen: boolean;
@@ -133,6 +136,8 @@ export type WbDashboardShellProps = {
   onCloseAdSpendSheet: () => void;
   onOpenDrrPercentSheet: () => void;
   onCloseDrrPercentSheet: () => void;
+  onOpenCpoSheet: () => void;
+  onCloseCpoSheet: () => void;
   onOpenSppSheet: () => void;
   onCloseSppSheet: () => void;
   onOpenAcquiringSheet: () => void;

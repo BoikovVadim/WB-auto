@@ -13,6 +13,7 @@ export type ProductsTableTotals = {
   totalCostSum: number | null;
   totalAdSpend: number | null;
   totalDrrPercent: number | null;
+  totalCpo: number | null;
   totalCommission: number | null;
   totalTax: number | null;
   totalAcquiring: number | null;
@@ -31,6 +32,7 @@ type Input = {
   revenueValues: Map<number, number>;
   costSumValues: Map<number, number>;
   adSpendValues: Map<number, number>;
+  cpoValues: Map<number, number>;
   commissionValues: Map<number, number>;
   taxValues: Map<number, number>;
   acquiringValues: Map<number, number>;
@@ -74,6 +76,7 @@ export function useProductsTableTotals(input: Input): ProductsTableTotals {
     revenueValues,
     costSumValues,
     adSpendValues,
+    cpoValues,
     commissionValues,
     taxValues,
     acquiringValues,
@@ -150,6 +153,23 @@ export function useProductsTableTotals(input: Input): ProductsTableTotals {
     if (revenueSum > 0) return (spendSum / revenueSum) * 100;
     return spendSum > 0 ? 100 : null;
   }, [filteredProducts, adSpendValues, revenueValues]);
+
+  // CPO «Итого» — взвешенный по заказам: Σ(cpo × заказы) / Σзаказы. Вес — кол-во заказов,
+  // поэтому итог = средняя цена заказа × %выкупа × ДРР по магазину, а не среднее CPO строк.
+  const totalCpo = useMemo(() => {
+    let weighted = 0;
+    let ordersSum = 0;
+    for (const p of filteredProducts) {
+      if (p.nmId === null) continue;
+      const cpo = cpoValues.get(p.nmId);
+      const orders = orderCounts.get(p.nmId)?.ordersCount;
+      if (cpo !== undefined && orders !== undefined && orders > 0) {
+        weighted += cpo * orders;
+        ordersSum += orders;
+      }
+    }
+    return ordersSum > 0 ? weighted / ordersSum : null;
+  }, [filteredProducts, cpoValues, orderCounts]);
 
   const totalCommission = useMemo(
     () => sumOverProducts(filteredProducts, commissionValues, false),
@@ -240,6 +260,7 @@ export function useProductsTableTotals(input: Input): ProductsTableTotals {
     totalCostSum,
     totalAdSpend,
     totalDrrPercent,
+    totalCpo,
     totalCommission,
     totalTax,
     totalAcquiring,

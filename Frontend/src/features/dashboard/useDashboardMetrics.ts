@@ -17,6 +17,8 @@ import { useAdSpend } from "./useAdSpend";
 import { useAdSpendMatrix } from "./useAdSpendMatrix";
 import { useDrrPercent } from "./useDrrPercent";
 import { useDrrPercentMatrix } from "./useDrrPercentMatrix";
+import { useCpo } from "./useCpo";
+import { useCpoMatrix } from "./useCpoMatrix";
 import { useSpp } from "./useSpp";
 import { useSppMatrix } from "./useSppMatrix";
 import { useUnitEconomicsCharges } from "./useUnitEconomicsCharges";
@@ -42,6 +44,7 @@ export function useDashboardMetrics(input: {
   isCostSumSheetOpen: boolean;
   isAdSpendSheetOpen: boolean;
   isDrrPercentSheetOpen: boolean;
+  isCpoSheetOpen: boolean;
   isSppSheetOpen: boolean;
   /** Активен раздел товаров (Товары/Юнит Экономика) — префетч матриц, видимых в обоих. */
   inProductsWorkspace: boolean;
@@ -79,6 +82,8 @@ export function useDashboardMetrics(input: {
   const { adSpendMatrix } = useAdSpendMatrix(input.isAdSpendSheetOpen || cat);
   const { drrPercentValues } = useDrrPercent();
   const { drrMatrix } = useDrrPercentMatrix(input.isDrrPercentSheetOpen || cat);
+  const { cpoValues } = useCpo();
+  const { cpoMatrix } = useCpoMatrix(input.isCpoSheetOpen || cat);
   const { sppValues } = useSpp();
   const { sppMatrix } = useSppMatrix(input.isSppSheetOpen || ws);
   const {
@@ -144,6 +149,8 @@ export function useDashboardMetrics(input: {
     adSpendMatrix,
     drrPercentValues,
     drrMatrix,
+    cpoValues,
+    cpoMatrix,
     sppValues,
     sppMatrix,
     taxValues,

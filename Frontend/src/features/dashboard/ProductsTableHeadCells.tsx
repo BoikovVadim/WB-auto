@@ -32,6 +32,7 @@ export type ProductsHeaderRenderCtx = {
     costSum: () => void;
     adSpend: () => void;
     drrPercent: () => void;
+    cpo: () => void;
     acquiring: () => void;
     marginRub: () => void;
     marginPercent: () => void;
@@ -179,6 +180,8 @@ export function renderProductsHeaderCell(
         return renderSheetHeader("Реклама", "adSpend", ctx.sheets.adSpend, "Открыть ретроспективу расходов на рекламу");
       case "drrPercent":
         return renderSheetHeader("ДРР, %", "drrPercent", ctx.sheets.drrPercent, "Открыть ретроспективу ДРР (расход / выручка)");
+      case "cpo":
+        return renderSheetHeader("CPO, ₽", "cpo", ctx.sheets.cpo, "Открыть ретроспективу CPO (макс. цена за заказ)");
     }
   })();
 
@@ -264,6 +267,8 @@ export function renderProductsTotalsCell(
           {totals.totalDrrPercent !== null ? formatPercent(totals.totalDrrPercent) : "—"}
         </div>
       );
+    case "cpo":
+      return moneyCell(totals.totalCpo);
     default:
       return <div key={key} className="wb-pg-total" />;
   }

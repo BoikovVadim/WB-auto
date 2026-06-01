@@ -24,6 +24,8 @@ export type ProductsBodyRenderCtx = {
   adSpendValues: Map<number, number>;
   /** Фактический ДРР % на товар (расход / выручка) — только «Товары». Считается на бэке. */
   drrPercentValues: Map<number, number>;
+  /** CPO ₽ на товар ((выручка / заказы) × ДРР%) — только «Товары». Считается на бэке. */
+  cpoValues: Map<number, number>;
   sppValues: Map<number, number>;
   commissionValues: Map<number, number>;
   taxValues: Map<number, number>;
@@ -329,6 +331,9 @@ export function renderProductsBodyCell(
         </div>
       );
     }
+    case "cpo":
+      // CPO приходит с бэка при наличии выручки и заказов; иначе прочерк.
+      return moneyCell(key, nmId !== null ? ctx.cpoValues.get(nmId) : undefined, true);
   }
 }
 
@@ -358,6 +363,7 @@ export type ProductCellCopyCtx = Pick<
   | "costSumValues"
   | "adSpendValues"
   | "drrPercentValues"
+  | "cpoValues"
 >;
 
 const money2 = (v: number | null | undefined): string =>
@@ -453,5 +459,7 @@ export function productCellCopyValue(
       return money2(ctx.adSpendValues.get(nmId));
     case "drrPercent":
       return money2(ctx.drrPercentValues.get(nmId));
+    case "cpo":
+      return money2(ctx.cpoValues.get(nmId));
   }
 }

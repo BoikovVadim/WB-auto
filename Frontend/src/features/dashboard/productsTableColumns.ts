@@ -32,13 +32,16 @@ export type ProductsColumnKey =
   | "revenue"
   | "costSum"
   | "adSpend"
-  | "drrPercent";
+  | "drrPercent"
+  | "cpo";
 
 export type ProductColumnDefinition = {
   key: ProductsColumnKey;
   defaultWidth: number;
 };
 
+// v12: добавлена колонка «CPO, ₽» (после «ДРР, %», только в «Товары») — макс. цена за
+//      заказ = (выручка / заказы) × целевой ДРР%, считается на бэке.
 // v11: добавлена колонка «ДРР, %» (после «Реклама, ₽», только в «Товары») — фактическая
 //      доля рекламных расходов = расход на рекламу / выручка × 100, считается на бэке.
 // v10: добавлены колонки-калькуляторы (после «Маржа, %», только в «Юнит Экономике»):
@@ -52,7 +55,7 @@ export type ProductColumnDefinition = {
 // v5: добавлены «Комиссия, ₽»/«Эквайринг, ₽». Бамп сбрасывает сохранённый порядок к
 // дефолту, чтобы новые колонки встали на нужное место (не уехали в конец у тех,
 // кто уже двигал колонки). Ширины хранятся отдельно и не теряются.
-export const PRODUCTS_COLUMN_STORAGE_KEY = "wb-products-column-order-v11";
+export const PRODUCTS_COLUMN_STORAGE_KEY = "wb-products-column-order-v12";
 
 export const productsTableColumnDefs: ProductColumnDefinition[] = [
   { key: "index",     defaultWidth: 48  },
@@ -82,6 +85,7 @@ export const productsTableColumnDefs: ProductColumnDefinition[] = [
   { key: "costSum",   defaultWidth: 130 },
   { key: "adSpend",   defaultWidth: 130 },
   { key: "drrPercent", defaultWidth: 110 },
+  { key: "cpo",       defaultWidth: 110 },
 ];
 
 const PRODUCTS_COLUMN_KEYS = productsTableColumnDefs.map((c) => c.key);
@@ -96,6 +100,7 @@ export const UNIT_ECONOMICS_HIDDEN_COLUMNS: ProductsColumnKey[] = [
   "costSum",
   "adSpend",
   "drrPercent",
+  "cpo",
 ];
 
 // Колонки, специфичные для «Юнит Экономики» (комиссия/эквайринг) — скрыты в обычном

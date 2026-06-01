@@ -24,7 +24,7 @@ export type ProductsMode = "list" | "detail";
 
 // Overlay sheet active within a products-workspace section (catalog-products /
 // unit-economics). "none" means the main products table is shown.
-export type ActiveSheet = "none" | "cost-price" | "orders" | "stocks" | "prices" | "buyout" | "orders-sum" | "revenue" | "cost-sum" | "spp" | "ad-spend" | "drr-percent" | "acquiring" | "margin-rub" | "margin-percent";
+export type ActiveSheet = "none" | "cost-price" | "orders" | "stocks" | "prices" | "buyout" | "orders-sum" | "revenue" | "cost-sum" | "spp" | "ad-spend" | "drr-percent" | "cpo" | "acquiring" | "margin-rub" | "margin-percent";
 
 // Valid sort keys for the products table — must stay in sync with ProductListSortKey.
 export type PersistedProductsSortKey =
@@ -74,7 +74,7 @@ export function createDefaultDashboardViewState(): DashboardViewState {
 }
 
 export function isActiveSheet(value: unknown): value is ActiveSheet {
-  return value === "none" || value === "cost-price" || value === "orders" || value === "stocks" || value === "prices" || value === "buyout" || value === "orders-sum" || value === "revenue" || value === "cost-sum" || value === "spp" || value === "ad-spend" || value === "drr-percent" || value === "acquiring" || value === "margin-rub" || value === "margin-percent";
+  return value === "none" || value === "cost-price" || value === "orders" || value === "stocks" || value === "prices" || value === "buyout" || value === "orders-sum" || value === "revenue" || value === "cost-sum" || value === "spp" || value === "ad-spend" || value === "drr-percent" || value === "cpo" || value === "acquiring" || value === "margin-rub" || value === "margin-percent";
 }
 
 export function isPersistedProductsSortKey(value: unknown): value is PersistedProductsSortKey {
