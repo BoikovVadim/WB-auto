@@ -6,7 +6,6 @@ import type {
 import type { ProductAdvertisingWorkspaceClusterRow } from "./types/product-advertising-workspace.types";
 import type { ProductAdvertisingWorkspaceCampaignRowsSnapshot } from "./product-workspace-snapshot.types";
 import { buildWorkspaceClusterKey } from "./product-workspace-cluster-table.filters";
-import { CLUSTER_COMPOSITION_LOOKBACK_DAYS } from "./wb-clusters.repository.cluster-queries-sql";
 import { WbClustersRepositoryWorkspaceShellSql } from "./wb-clusters.repository.workspace-shell-sql";
 
 interface WorkspaceFastSqlRow {
@@ -168,9 +167,9 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
         WHERE NOT EXISTS (SELECT 1 FROM daily_jam_snapshots)
           AND ($4::date - $3::date) >= 28
       ),
-      -- 7-дневное окно СОСТАВА (последние CLUSTER_COMPOSITION_LOOKBACK_DAYS дней от
-      -- конца периода). Зеркалит drill-down getWorkspaceClusterQueriesSQL, чтобы
-      -- счётчик запросов на строке кластера совпадал с раскрытым списком.
+      -- Окно СОСТАВА = весь выбранный период. Зеркалит drill-down
+      -- getWorkspaceClusterQueriesSQL, чтобы счётчик запросов на строке кластера
+      -- совпадал с раскрытым списком и суммой jam-заказов за период.
       composition_phrases AS (
         SELECT DISTINCT r.normalized_query_text
         FROM ${this.tableName("wb_product_search_text_range_snapshots")} s
@@ -178,7 +177,7 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
           ON r.snapshot_key = s.snapshot_key
         WHERE s.nm_id = $1
           AND s.start_date = s.end_date
-          AND s.start_date BETWEEN ($4::date - ${CLUSTER_COMPOSITION_LOOKBACK_DAYS - 1}) AND $4::date
+          AND s.start_date BETWEEN $3::date AND $4::date
       ),
       -- Кол-во запросов в кластере, прошедших окно состава (дедуп по identity, как в
       -- drill-down). Fallback: если за окно у товара нет подневного JAM вообще
