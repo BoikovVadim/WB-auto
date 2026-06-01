@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 
-import type { TodayBuyoutCount } from "../../api/syncClientBuyouts";
 import type { TodayOrderCount } from "../../api/syncClientOrders";
 import type { CurrentPriceEntry } from "./useCurrentPrices";
 import type { ProductListItem } from "./useDashboardProductsWorkspace";
@@ -27,7 +26,6 @@ export type ProductsTableTotals = {
 type Input = {
   filteredProducts: ProductListItem[];
   orderCounts: Map<number, TodayOrderCount>;
-  rollingBuyoutCounts: Map<number, TodayBuyoutCount>;
   stockCounts: Map<number, number>;
   ordersSumValues: Map<number, number>;
   revenueValues: Map<number, number>;
@@ -65,13 +63,12 @@ function sumOverProducts(
  * «Итого» по нижней строке шапки таблицы товаров. Чистая деривация из filteredProducts
  * и карт значений (та же логика, что была инлайн в DashboardCatalogProductsSection):
  * деньги/целые — сумма (выручка/с-с/реклама/сумма заказов считают только >0); buyout —
- * взвешенный %, spp — простое среднее; «нет данных» → null (рисуется «—»).
+ * Σвыручка / Σсумма-заказов × 100, spp — простое среднее; «нет данных» → null (рисуется «—»).
  */
 export function useProductsTableTotals(input: Input): ProductsTableTotals {
   const {
     filteredProducts,
     orderCounts,
-    rollingBuyoutCounts,
     stockCounts,
     ordersSumValues,
     revenueValues,
@@ -105,21 +102,21 @@ export function useProductsTableTotals(input: Input): ProductsTableTotals {
     [filteredProducts, ordersSumValues],
   );
 
+  // «% выкупа» Итого — в деньгах: Σвыручка / Σсумма-заказов × 100 (по тем же товарам и с
+  // тем же positiveOnly, что у тоталов «Выручка» и «Сумма заказов»), чтобы итог ровно
+  // сходился с этими двумя соседними тоталами строки, а не считался взвешенно по штукам.
   const totalBuyoutPercent = useMemo(() => {
-    let orders = 0;
-    let buyouts = 0;
+    let revenueSum = 0;
+    let ordersSumSum = 0;
     for (const p of filteredProducts) {
       if (p.nmId === null) continue;
-      const e = rollingBuyoutCounts.get(p.nmId);
-      // Те же товары, что и в отображении: 0 выкупов = «нет данных» (—) и в «Итого»
-      // не участвуют. Иначе их заказы тянули бы знаменатель вниз и итог расходился бы
-      // с ретроспективой за «сегодня».
-      if (!e || e.ordersCount === 0 || e.buyoutsCount === 0) continue;
-      orders += e.ordersCount;
-      buyouts += e.buyoutsCount;
+      const revenue = revenueValues.get(p.nmId);
+      if (revenue !== undefined && revenue > 0) revenueSum += revenue;
+      const ordersSum = ordersSumValues.get(p.nmId);
+      if (ordersSum !== undefined && ordersSum > 0) ordersSumSum += ordersSum;
     }
-    return orders > 0 ? (buyouts / orders) * 100 : null;
-  }, [filteredProducts, rollingBuyoutCounts]);
+    return ordersSumSum > 0 ? (revenueSum / ordersSumSum) * 100 : null;
+  }, [filteredProducts, revenueValues, ordersSumValues]);
 
   const totalRevenue = useMemo(
     () => sumOverProducts(filteredProducts, revenueValues, true),

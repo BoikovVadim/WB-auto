@@ -283,7 +283,6 @@ export const DashboardCatalogProductsSection = memo(
     const totals = useProductsTableTotals({
       filteredProducts: props.filteredProducts,
       orderCounts: props.orderCounts,
-      rollingBuyoutCounts: props.rollingBuyoutCounts,
       stockCounts: props.stockCounts,
       ordersSumValues: props.ordersSumValues,
       revenueValues: props.revenueValues,
