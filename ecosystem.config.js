@@ -8,7 +8,12 @@ module.exports = {
         NODE_ENV: "production",
         BACKEND_PORT: 3300,
         TZ: "Europe/Moscow",
-        NODE_OPTIONS: "--max-old-space-size=768",
+        // Heap 768М не хватало на построение больших матриц товар×дата
+        // (расход/выручка/заказы/выкуп/с-с) → FATAL heap OOM и краш бэкенда,
+        // в момент рестарта API отваливался. Сервер 3.9G RAM (~2.3G свободно),
+        // поднимаем с запасом; max_memory_restart держим выше heap, чтобы pm2
+        // мягко рестартил по RSS раньше, чем V8 упрётся в жёсткий heap-лимит.
+        NODE_OPTIONS: "--max-old-space-size=1536",
       },
       instances: 1,
       exec_mode: "fork",
@@ -16,7 +21,7 @@ module.exports = {
       listen_timeout: 15000,
       kill_timeout: 10000,
       autorestart: true,
-      max_memory_restart: "900M",
+      max_memory_restart: "1800M",
       log_date_format: "YYYY-MM-DD HH:mm:ss",
     },
   ],
