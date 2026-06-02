@@ -28,12 +28,15 @@ start_tunnel() {
     return 0
   fi
   log "Starting SSH tunnel on port ${TUNNEL_PORT}..."
-  ssh -f -N \
+  # Туннель в фон через '&' (а не 'ssh -f'): иначе при 'set -u' обращение к $! падало
+  # с "$!: unbound variable" (форк -f не оставляет job, $! не задан) → агент крашился
+  # на старте. С '&' $! = валидный PID фонового ssh, его же чисто убивает stop_tunnel.
+  ssh -N \
       -o ConnectTimeout=10 \
       -o ServerAliveInterval=30 \
       -o ServerAliveCountMax=6 \
       -L "${TUNNEL_PORT}:127.0.0.1:5432" \
-      "${REMOTE_HOST}"
+      "${REMOTE_HOST}" &
   echo $! > "${TUNNEL_PID_FILE}" 2>/dev/null || true
 
   # Wait until port is reachable
