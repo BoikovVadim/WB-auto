@@ -73,6 +73,11 @@ export DATABASE_URL
 export WB_CLUSTERS_WRITE_API_KEY="0bf0490b634fd6576824c23ad7b6adc0b0f3fd5fbe667c51b21265bb43d7ba2f"
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
+# Правильный режим: качать ПО ОДНОЙ категории и обновлять данные (старые удалять,
+# новые добавлять), а не выбирать все предметы одним фильтром. Без этого флага
+# скрипт сваливается в standard mode (все 104 предмета сразу) — это НЕ то.
+export CATEGORY_MODE=1
+
 npx ts-node \
   --project tsconfig.json \
   src/wb-clusters/fill-monthly-frequency-download-and-import.ts
