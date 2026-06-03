@@ -12,21 +12,29 @@ export class ProductAdvertisingSnapshotJobService {
     materializeSnapshot: (nmId: number, period: { start: string; end: string }) => Promise<void>;
     invalidateCaches: (nmId: number) => void;
     concurrency?: number;
+    // Когда true и задан explicitPeriod — материализуем ТОЛЬКО его, без warm-периодов
+    // (today/week/month). Нужно ночному precompute: его задача — прогреть один next-day
+    // 7-дневный диапазон по всем товарам; warm-периоды и так греются обычным потоком
+    // после синков. Без этого precompute гнал 4× периодов × N товаров и зря жёг память.
+    explicitPeriodOnly?: boolean;
     onRunning?: (nmId: number, period: { start: string; end: string }) => void;
     onSucceeded?: (nmId: number, period: { start: string; end: string }) => void;
     onFailed?: (nmId: number, period: { start: string; end: string }, errorMessage: string) => void;
   }) {
     const warmPeriods = input.getWarmPeriods();
-    const periods = input.explicitPeriod
-      ? [
-          input.explicitPeriod,
-          ...warmPeriods.filter(
-            (period) =>
-              period.start !== input.explicitPeriod?.start ||
-              period.end !== input.explicitPeriod?.end,
-          ),
-        ]
-      : warmPeriods;
+    const periods =
+      input.explicitPeriod && input.explicitPeriodOnly
+        ? [input.explicitPeriod]
+        : input.explicitPeriod
+          ? [
+              input.explicitPeriod,
+              ...warmPeriods.filter(
+                (period) =>
+                  period.start !== input.explicitPeriod?.start ||
+                  period.end !== input.explicitPeriod?.end,
+              ),
+            ]
+          : warmPeriods;
 
     this.logger.log(
       `Materializing product advertising snapshots for ${input.nmIds.length} products after ${input.reason}.`,

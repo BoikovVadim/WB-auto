@@ -189,6 +189,8 @@ export async function materializeProductAdvertisingSheets(
     nmIds,
     reason,
     explicitPeriod,
+    // Ночной precompute прогревает только next-day период — без 4× warm-периодов.
+    explicitPeriodOnly: priority === "precompute",
     getWarmPeriods: () => self.getHourlyProductAdvertisingWarmPeriods(),
     materializeSnapshot: async (nmId: number, period: { start: string; end: string }) => {
       await self.materializeProductAdvertisingSheetSnapshot(nmId, period);

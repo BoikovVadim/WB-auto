@@ -45,6 +45,51 @@ import {
 import { getClusterAutomationCreateStatements } from "./wb-clusters.schema.automation";
 import type { WbClustersSchemaContext } from "./wb-clusters.schema.types";
 
+// Версия схемы. ОБЯЗАТЕЛЬНО увеличивай на +1 при ЛЮБОМ изменении набора
+// DDL/backfill ниже (новая таблица/колонка/индекс/миграция/backfill, либо правка
+// существующего стейтмента). Version-gate ниже пропускает весь блок инициализации,
+// если в БД уже записана эта версия — поэтому без бампа изменения НЕ применятся на
+// прод-БД, где версия уже стоит.
+//
+// История:
+//   1 — внедрение version-gate (исходный набор схемы на момент внедрения).
+const CURRENT_SCHEMA_VERSION = 1;
+
+const SCHEMA_META_TABLE = "wb_clusters_schema_meta";
+
+async function readInstalledSchemaVersion(
+  context: WbClustersSchemaContext,
+): Promise<number | null> {
+  await context.pool.query(
+    `
+      CREATE TABLE IF NOT EXISTS ${context.tableName(SCHEMA_META_TABLE)} (
+        id INT PRIMARY KEY DEFAULT 1,
+        version INT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT ${context.escapeIdentifier(`${SCHEMA_META_TABLE}_singleton`)} CHECK (id = 1)
+      )
+    `,
+  );
+  const result = await context.pool.query<{ version: number }>(
+    `SELECT version FROM ${context.tableName(SCHEMA_META_TABLE)} WHERE id = 1`,
+  );
+  return result.rows[0]?.version ?? null;
+}
+
+async function writeInstalledSchemaVersion(
+  context: WbClustersSchemaContext,
+  version: number,
+) {
+  await context.pool.query(
+    `
+      INSERT INTO ${context.tableName(SCHEMA_META_TABLE)} (id, version, updated_at)
+      VALUES (1, $1, NOW())
+      ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version, updated_at = NOW()
+    `,
+    [version],
+  );
+}
+
 export async function initializeWbClustersSchema(input: {
   pool: Pool;
   schema: string;
@@ -54,6 +99,19 @@ export async function initializeWbClustersSchema(input: {
   const context: WbClustersSchemaContext = input;
 
   await ensureWbClustersSchema(context);
+
+  // Version-gate: при уже актуальной версии схемы пропускаем весь DDL + backfill.
+  // Раньше каждый старт прогонял ~90с DDL/IF-NOT-EXISTS-проверок и seq-сканов
+  // больших таблиц (backfill `WHERE col IS NULL` по 2,5М+ строк), а все read-пути
+  // ждут ensureSchema() → дашборд был пуст ~2 минуты после каждого рестарта/деплоя.
+  // Все стейтменты ниже идемпотентны, а backfill'ы — одноразовые миграции legacy-строк
+  // (текущий write-путь заполняет колонки при вставке), поэтому пропуск при совпадении
+  // версии безопасен. После любого изменения схемы — бамп CURRENT_SCHEMA_VERSION.
+  const installedVersion = await readInstalledSchemaVersion(context);
+  if (installedVersion === CURRENT_SCHEMA_VERSION) {
+    return;
+  }
+
   await executeSchemaStatements(context, getCoreCreateStatements(context));
   await executeSchemaStatements(context, getSyncRunAlterStatements(context));
   await executeSchemaStatements(context, getCatalogAlterStatements(context));
@@ -87,4 +145,7 @@ export async function initializeWbClustersSchema(input: {
   await executeSchemaStatements(context, getUnitEconomicsSettingsCreateStatements(context));
   await executeSchemaStatements(context, getUnitEconomicsMarginSnapshotCreateStatements(context));
   await executeSchemaStatements(context, getClusterAutomationCreateStatements(context));
+
+  // Фиксируем применённую версию — следующий старт пройдёт version-gate мгновенно.
+  await writeInstalledSchemaVersion(context, CURRENT_SCHEMA_VERSION);
 }

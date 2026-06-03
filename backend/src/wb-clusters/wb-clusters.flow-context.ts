@@ -138,6 +138,7 @@ export interface WbClustersMaterializeContext {
       nmIds: number[];
       reason: string;
       explicitPeriod?: ProductWarmupPeriod | null;
+      explicitPeriodOnly?: boolean;
       getWarmPeriods: () => ProductWarmupPeriod[];
       materializeSnapshot: (nmId: number, period: ProductWarmupPeriod) => Promise<void>;
       invalidateCaches: (nmId: number) => void;
