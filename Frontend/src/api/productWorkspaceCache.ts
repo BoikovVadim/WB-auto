@@ -1,11 +1,27 @@
 import type { ProductAdvertisingSheetRequestInput } from "./productAdvertisingSheetIdentity";
 import { normalizeProductAdvertisingSheetRequestInput } from "./productAdvertisingSheetIdentity";
+import { createSessionPersistedCache } from "./sessionPersistedCache";
+import { assertProductAdvertisingWorkspaceResponse } from "./syncClientAdvertisingWorkspaceValidators";
 import type { ProductAdvertisingWorkspaceResponse } from "./syncClientTypes";
 
-// In-memory only — никакого localStorage/sessionStorage.
-// PostgreSQL отвечает достаточно быстро; персистентный кэш только создавал
-// проблемы с совместимостью при обновлениях схемы.
+// Память — быстрый слой; sessionStorage — чтобы данные пережили F5 и первый кадр был
+// мгновенным (рендер из кэша, ревалидация в фоне). Персист защищён версией/TTL/валидацией
+// (см. sessionPersistedCache) — это снимает прежнюю причину «несовместимости при смене схемы».
 const productWorkspaceMemoryCache = new Map<string, ProductAdvertisingWorkspaceResponse>();
+
+const WORKSPACE_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const productWorkspaceSessionCache = createSessionPersistedCache<ProductAdvertisingWorkspaceResponse>({
+  namespace: "wbws",
+  ttlMs: WORKSPACE_SESSION_TTL_MS,
+  validate: (value): value is ProductAdvertisingWorkspaceResponse => {
+    try {
+      assertProductAdvertisingWorkspaceResponse(value);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+});
 
 function buildExactCacheKey(
   nmId: number,
@@ -20,24 +36,38 @@ export function cacheProductWorkspace(
   input: ProductAdvertisingSheetRequestInput | undefined,
   value: ProductAdvertisingWorkspaceResponse,
 ) {
-  productWorkspaceMemoryCache.set(buildExactCacheKey(nmId, input), value);
+  const key = buildExactCacheKey(nmId, input);
+  productWorkspaceMemoryCache.set(key, value);
+  productWorkspaceSessionCache.write(key, value);
 }
 
 export function getCachedProductWorkspace(
   nmId: number,
   input?: ProductAdvertisingSheetRequestInput | null,
 ): ProductAdvertisingWorkspaceResponse | null {
-  return productWorkspaceMemoryCache.get(buildExactCacheKey(nmId, input)) ?? null;
+  const key = buildExactCacheKey(nmId, input);
+  const fromMemory = productWorkspaceMemoryCache.get(key);
+  if (fromMemory) return fromMemory;
+  // После F5 память пуста — гидрируем её из sessionStorage, чтобы рендер был мгновенным.
+  const fromSession = productWorkspaceSessionCache.read(key);
+  if (fromSession) {
+    productWorkspaceMemoryCache.set(key, fromSession);
+    return fromSession;
+  }
+  return null;
 }
 
 export function invalidateCachedProductWorkspace(
   nmId: number,
   input?: ProductAdvertisingSheetRequestInput | null,
 ) {
-  productWorkspaceMemoryCache.delete(buildExactCacheKey(nmId, input));
+  const key = buildExactCacheKey(nmId, input);
+  productWorkspaceMemoryCache.delete(key);
+  productWorkspaceSessionCache.remove(key);
 }
 
 /** Только для тестов: сбрасывает все синглтоны. */
 export function _resetWorkspaceCacheForTests() {
   productWorkspaceMemoryCache.clear();
+  productWorkspaceSessionCache.removeByPrefix("");
 }

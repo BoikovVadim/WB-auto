@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   buildProductWorkspaceClusterTableCacheKey,
+  getCachedClusterTableFromSessionBundle,
   getCachedProductWorkspaceClusterTable,
 } from "../../../api/productWorkspaceSlicesCache";
 import {
@@ -84,7 +85,18 @@ export function useProductAdvertisingClusterTable(input: {
   );
   // rawTable хранит данные в порядке, вернённом бэкендом (без клиентской сортировки).
   const [rawTable, setRawTable] = useState<ProductAdvertisingWorkspaceClusterTableResponse | null>(
-    () => (cacheKey ? getCachedProductWorkspaceClusterTable(cacheKey) : null) ?? bootstrapTable ?? null,
+    () => {
+      const fromMemory = cacheKey ? getCachedProductWorkspaceClusterTable(cacheKey) : null;
+      if (fromMemory) return fromMemory;
+      if (bootstrapTable) return bootstrapTable;
+      // После F5 memory пуст — синхронно берём таблицу РК из персистентного бандла,
+      // чтобы первый кадр был без скелетона (ревалидация обновит данные в фоне).
+      if (nmId !== null && advertId !== null) {
+        const fromBundle = getCachedClusterTableFromSessionBundle({ nmId, advertId, requestInput });
+        if (fromBundle) return fromBundle;
+      }
+      return null;
+    },
   );
   const tableRef = useRef(rawTable);
   const prevCacheKeyRef = useRef<string | null>(cacheKey);

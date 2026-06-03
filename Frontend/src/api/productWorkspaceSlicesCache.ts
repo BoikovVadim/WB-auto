@@ -2,6 +2,8 @@ import {
   normalizeProductAdvertisingSheetRequestInput,
   type ProductAdvertisingSheetRequestInput,
 } from "./productAdvertisingSheetIdentity";
+import { createSessionPersistedCache } from "./sessionPersistedCache";
+import { assertProductAdvertisingWorkspaceClusterTableResponse } from "./syncClientAdvertisingWorkspaceValidators";
 import type {
   ProductAdvertisingWorkspaceClusterNumericFilters,
   ProductAdvertisingWorkspaceClusterSortDirection,
@@ -16,21 +18,66 @@ const productWorkspaceClusterTableMemoryCache =
 const productWorkspaceClusterQueriesMemoryCache =
   new Map<string, ProductAdvertisingWorkspaceClusterQueriesResponse>();
 
+// Бандл РК-таблиц по товару (advertId → таблица) в sessionStorage: переживает F5,
+// чтобы первый кадр был мгновенным. Защита версией/TTL/валидацией — в sessionPersistedCache;
+// валидируем каждую таблицу assert-ом, при несовместимости весь бандл игнорируется как miss.
+type ClusterBundle = Record<string, ProductAdvertisingWorkspaceClusterTableResponse>;
+const CLUSTER_BUNDLE_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const clusterBundleSessionCache = createSessionPersistedCache<ClusterBundle>({
+  namespace: "wbcb",
+  ttlMs: CLUSTER_BUNDLE_SESSION_TTL_MS,
+  validate: (value): value is ClusterBundle => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+    try {
+      for (const table of Object.values(value as Record<string, unknown>)) {
+        assertProductAdvertisingWorkspaceClusterTableResponse(table);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  },
+});
+
+function buildClusterBundleSessionKey(nmId: number, startDate: string, endDate: string): string {
+  return [String(nmId), startDate, endDate].join(":");
+}
+
 export function persistClusterBundleToSession(
-  _nmId: number,
-  _startDate: string,
-  _endDate: string,
-  _tables: Record<string, ProductAdvertisingWorkspaceClusterTableResponse>,
+  nmId: number,
+  startDate: string,
+  endDate: string,
+  tables: Record<string, ProductAdvertisingWorkspaceClusterTableResponse>,
 ): void {
-  // Exact advertising truth is backend-owned. Bundle persistence is intentionally disabled.
+  if (Object.keys(tables).length === 0) return;
+  clusterBundleSessionCache.write(buildClusterBundleSessionKey(nmId, startDate, endDate), tables);
 }
 
 export function getClusterBundleFromSession(
-  _nmId: number,
-  _startDate: string,
-  _endDate: string,
+  nmId: number,
+  startDate: string,
+  endDate: string,
 ): Record<string, ProductAdvertisingWorkspaceClusterTableResponse> | null {
-  return null;
+  return clusterBundleSessionCache.read(buildClusterBundleSessionKey(nmId, startDate, endDate));
+}
+
+/**
+ * Синхронно достаёт таблицу одной РК из персистентного бандла — для инициализации хука
+ * таблицы после F5, чтобы первый кадр был без скелетона (memory ещё пуст). Данные могут
+ * быть слегка stale — фоновая ревалидация обновит их на месте.
+ */
+export function getCachedClusterTableFromSessionBundle(input: {
+  nmId: number;
+  advertId: number;
+  requestInput?: ProductAdvertisingSheetRequestInput | null;
+}): ProductAdvertisingWorkspaceClusterTableResponse | null {
+  const normalizedInput = normalizeProductAdvertisingSheetRequestInput(input.requestInput);
+  const bundle = getClusterBundleFromSession(
+    input.nmId,
+    normalizedInput.startDate,
+    normalizedInput.endDate,
+  );
+  return bundle?.[String(input.advertId)] ?? null;
 }
 
 export function buildProductWorkspaceClusterTableCacheKey(input: {
@@ -99,6 +146,11 @@ export function invalidateCachedProductWorkspaceClusterTableMatching(input: {
       productWorkspaceClusterTableMemoryCache.delete(key);
     }
   }
+  // Данные таблицы изменились — выкидываем и персистентный бандл товара (он по nmId+период,
+  // содержит все РК), иначе после F5 мог бы мгновенно показаться stale до ревалидации.
+  clusterBundleSessionCache.remove(
+    buildClusterBundleSessionKey(input.nmId, normalizedInput.startDate, normalizedInput.endDate),
+  );
 }
 
 export function getCachedProductWorkspaceClusterTableEntriesMatching(input: {
