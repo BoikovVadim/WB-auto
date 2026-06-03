@@ -1926,7 +1926,7 @@ input {
 .wb-automation-panel {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: flex-end;
   gap: 4px;
   width: max-content;
 }
@@ -1940,10 +1940,6 @@ input {
   white-space: nowrap;
 }
 
-.wb-automation-panel__mode--preview {
-  color: var(--wb-text-muted);
-}
-
 .wb-automation-panel__mode--live {
   color: #1f8a4c;
   font-weight: 600;
@@ -1952,7 +1948,7 @@ input {
 .wb-automation-panel__counts {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: flex-end;
   gap: 2px;
   font-size: 11px;
   color: var(--wb-text-muted);

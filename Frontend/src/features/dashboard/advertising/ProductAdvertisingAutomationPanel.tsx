@@ -41,31 +41,26 @@ export function ProductAdvertisingAutomationPanel(props: {
           onChange={(e) => props.onToggle(e.target.checked)}
         />
         <span>Автоматизация</span>
-        {props.mode === "preview" && (
-          <span className="wb-automation-panel__mode wb-automation-panel__mode--preview">· предпросмотр</span>
-        )}
         {props.mode === "live" && (
           <span className="wb-automation-panel__mode wb-automation-panel__mode--live">· включена</span>
         )}
       </label>
 
-      <div
-        className="wb-automation-panel__counts"
-        aria-hidden={!countsVisible}
-        style={{ visibility: countsVisible ? "visible" : "hidden" }}
-      >
-        <span title="Активные + кандидаты без данных по расходу (даём шанс набрать данные)">
-          актив {props.counts.active}
-        </span>
-        <span title="Чёрный список — автоматика всегда держит выключенными">
-          чёрный {props.counts.blacklisted}
-        </span>
-        <span title="Исключены: реальный расход и CPO выше макс">
-          искл. по CPO {props.counts.high}
-        </span>
-      </div>
+      {countsVisible && (
+        <div className="wb-automation-panel__counts">
+          <span title="Активные + кандидаты без данных по расходу (даём шанс набрать данные)">
+            актив {props.counts.active}
+          </span>
+          <span title="Чёрный список — автоматика всегда держит выключенными">
+            чёрный {props.counts.blacklisted}
+          </span>
+          <span title="Исключены: реальный расход и CPO выше макс">
+            искл. по CPO {props.counts.high}
+          </span>
+        </div>
+      )}
 
-      {props.actions ? <div className="wb-automation-panel__actions">{props.actions}</div> : null}
+      {isOn && props.actions ? <div className="wb-automation-panel__actions">{props.actions}</div> : null}
     </div>
   );
 }

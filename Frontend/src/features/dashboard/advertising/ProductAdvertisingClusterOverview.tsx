@@ -239,8 +239,7 @@ export function ProductAdvertisingClusterOverview(
                     actions={
                       <button
                         type="button"
-                        disabled={automationBusy || automation.mode === "off"}
-                        tabIndex={automation.mode === "off" ? -1 : 0}
+                        disabled={automationBusy}
                         onClick={() => setAutomationMode(automation.mode === "live" ? "preview" : "live")}
                         style={{ fontSize: "11px", padding: "2px 8px", cursor: "pointer", border: "1px solid var(--wb-border, #ddd)", borderRadius: "6px", background: automation.mode === "live" ? "#fff" : "#1f8a4c", color: automation.mode === "live" ? "var(--wb-text-main)" : "#fff" }}
                       >
