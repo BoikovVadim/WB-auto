@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { formatMoney } from "../../../formatters";
 import { ui } from "../copy";
 import { useProductMaxCpo } from "../useProductMaxCpo";
+import { ProductAdvertisingAutomationPanel } from "./ProductAdvertisingAutomationPanel";
 import { useClusterAutomation } from "./useClusterAutomation";
 import { ProductAdvertisingDateFilter } from "./ProductAdvertisingDateFilter";
 import { ProductAdvertisingChangeLogPanel } from "./ProductAdvertisingChangeLogPanel";
@@ -230,54 +231,23 @@ export function ProductAdvertisingClusterOverview(
                   </span>
                 )}
                 {automationAdvertId !== null && (
-                  <label
-                    title="Автоматическое вкл/выкл кластеров по CPO каждые 10 минут"
-                    style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", cursor: "pointer", whiteSpace: "nowrap" }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={automation.mode !== "off"}
-                      disabled={automationBusy}
-                      onChange={(e) => setAutomationMode(e.target.checked ? "preview" : "off")}
-                    />
-                    Автоматизация
-                    {automation.mode === "preview" && (
-                      <span style={{ color: "var(--wb-text-muted)" }}>· предпросмотр</span>
-                    )}
-                    {automation.mode === "live" && (
-                      <span style={{ color: "#1f8a4c", fontWeight: 600 }}>· включена</span>
-                    )}
-                  </label>
-                )}
-                {/* Строка счётчиков всегда занимает место (visibility, не условный рендер),
-                    чтобы вкл/выкл «Автоматизации» не сдвигал layout — иначе над линией
-                    «Активные» появлялось пустое пространство и всё уезжало вниз. */}
-                {automationAdvertId !== null && (
-                  <div
-                    aria-hidden={automation.mode === "off"}
-                    style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", color: "var(--wb-text-muted)", whiteSpace: "nowrap", visibility: automation.mode !== "off" ? "visible" : "hidden" }}
-                  >
-                    <span title="Активные + кандидаты без данных по расходу (даём шанс набрать данные)">актив {autoCounts.active}</span>
-                    {autoCounts.protected > 0 && (
-                      <span title="Белый список — автоматика всегда держит активными">белый {autoCounts.protected}</span>
-                    )}
-                    {autoCounts.blacklisted > 0 && (
-                      <span title="Чёрный список — автоматика всегда держит выключенными">чёрный {autoCounts.blacklisted}</span>
-                    )}
-                    <span title="Исключены: реальный расход и CPO выше макс. Кластеры без данных по расходу сюда НЕ попадают">искл. по CPO {autoCounts.high}</span>
-                    {autoCounts.dropped > 0 && (
-                      <span title="Выбыли (legacy): пересчитаются при ближайшем прогоне автоматики">выбыло {autoCounts.dropped}</span>
-                    )}
-                    <button
-                      type="button"
-                      disabled={automationBusy || automation.mode === "off"}
-                      tabIndex={automation.mode === "off" ? -1 : 0}
-                      onClick={() => setAutomationMode(automation.mode === "live" ? "preview" : "live")}
-                      style={{ fontSize: "11px", padding: "2px 8px", cursor: "pointer", border: "1px solid var(--wb-border, #ddd)", borderRadius: "6px", background: automation.mode === "live" ? "#fff" : "#1f8a4c", color: automation.mode === "live" ? "var(--wb-text-main)" : "#fff" }}
-                    >
-                      {automation.mode === "live" ? "В предпросмотр" : "Включить автоматизацию"}
-                    </button>
-                  </div>
+                  <ProductAdvertisingAutomationPanel
+                    mode={automation.mode}
+                    counts={autoCounts}
+                    busy={automationBusy}
+                    onToggle={(enabled) => setAutomationMode(enabled ? "preview" : "off")}
+                    actions={
+                      <button
+                        type="button"
+                        disabled={automationBusy || automation.mode === "off"}
+                        tabIndex={automation.mode === "off" ? -1 : 0}
+                        onClick={() => setAutomationMode(automation.mode === "live" ? "preview" : "live")}
+                        style={{ fontSize: "11px", padding: "2px 8px", cursor: "pointer", border: "1px solid var(--wb-border, #ddd)", borderRadius: "6px", background: automation.mode === "live" ? "#fff" : "#1f8a4c", color: automation.mode === "live" ? "var(--wb-text-main)" : "#fff" }}
+                      >
+                        {automation.mode === "live" ? "В предпросмотр" : "Включить автоматизацию"}
+                      </button>
+                    }
+                  />
                 )}
               </div>
             </div>
