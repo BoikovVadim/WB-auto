@@ -64,5 +64,11 @@ export function getClusterAutomationCreateStatements({
       ALTER TABLE ${tableName("wb_cluster_automation_override")}
         ADD COLUMN IF NOT EXISTS is_blacklisted BOOLEAN NOT NULL DEFAULT FALSE
     `,
+    // last_spend добавлен позже — расход кластера за окно. Нужен для отображения «стоимости»
+    // у кластеров без заказов: CPO там не определён (делить не на что), показываем расход.
+    `
+      ALTER TABLE ${tableName("wb_cluster_automation_state")}
+        ADD COLUMN IF NOT EXISTS last_spend NUMERIC(12,2) NULL
+    `,
   ];
 }

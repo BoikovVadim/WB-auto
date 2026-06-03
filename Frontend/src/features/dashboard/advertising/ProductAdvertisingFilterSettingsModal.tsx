@@ -182,7 +182,18 @@ export function ProductAdvertisingFilterSettingsModal({ nmId, advertId, onClose 
                     ) : null}
                   </span>
                   <span className="wb-filter-settings__row-cpo">
-                    {row.lastCpo !== null ? formatMoney(row.lastCpo) : "—"}
+                    {row.lastCpo !== null ? (
+                      formatMoney(row.lastCpo)
+                    ) : row.lastSpend !== null && row.lastSpend > 0 ? (
+                      // Заказов нет → CPO не определён (делить не на что). Показываем весь
+                      // расход с пометкой, чтобы было видно, сколько слито на кластер.
+                      <span title="Весь расход кластера — заказов нет, CPO не определён">
+                        {formatMoney(row.lastSpend)}
+                        <span style={{ color: "var(--wb-text-muted)", fontSize: "0.85em" }}> расх.</span>
+                      </span>
+                    ) : (
+                      "—"
+                    )}
                   </span>
                   <span className="wb-filter-role" role="group" aria-label="Роль кластера">
                     <button

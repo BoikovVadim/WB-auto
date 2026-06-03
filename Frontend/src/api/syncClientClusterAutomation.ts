@@ -53,6 +53,8 @@ export type ClusterFilterRow = {
   normalizedClusterName: string;
   clusterName: string;
   lastCpo: number | null;
+  /** Расход кластера за окно — «стоимость» там, где заказов нет и CPO неопределён. */
+  lastSpend: number | null;
   state: ClusterAutomationState | null;
   /** Белый список — нельзя выключать. */
   isProtected: boolean;

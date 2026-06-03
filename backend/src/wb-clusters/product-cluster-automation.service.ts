@@ -22,6 +22,8 @@ interface ClusterDecision {
   normalizedClusterName: string;
   clusterName: string;
   effectiveCpo: number | null;
+  /** Расход кластера за окно — для отображения «стоимости» там, где CPO неопределён (нет заказов). */
+  spend: number | null;
   state: ClusterAutomationStateValue;
   manualProtected: boolean;
   /** Действие относительно текущего состояния на WB. */
@@ -156,6 +158,7 @@ export class ProductClusterAutomationService {
         state: d.state,
         manualProtected: d.manualProtected,
         lastCpo: d.effectiveCpo,
+        lastSpend: d.spend,
         lastDecision: d.decision,
       });
     }
@@ -182,6 +185,7 @@ export class ProductClusterAutomationService {
         normalizedClusterName: input.normalizedClusterName,
         clusterName: input.clusterName,
         effectiveCpo: effectiveCpoForDisplay,
+        spend: input.spend,
         state: "blacklisted",
         manualProtected: false,
         decision: isExcludedNow ? "noop" : "exclude",
@@ -195,6 +199,7 @@ export class ProductClusterAutomationService {
         normalizedClusterName: input.normalizedClusterName,
         clusterName: input.clusterName,
         effectiveCpo: effectiveCpoForDisplay,
+        spend: input.spend,
         state: "protected",
         manualProtected: false,
         decision: isExcludedNow ? "include" : "noop",
@@ -246,6 +251,7 @@ export class ProductClusterAutomationService {
       normalizedClusterName: input.normalizedClusterName,
       clusterName: input.clusterName,
       effectiveCpo: effectiveCpo != null && Number.isFinite(effectiveCpo) ? round2(effectiveCpo) : null,
+      spend: input.spend,
       state,
       manualProtected,
       decision,

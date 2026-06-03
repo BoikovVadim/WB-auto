@@ -14,6 +14,8 @@ export interface ClusterOverridePickerRow {
   normalizedClusterName: string;
   clusterName: string;
   lastCpo: number | null;
+  /** Расход кластера за окно — для «стоимости» там, где заказов нет и CPO неопределён. */
+  lastSpend: number | null;
   state: ClusterAutomationStateValue | null;
   isProtected: boolean;
   isBlacklisted: boolean;
@@ -261,17 +263,19 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
     state: ClusterAutomationStateValue;
     manualProtected: boolean;
     lastCpo: number | null;
+    lastSpend: number | null;
     lastDecision: string | null;
   }): Promise<void> {
     await this.ensureSchemaOrThrow();
     await this.getPool().query(
       `INSERT INTO ${this.tableName("wb_cluster_automation_state")}
-         (advert_id, nm_id, normalized_cluster_name, state, manual_protected, last_cpo, last_decision, decided_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+         (advert_id, nm_id, normalized_cluster_name, state, manual_protected, last_cpo, last_spend, last_decision, decided_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
        ON CONFLICT (advert_id, nm_id, normalized_cluster_name) DO UPDATE SET
          state = EXCLUDED.state,
          manual_protected = EXCLUDED.manual_protected,
          last_cpo = EXCLUDED.last_cpo,
+         last_spend = EXCLUDED.last_spend,
          last_decision = EXCLUDED.last_decision,
          decided_at = NOW()`,
       [
@@ -281,6 +285,7 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
         input.state,
         input.manualProtected,
         input.lastCpo,
+        input.lastSpend,
         input.lastDecision,
       ],
     );
@@ -324,6 +329,7 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       normalized_cluster_name: string;
       cluster_name: string;
       last_cpo: string | null;
+      last_spend: string | null;
       state: ClusterAutomationStateValue | null;
       is_protected: boolean;
       is_blacklisted: boolean;
@@ -332,6 +338,7 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
          c.normalized_cluster_name,
          MAX(c.cluster_name)                                AS cluster_name,
          MAX(s.last_cpo)::text                              AS last_cpo,
+         MAX(s.last_spend)::text                            AS last_spend,
          MAX(s.state)                                       AS state,
          BOOL_OR(COALESCE(o.is_protected, FALSE))           AS is_protected,
          BOOL_OR(COALESCE(o.is_blacklisted, FALSE))         AS is_blacklisted
@@ -359,6 +366,7 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       normalizedClusterName: r.normalized_cluster_name,
       clusterName: r.cluster_name,
       lastCpo: r.last_cpo != null ? Number(r.last_cpo) : null,
+      lastSpend: r.last_spend != null ? Number(r.last_spend) : null,
       state: r.state,
       isProtected: r.is_protected,
       isBlacklisted: r.is_blacklisted,
