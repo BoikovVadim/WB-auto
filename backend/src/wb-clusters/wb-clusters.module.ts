@@ -8,6 +8,7 @@ import { WbCabinetPrivateApiClient } from "./wb-cabinet-private-api.client";
 import { WbCmpSafariClient } from "./wb-cmp-safari.client";
 import { WbSellerPortalPlaywrightClient } from "./wb-seller-portal-playwright.client";
 import { WbClustersController } from "./wb-clusters.controller";
+import { WbClustersDiagController } from "./wb-clusters-diag.controller";
 import { UnitEconomicsController } from "./unit-economics.controller";
 import { ProductDrrController } from "./product-drr.controller";
 import { ProductDrrService } from "./product-drr.service";
@@ -42,7 +43,7 @@ import { WbPromotionApiClient } from "./wb-promotion-api.client";
 
 @Module({
   imports: [WbRuntimeConfigModule],
-  controllers: [WbClustersController, UnitEconomicsController, ProductDrrController, ProductCpoController, ProductClusterAutomationController],
+  controllers: [WbClustersController, WbClustersDiagController, UnitEconomicsController, ProductDrrController, ProductCpoController, ProductClusterAutomationController],
   providers: [
     WbCabinetPrivateApiClient,
     WbCmpSafariClient,
