@@ -18,6 +18,7 @@ import type {
   ProductAdvertisingWorkspaceClusterQueriesResponse,
   ProductAdvertisingWorkspaceClusterTableResponse,
 } from "./types/product-advertising-workspace.types";
+import { stripHeavyUnusedSheetFields } from "./wb-clusters-read-flow.sheet-response-trim";
 import type { WbClustersSnapshotReadContext } from "./wb-clusters.flow-context";
 
 export async function getProductAdvertisingSheet(
@@ -29,11 +30,15 @@ export async function getProductAdvertisingSheet(
   },
 ): Promise<ProductAdvertisingSheetResponse> {
   if (!input?.startDate || !input?.endDate) {
-    return self.productAdvertisingSnapshotResolver.resolve({
-      nmId,
-      currentPeriod: null,
-      schemaVersion: self.productAdvertisingSheetSnapshotSchemaVersion,
-    });
+    // resolve() здесь читает снапшот, который в fallback-путях нужен с clusterQueries —
+    // поэтому стрипаем копию ответа, а не результат resolve().
+    return stripHeavyUnusedSheetFields(
+      await self.productAdvertisingSnapshotResolver.resolve({
+        nmId,
+        currentPeriod: null,
+        schemaVersion: self.productAdvertisingSheetSnapshotSchemaVersion,
+      }),
+    );
   }
 
   const currentPeriod = self.normalizeAdvertisingSheetJamRange(input.startDate, input.endDate);
@@ -525,7 +530,12 @@ export async function getOrLoadProductAdvertisingSheetSnapshot(
   self.productAdvertisingSheetSnapshotInFlight.set(cacheKey, loadPromise);
 
   try {
-    const value: ProductAdvertisingSheetResponse = await loadPromise;
+    // loadPromise уже прогнал JAM-enrich/attachLiveMetadata (им clusterQueries нужен);
+    // дальше лист в ответе не нужен — срезаем до кэша, чтобы и payload, и серверный
+    // in-memory кэш (BoundedLruMap) не держали до 216k строк на «горячий» товар.
+    const value: ProductAdvertisingSheetResponse = stripHeavyUnusedSheetFields(
+      await loadPromise,
+    );
     self.productAdvertisingSheetSnapshotCache.set(cacheKey, {
       expiresAtMs: Date.now() + self.resolveProductAdvertisingSheetSnapshotCacheTtlMs(value),
       value,
