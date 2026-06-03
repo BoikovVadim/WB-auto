@@ -1,5 +1,7 @@
 import { memo, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 
+import type { ProductAutomationStatusEntry } from "../../api/syncClientClusterAutomation";
+import { useProductAutomationStatuses } from "./advertising/useProductAutomationStatuses";
 import { ui } from "./copy";
 import {
   loadScrollPosition,
@@ -24,6 +26,34 @@ type ProductsWorkspaceSectionProps = {
   onProductFocus: (nmId: number | null) => void;
 };
 
+/** Бейдж статуса автоматизации товара для колонки «Авто». */
+function renderAutomationBadge(entry: ProductAutomationStatusEntry | undefined): ReactNode {
+  if (!entry || entry.mode === "off") {
+    return <span style={{ color: "var(--wb-text-muted)" }}>—</span>;
+  }
+  const isLive = entry.mode === "live";
+  const title = isLive
+    ? `Автоматизация включена (live)${entry.campaignsWithAutomation > 1 ? `, кампаний: ${String(entry.campaignsWithAutomation)}` : ""}`
+    : `Автоматизация в предпросмотре${entry.campaignsWithAutomation > 1 ? `, кампаний: ${String(entry.campaignsWithAutomation)}` : ""}`;
+  return (
+    <span
+      title={title}
+      style={{
+        display: "inline-block",
+        fontSize: "10px",
+        fontWeight: 600,
+        padding: "1px 6px",
+        borderRadius: "6px",
+        whiteSpace: "nowrap",
+        background: isLive ? "#1f8a4c" : "rgba(0,0,0,0.06)",
+        color: isLive ? "#fff" : "var(--wb-text-muted)",
+      }}
+    >
+      {isLive ? "вкл" : "предпросмотр"}
+    </span>
+  );
+}
+
 export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
   props: ProductsWorkspaceSectionProps,
 ) {
@@ -31,6 +61,9 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
   const tableRef = useRef<HTMLTableElement | null>(null);
   const lastScrollTopRef = useRef(0);
   const resizingColRef = useRef<number | null>(null);
+
+  // Сводный статус автоматизации по товарам — для колонки «Авто» (видно, у кого включено).
+  const automationByNmId = useProductAutomationStatuses(true);
 
   const measureProductsHeaderMinWidth = (label: string, fallback: number) => {
     const EXTRA_SPACE = 46; // sort arrow + button gap + inner paddings + resize handle room
@@ -180,7 +213,7 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
   }
 
   if (props.hasCatalogItems) {
-    const totalW = 48 + 110 + nameColWidth + 80 + 54 + 62 + 54;
+    const totalW = 48 + 110 + nameColWidth + 80 + 54 + 62 + 54 + 96;
     return (
       <div className="wb-products-page">
         <section className="wb-table-section">
@@ -206,6 +239,7 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                 <col style={{ width: "54px" }} />
                 <col style={{ width: "62px" }} />
                 <col style={{ width: "54px" }} />
+                <col style={{ width: "96px" }} />
               </colgroup>
               <thead>
                 <tr>
@@ -294,6 +328,9 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                       </span>
                     </button>
                   </th>
+                  <th className="wb-table-cell--numeric" title="Автоматизация управления кластерами по CPO" style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
+                    Авто
+                  </th>
                 </tr>
                 {props.filteredProducts.length > 0 ? (
                   <tr className="wb-products-totals-row wb-thead-row--second">
@@ -312,6 +349,7 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                     <th className="wb-table-cell--numeric wb-products-campaign-count-th wb-products-campaign-disabled-th" style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }}>
                       {campaignTotals.disabled > 0 ? String(campaignTotals.disabled) : "—"}
                     </th>
+                    <th className="wb-table-cell--numeric" style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }} />
                   </tr>
                 ) : null}
               </thead>
@@ -349,11 +387,14 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                       <td className="wb-table-cell--numeric wb-products-campaign-count-td wb-products-campaign-disabled-td">
                         {product.campaignCounts && product.campaignCounts.disabled > 0 ? String(product.campaignCounts.disabled) : "—"}
                       </td>
+                      <td className="wb-table-cell--numeric">
+                        {renderAutomationBadge(product.nmId === null ? undefined : automationByNmId[product.nmId])}
+                      </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={7}>{ui.noProductsFound}</td>
+                    <td colSpan={8}>{ui.noProductsFound}</td>
                   </tr>
                 )}
               </tbody>

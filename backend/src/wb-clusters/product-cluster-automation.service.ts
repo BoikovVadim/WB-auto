@@ -96,6 +96,22 @@ export class ProductClusterAutomationService {
   }
 
   /**
+   * Сводный статус автоматизации по всем товарам с включённой автоматизацией — для колонки
+   * в таблице товаров (понять, у кого включено). byNmId: nmId → режим товара + число кампаний.
+   * Товары без автоматизации в карте отсутствуют (фронт трактует как "off").
+   */
+  async getProductAutomationStatuses(): Promise<{
+    byNmId: Record<number, { mode: AutomationMode; campaignsWithAutomation: number }>;
+  }> {
+    const rows = await this.repository.getProductAutomationModes();
+    const byNmId: Record<number, { mode: AutomationMode; campaignsWithAutomation: number }> = {};
+    for (const r of rows) {
+      byNmId[r.nmId] = { mode: r.mode, campaignsWithAutomation: r.campaignsWithAutomation };
+    }
+    return { byNmId };
+  }
+
+  /**
    * Полная замена белого и чёрного списков. Если автоматика включена — сразу прогон, чтобы
    * списки применились без ожидания крона (в live реально вкл/выкл соответствующие кластеры).
    */

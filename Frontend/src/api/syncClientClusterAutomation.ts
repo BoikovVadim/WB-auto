@@ -47,6 +47,23 @@ export async function setClusterAutomationMode(
   return response.data ?? { ...EMPTY, mode };
 }
 
+export type ProductAutomationStatusEntry = {
+  mode: AutomationMode;
+  campaignsWithAutomation: number;
+};
+
+export type ProductAutomationStatusesResponse = {
+  byNmId: Record<number, ProductAutomationStatusEntry>;
+};
+
+/** Сводный статус автоматизации по всем товарам — для колонки в таблице товаров. */
+export async function fetchProductAutomationStatuses(): Promise<ProductAutomationStatusesResponse> {
+  const response = await apiClient.get<ProductAutomationStatusesResponse>(
+    "/wb-clusters/products/automation-status",
+  );
+  return response.data ?? { byNmId: {} };
+}
+
 // --- Настройка фильтров (защищённые кластеры) ---
 
 export type ClusterFilterRow = {

@@ -14,6 +14,12 @@ import { SetClusterFiltersDto } from "./dto/set-cluster-filters.dto";
 export class ProductClusterAutomationController {
   constructor(private readonly service: ProductClusterAutomationService) {}
 
+  /** Сводный статус автоматизации по всем товарам — для колонки в таблице товаров. */
+  @Get("automation-status")
+  getProductAutomationStatuses() {
+    return this.service.getProductAutomationStatuses();
+  }
+
   /** Статус автоматизации кампании + per-cluster решения (для бейджей в таблице). */
   @Get(":nmId/campaigns/:advertId/automation")
   getStatus(

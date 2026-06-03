@@ -95,6 +95,35 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
   }
 
   /**
+   * Сводный статус автоматизации по каждому товару (для колонки в таблице товаров):
+   * только товары, где есть хотя бы одна включённая кампания. Режим товара —
+   * «сильнейший» среди его кампаний: live > preview. campaignsWithAutomation — сколько
+   * кампаний товара под автоматизацией.
+   */
+  async getProductAutomationModes(): Promise<
+    { nmId: number; mode: AutomationMode; campaignsWithAutomation: number }[]
+  > {
+    await this.ensureSchemaOrThrow();
+    const result = await this.getPool().query<{
+      nm_id: string;
+      mode: AutomationMode;
+      campaigns_with_automation: string;
+    }>(
+      `SELECT nm_id::text,
+              CASE WHEN BOOL_OR(mode = 'live') THEN 'live' ELSE 'preview' END AS mode,
+              COUNT(*)::text AS campaigns_with_automation
+       FROM ${this.tableName("wb_campaign_automation")}
+       WHERE mode IN ('preview', 'live')
+       GROUP BY nm_id`,
+    );
+    return result.rows.map((r) => ({
+      nmId: Number(r.nm_id),
+      mode: r.mode,
+      campaignsWithAutomation: Number(r.campaigns_with_automation),
+    }));
+  }
+
+  /**
    * Входы для CPO по каждому кластеру (advert, nm) за скользящие 30 дней: расход и заказы
    * РК, JAM-заказы, текущее состояние на WB (с overlay действий) и дата последней статистики.
    */
