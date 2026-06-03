@@ -11,3 +11,6 @@ backend/dist
 backend/data
 *.log
 Frontend/build
+
+# TS incremental build artifact (генерируется сборкой)
+*.tsbuildinfo
