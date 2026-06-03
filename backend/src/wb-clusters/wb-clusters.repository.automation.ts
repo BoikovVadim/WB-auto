@@ -33,7 +33,9 @@ export interface ClusterCpoInput {
   clusterName: string;
   /** Σ расход РК за 30 дней. */
   spend: number;
-  /** Σ заказов РК за 30 дней. */
+  /** Σ заказанных товаров (shks) РК за 30 дней — основной знаменатель CPO (как колонка таблицы). */
+  shks: number | null;
+  /** Σ заказов РК за 30 дней (fallback, если shks нет). */
   ordersRk: number;
   /** Σ JAM-заказов (orders_current) за 30 дней. */
   ordersJam: number;
@@ -154,6 +156,7 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       cluster_name: string;
       spend: string | null;
       orders_rk: string | null;
+      shks: string | null;
       orders_jam: string | null;
       source_kind: string | null;
       last_stat_date: string | null;
@@ -164,6 +167,7 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
                MAX(cluster_name)        AS cluster_name,
                SUM(spend)               AS spend,
                SUM(orders)              AS orders_rk,
+               SUM(shks)                AS shks,
                MAX(stat_date)::text     AS last_stat_date
         FROM ${this.tableName("wb_cluster_daily_stats")}
         WHERE advert_id = $1 AND nm_id = $2
@@ -212,6 +216,7 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
         COALESCE(cur.cluster_name, stats.cluster_name, cur.normalized_cluster_name) AS cluster_name,
         stats.spend,
         stats.orders_rk,
+        stats.shks,
         jam.orders_jam,
         cur.source_kind,
         stats.last_stat_date
@@ -226,6 +231,7 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       normalizedClusterName: r.normalized_cluster_name,
       clusterName: r.cluster_name,
       spend: num(r.spend),
+      shks: r.shks != null ? Number(r.shks) : null,
       ordersRk: num(r.orders_rk),
       ordersJam: num(r.orders_jam),
       currentSourceKind: r.source_kind,

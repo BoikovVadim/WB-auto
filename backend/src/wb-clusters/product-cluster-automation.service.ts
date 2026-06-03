@@ -35,12 +35,12 @@ interface ClusterDecision {
  * автоматизацией пересчитывает CPO каждого кластера и приводит состав к правилу
  * «CPO ≤ макс. CPO товара → включить, CPO > макс → исключить».
  *
- * CPO кластера = spend / max(orders_РК, orders_JAM) за скользящие 30 дней (делим на
- * большее число заказов → CPO меньше). Расход без заказов → CPO = ∞ → исключить.
- * Нет данных по расходу за 30 дней → кластер КАНДИДАТ В АКТИВНЫЕ: включаем, даём шанс
- * набрать данные (в боевом режиме реально включаем на WB), дальше судьбу решает CPO.
- * «Искл. по CPO» (excluded_high) получают ТОЛЬКО кластеры с реальным расходом и CPO > макс.
- * Старый исход «выбыл» (dropped) по «нет данных» больше не назначается.
+ * CPO кластера берётся РОВНО как значение колонки «СРО» таблицы РК (никаких отдельных
+ * расчётов): spend / (shks ?? orders_РК) за скользящие 30 дней; при 0 заказов колонка
+ * показывает сам расход — его и сравниваем. JAM в CPO-колонке не участвует. Правило:
+ * значение ≤ макс. CPO → включить, > макс → исключить — независимо от наличия заказов
+ * (если «сумма» ниже плана, кластер должен работать). Нет расхода вовсе → кандидат в
+ * активные (сигнала против нет). Исход «выбыл» (dropped) не назначается.
  *
  * Режимы: 'preview' — считаем и сохраняем решения, WB НЕ трогаем; 'live' — реально
  * включаем/исключаем через существующую очередь действий (applyProductClusterAction).
@@ -257,10 +257,15 @@ export class ProductClusterAutomationService {
     roles: { isProtected: boolean; isBlacklisted: boolean },
   ): ClusterDecision {
     const isExcludedNow = input.currentSourceKind === "excluded";
-    const orders = Math.max(input.ordersRk, input.ordersJam);
-    const displayCpo = orders > 0 ? input.spend / orders : null;
-    const effectiveCpoForDisplay =
-      displayCpo != null && Number.isFinite(displayCpo) ? round2(displayCpo) : null;
+    // Решаем ровно по тому числу, что показано в колонке «СРО» таблицы — никаких
+    // отдельных расчётов. Знаменатель — как getAdvertisingOrderedItems: заказанные
+    // товары shks, если есть, иначе заказы РК (JAM в CPO-колонке НЕ участвует).
+    const orderedItems = input.shks !== null ? input.shks : input.ordersRk;
+    // «CPO» = ровно getAdvertisingCpoOrSpend: есть заказы → расход/заказы; нет заказов,
+    // но есть расход → показываем расход (это и есть «сумма» в колонке); нет расхода → null.
+    const displayCpo =
+      orderedItems > 0 ? input.spend / orderedItems : input.spend > 0 ? input.spend : null;
+    const effectiveCpoForDisplay = displayCpo != null ? round2(displayCpo) : null;
 
     // Чёрный список — наивысший приоритет: кластер никогда не должен быть включён.
     // Если сейчас активен на WB — исключаем; иначе noop.
@@ -297,43 +302,23 @@ export class ProductClusterAutomationService {
       manualProtected = true;
     }
 
-    // CPO = расход / БОЛЬШЕЕ из (заказы РК, заказы JAM). Один расход делим на больший
-    // знаменатель → CPO получается меньше (благоприятнее для кластера).
-    //
-    // НЕТ ЗАКАЗОВ — порог расхода перед исключением (а не «любой расход → ∞ → исключить»):
-    //   - расход ≥ макс. CPO товара → потрачено больше, чем стоил бы один допустимый заказ,
-    //     а заказов нет → считаем CPO бесконечным → исключить;
-    //   - расход < макс. CPO → кластер ещё не «проел» бюджет одного заказа, даём шанс
-    //     набрать данные → effectiveCpo=null (как «нет данных») → кандидат в активные.
-    // Так мелкие расходы (доли рубля) без заказов больше не вылетают сразу.
-    const effectiveCpo =
-      orders > 0
-        ? input.spend / orders
-        : input.spend >= maxCpo
-          ? Infinity
-          : null;
-
+    // Решение РОВНО по числу из колонки «СРО»: ≤ макс. CPO товара → кластер работает
+    // (включить), > макс → исключить. Есть заказы или нет — неважно: важно само значение
+    // в колонке (при 0 заказов это расход = «сумма»). Если расхода вовсе нет
+    // (displayCpo=null) → сигнала против нет → кандидат в активные.
     let desiredActive: boolean;
     let state: ClusterAutomationStateValue;
-    if (effectiveCpo !== null) {
-      // Есть расход → решаем по CPO. ∞ (> max) → исключить.
-      if (effectiveCpo <= maxCpo) {
-        desiredActive = true;
-        state = "active";
-        manualProtected = false; // набрал хороший CPO — защита не нужна
-      } else {
-        desiredActive = false;
-        state = "excluded_high";
-        manualProtected = false; // авто-исключение по CPO сильнее ручной защиты
-      }
-    } else {
-      // КАНДИДАТ В АКТИВНЫЕ: либо нет ни расхода, ни заказов, либо расход без заказов, но
-      // ещё НИЖЕ порога (< макс. CPO) — даём шанс набрать данные, дальше судьбу решает CPO.
-      // «Искл. по CPO» получают ТОЛЬКО кластеры с реальным CPO > макс ИЛИ расходом без
-      // заказов ≥ порога (ветка выше). desiredActive=true → если кластер сейчас исключён на
-      // WB, в боевом режиме он будет включён (применяем то, что в предпросмотре).
+    if (displayCpo === null) {
       desiredActive = true;
       state = manualProtected ? "manual_protected" : "active";
+    } else if (displayCpo <= maxCpo) {
+      desiredActive = true;
+      state = "active";
+      manualProtected = false; // CPO в пределах плана — защита не нужна
+    } else {
+      desiredActive = false;
+      state = "excluded_high";
+      manualProtected = false; // авто-исключение по CPO сильнее ручной защиты
     }
 
     let decision: ClusterDecision["decision"] = "noop";
@@ -343,7 +328,7 @@ export class ProductClusterAutomationService {
     return {
       normalizedClusterName: input.normalizedClusterName,
       clusterName: input.clusterName,
-      effectiveCpo: effectiveCpo != null && Number.isFinite(effectiveCpo) ? round2(effectiveCpo) : null,
+      effectiveCpo: effectiveCpoForDisplay,
       spend: input.spend,
       state,
       manualProtected,
