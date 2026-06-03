@@ -219,6 +219,14 @@ export function resolveProductSnapshotWarmupConcurrency(
     // "startup" – сервер только стартовал, держим нагрузку низкой.
     case "startup":
       return 2;
+    // "precompute" – ночной bulk-прогон по ВСЕМ товарам (precomputeNextDayPeriod).
+    // Строго 1 одновременная сборка: каждый build тянет всю «вселенную запросов»
+    // товара из wb_cabinet_cluster_queries (8M+ строк) в JS-объекты; при concurrency 5
+    // пять таких «месячных» сборок одновременно пробивали heap-лимит 1536 МБ и роняли
+    // бэкенд FATAL heap OOM каждый вечер (≈19:30). Дневной on-demand путь делает по
+    // одной сборке за раз и память не пробивает — поэтому сериализуем ночной прогон.
+    case "precompute":
+      return 1;
     // Интерактивный прогрев при открытии товара пользователем.
     case "visible":
       return 3;

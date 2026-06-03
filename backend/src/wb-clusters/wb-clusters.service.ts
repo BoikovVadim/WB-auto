@@ -1493,10 +1493,13 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
   }
 
   /**
-   * Запускается ежедневно в 22:30 МСК (19:30 UTC).
+   * Запускается ежедневно в 22:30 МСК (сервер в TZ Europe/Moscow).
    * Заранее материализует 7-дневный диапазон СЛЕДУЮЩЕГО дня для всех товаров.
    * К полуночи снапшоты уже готовы — пользователь утром видит данные мгновенно,
    * без ожидания пока фоновая материализация пройдёт по всем 166+ товарам.
+   * Прогон серийный (priority "precompute" → concurrency 1): каждая сборка тянет
+   * всю «вселенную запросов» товара в память, и параллельные сборки раньше
+   * пробивали heap-лимит и роняли бэкенд FATAL OOM.
    */
   async precomputeNextDayPeriod() {
     if (!this.wbClustersRepository.isConfigured()) {
@@ -1520,7 +1523,7 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
       this.logger.log(
         `Нночной пре-компьютинг: материализация ${nextWeekPeriod.start}..${nextWeekPeriod.end} для ${nmIds.length} товаров.`,
       );
-      this.scheduleProductAdvertisingSheetWarmup(nmIds, "precompute-next-day", nextWeekPeriod, "background");
+      this.scheduleProductAdvertisingSheetWarmup(nmIds, "precompute-next-day", nextWeekPeriod, "precompute");
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Ночной пре-компьютинг не удался: ${msg}`);

@@ -60,4 +60,9 @@ export type ProductPresetSnapshotJobStatus =
   | "failed"
   | "retry_scheduled";
 
-export type ProductSnapshotWarmupPriority = "startup" | "visible" | "candidate" | "background";
+export type ProductSnapshotWarmupPriority =
+  | "startup"
+  | "visible"
+  | "candidate"
+  | "background"
+  | "precompute";

@@ -104,10 +104,15 @@ export class WbClustersScheduler implements OnModuleInit {
       .catch((err: Error) => this.logger.warn(`handleVendorCodeSync category sync error: ${err.message}`));
   }
 
-  // Ночной пре-компьютинг в 22:30 МСК (19:30 UTC).
+  // Ночной пре-компьютинг в 22:30 МСК. Сервер в TZ Europe/Moscow → cron-строка
+  // трактуется как МСК (cron-строка "0 30 22" = 22:30 МСК). Раньше стояло "0 30 19"
+  // с пометкой "22:30 МСК (19:30 UTC)" — ошибочной: при московской TZ это срабатывало
+  // в 19:30 МСК (вечерний пик), а тяжёлый bulk-прогон по всем товарам пробивал heap
+  // и ронял бэкенд FATAL OOM. Сборки теперь идут серийно (priority "precompute",
+  // concurrency 1), а окно сдвинуто на тихие 22:30.
   // Заранее материализует 7-дневный диапазон следующего дня для всех товаров,
   // чтобы утром пользователь видел данные мгновенно без ожидания фоновой очереди.
-  @Cron("0 30 19 * * *")
+  @Cron("0 30 22 * * *")
   async handlePrecomputeNextDayPeriod() {
     await this.wbClustersService
       .precomputeNextDayPeriod()
