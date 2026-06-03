@@ -9,6 +9,7 @@ import {
   saveWorkspaceScroll,
 } from "./productAdvertisingWorkspaceScroll";
 import { ProductAdvertisingClusterTableSection } from "./ProductAdvertisingClusterTableSection";
+import { ProductAdvertisingClusterTableSkeleton } from "./ProductAdvertisingClusterTableSkeleton";
 import { ProductAdvertisingWorkspaceState } from "./ProductAdvertisingWorkspaceState";
 import { useProductAdvertisingClusterSectionState } from "./useProductAdvertisingClusterSectionState";
 
@@ -46,15 +47,14 @@ export function ProductAdvertisingWorkspacePane(props: {
         </div>
       );
     }
-    // Показываем индикатор загрузки всегда пока workspace=null, независимо от
-    // флага isWorkspaceLoading. Это предотвращает пустую страницу при тихих
-    // ошибках (503/502/network) когда error=null, loading=false, workspace=null.
+    // Пока workspace=null (холодный старт, нет даже latest-кэша) — показываем сразу
+    // скелетон-каркас таблицы РК, а не текстовую «фразу». Это убирает лишнее визуальное
+    // переключение «фраза → каркас со скелетоном» и совпадает с финальным макетом.
     return (
       <div className="wb-products-page">
-        <ProductAdvertisingWorkspaceState
-          title={ui.campaignOverviewTitle}
-          message="Загружаем данные кампаний…"
-        />
+        <section className="wb-product-workspace">
+          <ProductAdvertisingClusterTableSkeleton />
+        </section>
       </div>
     );
   }

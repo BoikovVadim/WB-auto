@@ -17,6 +17,7 @@ import {
 import type { AdvertisingDateBounds, AdvertisingDatePreset, AdvertisingDateRange } from "./date";
 import { ProductAdvertisingClusterDataTable } from "./ProductAdvertisingClusterDataTable";
 import { ProductAdvertisingClusterOverview } from "./ProductAdvertisingClusterOverview";
+import { ProductAdvertisingClusterTableSkeleton } from "./ProductAdvertisingClusterTableSkeleton";
 
 type ClusterQueriesState = {
   loading: boolean;
@@ -119,23 +120,6 @@ export type ProductAdvertisingClusterTableSectionProps = {
   onClusterNameWidthChange: (width: number) => void;
 };
 
-function ClusterTableSkeleton() {
-  return (
-    <div className="wb-cluster-skeleton-wrap">
-      {Array.from({ length: 8 }, (_, i) => (
-        <div key={i} className="wb-cluster-skeleton-row">
-          <div className="wb-cluster-skeleton-cell wb-cluster-skeleton-cell--wide" />
-          <div className="wb-cluster-skeleton-cell" />
-          <div className="wb-cluster-skeleton-cell" />
-          <div className="wb-cluster-skeleton-cell" />
-          <div className="wb-cluster-skeleton-cell" />
-          <div className="wb-cluster-skeleton-cell" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function ProductAdvertisingClusterTableSection(
   props: ProductAdvertisingClusterTableSectionProps,
 ) {
@@ -199,7 +183,7 @@ export function ProductAdvertisingClusterTableSection(
       <ProductAdvertisingClusterOverview {...props} />
       {props.selectedCampaignAdvertId !== null ? (
         showSkeleton ? (
-          <ClusterTableSkeleton />
+          <ProductAdvertisingClusterTableSkeleton />
         ) : shouldShowTable ? (
           <div
             className="wb-advertising-cluster-table-wrap"

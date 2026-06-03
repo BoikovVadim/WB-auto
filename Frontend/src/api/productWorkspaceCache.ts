@@ -31,6 +31,10 @@ function buildExactCacheKey(
   return ["wb-workspace", String(nmId), normalized.startDate, normalized.endDate].join(":");
 }
 
+function buildLatestCacheKey(nmId: number): string {
+  return ["wb-workspace-latest", String(nmId)].join(":");
+}
+
 export function cacheProductWorkspace(
   nmId: number,
   input: ProductAdvertisingSheetRequestInput | undefined,
@@ -39,6 +43,10 @@ export function cacheProductWorkspace(
   const key = buildExactCacheKey(nmId, input);
   productWorkspaceMemoryCache.set(key, value);
   productWorkspaceSessionCache.write(key, value);
+  // Дополнительно — под ключом «последний по товару». На F5 период (requestInput) сначала
+  // «прыгает» (today→период из export), поэтому точный ключ промахивается; latest-by-nmId
+  // даёт мгновенный кадр последнего показанного воркспейса, ревалидация подменит актуальным.
+  productWorkspaceSessionCache.write(buildLatestCacheKey(nmId), value);
 }
 
 export function getCachedProductWorkspace(
@@ -54,6 +62,9 @@ export function getCachedProductWorkspace(
     productWorkspaceMemoryCache.set(key, fromSession);
     return fromSession;
   }
+  // Точный период ещё не устаканился — отдаём последний воркспейс товара (stale-while-revalidate).
+  const latest = productWorkspaceSessionCache.read(buildLatestCacheKey(nmId));
+  if (latest) return latest;
   return null;
 }
 

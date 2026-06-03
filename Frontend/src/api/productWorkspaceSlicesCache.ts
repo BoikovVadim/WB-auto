@@ -43,6 +43,10 @@ function buildClusterBundleSessionKey(nmId: number, startDate: string, endDate: 
   return [String(nmId), startDate, endDate].join(":");
 }
 
+function buildClusterBundleLatestKey(nmId: number): string {
+  return ["latest", String(nmId)].join(":");
+}
+
 export function persistClusterBundleToSession(
   nmId: number,
   startDate: string,
@@ -51,6 +55,9 @@ export function persistClusterBundleToSession(
 ): void {
   if (Object.keys(tables).length === 0) return;
   clusterBundleSessionCache.write(buildClusterBundleSessionKey(nmId, startDate, endDate), tables);
+  // Латест-по-товару: на F5 период «прыгает», точный ключ промахивается — этот fallback
+  // даёт мгновенный кадр таблицы РК (ревалидация под актуальный период подменит данные).
+  clusterBundleSessionCache.write(buildClusterBundleLatestKey(nmId), tables);
 }
 
 export function getClusterBundleFromSession(
@@ -72,12 +79,16 @@ export function getCachedClusterTableFromSessionBundle(input: {
   requestInput?: ProductAdvertisingSheetRequestInput | null;
 }): ProductAdvertisingWorkspaceClusterTableResponse | null {
   const normalizedInput = normalizeProductAdvertisingSheetRequestInput(input.requestInput);
-  const bundle = getClusterBundleFromSession(
+  const exact = getClusterBundleFromSession(
     input.nmId,
     normalizedInput.startDate,
     normalizedInput.endDate,
   );
-  return bundle?.[String(input.advertId)] ?? null;
+  const fromExact = exact?.[String(input.advertId)] ?? null;
+  if (fromExact) return fromExact;
+  // Точный период ещё не устаканился (today→период из export) — берём latest-по-товару.
+  const latest = clusterBundleSessionCache.read(buildClusterBundleLatestKey(input.nmId));
+  return latest?.[String(input.advertId)] ?? null;
 }
 
 export function buildProductWorkspaceClusterTableCacheKey(input: {
