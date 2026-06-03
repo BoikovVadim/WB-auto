@@ -124,6 +124,26 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
   }
 
   /**
+   * Кампании товара (для per-product автоматизации из таблицы товаров): все РК, в которых
+   * участвует nmId. Имя — для подписи в модалке. Множество совпадает с колонкой «РК»
+   * таблицы товаров (источник тот же — wb_campaign_products).
+   */
+  async getProductCampaignAdvertIds(
+    nmId: number,
+  ): Promise<{ advertId: number; name: string | null }[]> {
+    await this.ensureSchemaOrThrow();
+    const result = await this.getPool().query<{ advert_id: string; name: string | null }>(
+      `SELECT cp.advert_id::text, c.name
+       FROM ${this.tableName("wb_campaign_products")} cp
+       JOIN ${this.tableName("wb_campaigns")} c ON c.advert_id = cp.advert_id
+       WHERE cp.nm_id = $1
+       ORDER BY c.advert_id`,
+      [nmId],
+    );
+    return result.rows.map((r) => ({ advertId: Number(r.advert_id), name: r.name }));
+  }
+
+  /**
    * Входы для CPO по каждому кластеру (advert, nm) за скользящие 30 дней: расход и заказы
    * РК, JAM-заказы, текущее состояние на WB (с overlay действий) и дата последней статистики.
    */

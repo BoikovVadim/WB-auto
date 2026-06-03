@@ -25,6 +25,11 @@ async function refresh(): Promise<void> {
   }
 }
 
+/** Перезапросить сводные статусы и оповестить подписчиков (после смены режима из модалки). */
+export async function refreshProductAutomationStatuses(): Promise<void> {
+  await refresh();
+}
+
 /**
  * Сводный статус автоматизации по товарам (nmId → режим) для колонки в таблице.
  * Возвращает карту; пустую — пока грузится. `active=false` отключает загрузку.

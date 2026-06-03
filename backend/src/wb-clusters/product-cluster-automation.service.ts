@@ -112,6 +112,74 @@ export class ProductClusterAutomationService {
   }
 
   /**
+   * Детализация автоматизации по ОДНОМУ товару (для модалки из таблицы товаров): режим
+   * товара (live > preview > off), список его кампаний с их режимами и агрегированные
+   * счётчики кластеров (актив/чёрный/искл. по CPO) по всем кампаниям. Когда режим off —
+   * счётчики нулевые (движок ещё не считал); «Предпросмотр» включит расчёт и наполнит их.
+   */
+  async getProductAutomationDetail(nmId: number): Promise<{
+    nmId: number;
+    mode: AutomationMode;
+    campaigns: { advertId: number; name: string | null; mode: AutomationMode }[];
+    counts: { active: number; blacklisted: number; high: number };
+  }> {
+    const campaignList = await this.repository.getProductCampaignAdvertIds(nmId);
+    const perCampaign = await Promise.all(
+      campaignList.map(async (c) => {
+        const status = await this.getStatus(c.advertId, nmId);
+        return {
+          advertId: c.advertId,
+          name: c.name,
+          mode: status.mode,
+          active: status.clusters.filter(
+            (x) => x.state === "active" || x.state === "manual_protected" || x.state === "protected",
+          ).length,
+          blacklisted: status.clusters.filter((x) => x.state === "blacklisted").length,
+          high: status.clusters.filter((x) => x.state === "excluded_high").length,
+        };
+      }),
+    );
+    const mode: AutomationMode = perCampaign.some((c) => c.mode === "live")
+      ? "live"
+      : perCampaign.some((c) => c.mode === "preview")
+        ? "preview"
+        : "off";
+    const counts = perCampaign.reduce(
+      (acc, c) => ({
+        active: acc.active + c.active,
+        blacklisted: acc.blacklisted + c.blacklisted,
+        high: acc.high + c.high,
+      }),
+      { active: 0, blacklisted: 0, high: 0 },
+    );
+    return {
+      nmId,
+      mode,
+      campaigns: perCampaign.map((c) => ({ advertId: c.advertId, name: c.name, mode: c.mode })),
+      counts,
+    };
+  }
+
+  /**
+   * Установить режим автоматизации сразу для ВСЕХ кампаний товара (вкл/выкл из таблицы
+   * товаров). Серийно — setMode каждой кампании в preview/live запускает прогон evaluateOne
+   * (в live реально пишет на WB); параллель засушила бы пул и долбила WB. Возвращает свежую
+   * детализацию для модалки.
+   */
+  async setProductMode(nmId: number, mode: AutomationMode): Promise<{
+    nmId: number;
+    mode: AutomationMode;
+    campaigns: { advertId: number; name: string | null; mode: AutomationMode }[];
+    counts: { active: number; blacklisted: number; high: number };
+  }> {
+    const campaignList = await this.repository.getProductCampaignAdvertIds(nmId);
+    for (const c of campaignList) {
+      await this.setMode(c.advertId, nmId, mode);
+    }
+    return this.getProductAutomationDetail(nmId);
+  }
+
+  /**
    * Полная замена белого и чёрного списков. Если автоматика включена — сразу прогон, чтобы
    * списки применились без ожидания крона (в live реально вкл/выкл соответствующие кластеры).
    */

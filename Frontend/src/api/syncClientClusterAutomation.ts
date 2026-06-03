@@ -64,6 +64,45 @@ export async function fetchProductAutomationStatuses(): Promise<ProductAutomatio
   return response.data ?? { byNmId: {} };
 }
 
+// --- Автоматизация по ТОВАРУ (модалка из колонки «Авто») ---
+
+export type ProductAutomationDetail = {
+  nmId: number;
+  /** Режим товара: live > preview > off. */
+  mode: AutomationMode;
+  campaigns: { advertId: number; name: string | null; mode: AutomationMode }[];
+  /** Агрегированные счётчики кластеров по всем кампаниям товара. */
+  counts: { active: number; blacklisted: number; high: number };
+};
+
+const EMPTY_PRODUCT_DETAIL: ProductAutomationDetail = {
+  nmId: 0,
+  mode: "off",
+  campaigns: [],
+  counts: { active: 0, blacklisted: 0, high: 0 },
+};
+
+/** Детализация автоматизации по одному товару (режим + кампании + счётчики). */
+export async function fetchProductAutomationDetail(nmId: number): Promise<ProductAutomationDetail> {
+  const response = await apiClient.get<ProductAutomationDetail>(
+    `/wb-clusters/products/${nmId}/automation`,
+  );
+  return response.data ?? { ...EMPTY_PRODUCT_DETAIL, nmId };
+}
+
+/** Сменить режим автоматизации сразу для всех кампаний товара. */
+export async function setProductAutomationMode(
+  nmId: number,
+  mode: AutomationMode,
+): Promise<ProductAutomationDetail> {
+  const response = await apiClient.put<ProductAutomationDetail>(
+    `/wb-clusters/products/${nmId}/automation`,
+    { mode },
+    { headers: buildWbClustersWriteHeaders() },
+  );
+  return response.data ?? { ...EMPTY_PRODUCT_DETAIL, nmId, mode };
+}
+
 // --- Настройка фильтров (защищённые кластеры) ---
 
 export type ClusterFilterRow = {

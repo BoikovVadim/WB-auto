@@ -20,6 +20,22 @@ export class ProductClusterAutomationController {
     return this.service.getProductAutomationStatuses();
   }
 
+  /** Детализация автоматизации по товару (режим + кампании + счётчики) — для модалки из таблицы товаров. */
+  @Get(":nmId/automation")
+  getProductAutomationDetail(@Param("nmId", ParseIntPipe) nmId: number) {
+    return this.service.getProductAutomationDetail(nmId);
+  }
+
+  /** Сменить режим автоматизации сразу для всех кампаний товара (off | preview | live). */
+  @Put(":nmId/automation")
+  @UseGuards(WbClustersWriteGuard)
+  setProductMode(
+    @Param("nmId", ParseIntPipe) nmId: number,
+    @Body() body: SetAutomationModeDto,
+  ) {
+    return this.service.setProductMode(nmId, body.mode);
+  }
+
   /** Статус автоматизации кампании + per-cluster решения (для бейджей в таблице). */
   @Get(":nmId/campaigns/:advertId/automation")
   getStatus(

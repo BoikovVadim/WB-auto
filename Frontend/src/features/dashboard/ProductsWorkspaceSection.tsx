@@ -1,6 +1,7 @@
-import { memo, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { ProductAutomationStatusEntry } from "../../api/syncClientClusterAutomation";
+import { ProductAutomationModal } from "./advertising/ProductAutomationModal";
 import { useProductAutomationStatuses } from "./advertising/useProductAutomationStatuses";
 import { ui } from "./copy";
 import {
@@ -64,6 +65,17 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
 
   // Сводный статус автоматизации по товарам — для колонки «Авто» (видно, у кого включено).
   const automationByNmId = useProductAutomationStatuses(true);
+
+  // Модалка управления автоматизацией по товару (клик по ячейке «Авто»).
+  const [automationModalProduct, setAutomationModalProduct] = useState<{
+    nmId: number;
+    name: string;
+  } | null>(null);
+
+  const openAutomationModal = (nmId: number | null, name: string) => {
+    if (nmId === null) return;
+    setAutomationModalProduct({ nmId, name });
+  };
 
   const measureProductsHeaderMinWidth = (label: string, fallback: number) => {
     const EXTRA_SPACE = 46; // sort arrow + button gap + inner paddings + resize handle room
@@ -388,7 +400,18 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                         {product.campaignCounts && product.campaignCounts.disabled > 0 ? String(product.campaignCounts.disabled) : "—"}
                       </td>
                       <td className="wb-table-cell--numeric">
-                        {renderAutomationBadge(product.nmId === null ? undefined : automationByNmId[product.nmId])}
+                        {product.nmId === null ? (
+                          renderAutomationBadge(undefined)
+                        ) : (
+                          <button
+                            type="button"
+                            title="Управление автоматизацией по CPO для всех кампаний товара"
+                            onClick={() => openAutomationModal(product.nmId, getDisplayVendorCode(product))}
+                            style={{ background: "none", border: "none", padding: 0, margin: 0, cursor: "pointer", font: "inherit" }}
+                          >
+                            {renderAutomationBadge(automationByNmId[product.nmId])}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -401,6 +424,13 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
             </table>
           </div>
         </section>
+        {automationModalProduct ? (
+          <ProductAutomationModal
+            nmId={automationModalProduct.nmId}
+            productName={automationModalProduct.name}
+            onClose={() => setAutomationModalProduct(null)}
+          />
+        ) : null}
       </div>
     );
   }
