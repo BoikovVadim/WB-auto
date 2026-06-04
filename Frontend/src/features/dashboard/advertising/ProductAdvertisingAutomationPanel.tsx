@@ -42,7 +42,20 @@ export function ProductAdvertisingAutomationPanel(props: {
         />
         <span>Автоматизация</span>
         {props.mode === "live" && (
-          <span className="wb-automation-panel__mode wb-automation-panel__mode--live">· включена</span>
+          <span
+            className="wb-automation-panel__mode wb-automation-panel__mode--live"
+            title="Боевой режим: автоматика реально вкл/выкл кластеры на WB каждые 10 минут"
+          >
+            · активна
+          </span>
+        )}
+        {props.mode === "preview" && (
+          <span
+            className="wb-automation-panel__mode wb-automation-panel__mode--preview"
+            title="Предпросмотр: автоматика считает решения, но НЕ меняет кластеры на WB. Нажмите «Включить автоматизацию», чтобы применять изменения."
+          >
+            · предпросмотр
+          </span>
         )}
       </label>
 

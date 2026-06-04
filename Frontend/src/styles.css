@@ -1945,6 +1945,11 @@ input {
   font-weight: 600;
 }
 
+.wb-automation-panel__mode--preview {
+  color: #b8860b;
+  font-weight: 600;
+}
+
 .wb-automation-panel__counts {
   display: flex;
   flex-direction: column;
