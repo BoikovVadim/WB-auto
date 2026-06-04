@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS LaunchAgent: ежедневное фоновое обновление карты запросов кластеров
+  (wb_cabinet_cluster_queries) через headless Playwright, БЕЗ Safari/AppleScript.
+
+  Что делает каждый день в 09:40:
+    1. SSH-туннель к проду PostgreSQL (порт 15432).
+    2. Login-on-demand для cmp.wildberries.ru: headless-проверка cmp-сессии; если
+       cmp-cookie протухла — открывает ВИДИМОЕ окно Chromium, silent-SSO по
+       seller-passport молча восстанавливает сессию (~26с, без ввода пароля),
+       сохраняет storageState; если истёк и passport — баннер «нужен вход» + ждёт.
+    3. Headless по каждому активному/приостановленному РК дёргает
+       /api/v5/words-clusters?advertID=..., парсит состав кластеров, пишет в БД
+       (порядок «самые несвежие первыми» — ротация хвоста за лимит cmp-сессии).
+    4. macOS-баннер о результате. Закрывает туннель.
+
+  Заменяет прежний Safari-агент com.wb-automation.query-map-update — его нужно
+  выгрузить, чтобы не было двойного обновления в 09:40.
+
+  Установка:
+    cp com.wb-automation.headless-query-map.plist ~/Library/LaunchAgents/
+    launchctl unload ~/Library/LaunchAgents/com.wb-automation.query-map-update.plist
+    launchctl load ~/Library/LaunchAgents/com.wb-automation.headless-query-map.plist
+
+  Тест немедленно:
+    launchctl start com.wb-automation.headless-query-map
+
+  Логи:
+    tail -f ~/wb-automation/logs/wb-headless-query-map.log
+    tail -f ~/wb-automation/logs/wb-headless-query-map-error.log
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.wb-automation.headless-query-map</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/elizavetabojkova/wb-automation/backend/src/wb-clusters/run-headless-query-map.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/elizavetabojkova/wb-automation/backend</string>
+
+    <!-- Каждый день в 09:40 локального времени (после выгрузки частот в 09:00) -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>40</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/elizavetabojkova/wb-automation/logs/wb-headless-query-map.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/elizavetabojkova/wb-automation/logs/wb-headless-query-map-error.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
