@@ -27,7 +27,13 @@ export function buildProductAdvertisingWorkspaceClusterQueriesResponse(input: {
       .filter(
         (query) => buildWorkspaceClusterKey(query.advertId, query.clusterName) === input.clusterKey,
       )
-      .filter((query) => query.isCanonicalClusterQuery),
+      .filter((query) => query.isCanonicalClusterQuery)
+      // Показываем только «качественные» запросы — с известной частотностью (>0).
+      // Низкочастотный/безчастотный хвост (брендированные, артикульные, сверхдлинные
+      // запросы, которых нет в частотных отчётах WB) скрываем из состава кластера.
+      // Данные в БД не трогаем — фильтр на чтении; на сумму частоты кластера хвост
+      // и так вносил 0, поэтому тоталы не меняются.
+      .filter((query) => typeof query.monthlyFrequency === "number" && query.monthlyFrequency > 0),
   ).sort((left, right) =>
     compareWorkspaceClusterQueryRows(left, right, input.sortKey, input.sortDirection),
   );
