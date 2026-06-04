@@ -3,7 +3,7 @@
 <!--
   macOS LaunchAgent: ежедневная фоновая выгрузка частот поисковых запросов WB.
 
-  Что делает каждый день в 09:00 (headless Playwright, БЕЗ Safari):
+  Что делает каждый день в 09:40 (headless Playwright, БЕЗ Safari):
     1. Открывает SSH-туннель к проду PostgreSQL (порт 15432).
     2. Login-on-demand: проверяет сессию кабинета headless-запросом. Если сессия
        мертва — открывает ВИДИМОЕ окно Chromium, шлёт macOS-баннер «нужен вход»,
@@ -13,7 +13,7 @@
     4. macOS-баннер о результате (готово / ошибка). Закрывает туннель.
 
   Заменяет прежний Safari-механизм (com.wb-automation.monthly-frequency-import) —
-  его нужно выгрузить, чтобы не было двойного импорта в 09:00.
+  его нужно выгрузить, чтобы не было двойного импорта в 09:40.
 
   Предусловия:
     - SSH-ключ пускает без пароля на root@95.163.226.154.
@@ -47,13 +47,13 @@
     <key>WorkingDirectory</key>
     <string>/Users/elizavetabojkova/wb-automation/backend</string>
 
-    <!-- Каждый день в 09:00 локального времени -->
+    <!-- Каждый день в 09:40 локального времени -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
         <integer>9</integer>
         <key>Minute</key>
-        <integer>0</integer>
+        <integer>40</integer>
     </dict>
 
     <key>StandardOutPath</key>

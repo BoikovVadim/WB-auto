@@ -232,6 +232,23 @@ export async function replaceMonthlyFrequencySnapshot(
     // Disable statement timeout for large bulk inserts, restore after
     await client.query("SET statement_timeout = 0");
 
+    // Храним только частоты, входящие в состав кластеров: из ~3.9M скачанных строк
+    // реально матчится ~2%, остальные 98% — балласт (таблица раздувалась до 5 ГБ).
+    // Фильтруем при вставке по EXISTS в wb_cabinet_cluster_queries (единая identity-
+    // нормализация в БД). Состав обновляется синком query-map ПЕРЕД выгрузкой частот,
+    // поэтому новые запросы получают частоту сразу, без лага. Guard: если состава нет
+    // (первый запуск/dev) — вставляем всё, чтобы не потерять данные.
+    const cabinetCountResult = await client.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM ${tableName("wb_cabinet_cluster_queries")}`,
+    );
+    const filterByCabinet = Number(cabinetCountResult.rows[0]?.count ?? 0) > 0;
+    const cabinetFilterClause = filterByCabinet
+      ? `WHERE EXISTS (
+            SELECT 1 FROM ${tableName("wb_cabinet_cluster_queries")} c
+            WHERE c.normalized_query_identity = t.normalized_query_identity
+          )`
+      : "";
+
     const rowsArray = Array.from(deduplicatedRows.values());
     const chunkSize = 50_000; // ~30 roundtrips for 1.5M rows, each chunk ~8 MB
 
@@ -268,11 +285,18 @@ export async function replaceMonthlyFrequencySnapshot(
             report_start_date, report_end_date, subject_name, synced_at
           )
           SELECT
-            UNNEST($1::text[]), UNNEST($2::text[]), UNNEST($3::text[]),
-            UNNEST($4::text[]), UNNEST($5::numeric[]), UNNEST($6::text[]),
-            UNNEST($7::text[]), UNNEST($8::text[]),
-            UNNEST($9::date[]), UNNEST($10::date[]),
-            UNNEST($11::text[]), NOW()`,
+            t.normalized_query_text, t.normalized_query_identity, t.normalized_query_stem,
+            t.query_text, t.monthly_frequency, t.report_type, t.report_id, t.download_id,
+            t.report_start_date, t.report_end_date, t.subject_name, NOW()
+          FROM UNNEST(
+            $1::text[], $2::text[], $3::text[], $4::text[], $5::numeric[], $6::text[],
+            $7::text[], $8::text[], $9::date[], $10::date[], $11::text[]
+          ) AS t(
+            normalized_query_text, normalized_query_identity, normalized_query_stem,
+            query_text, monthly_frequency, report_type, report_id, download_id,
+            report_start_date, report_end_date, subject_name
+          )
+          ${cabinetFilterClause}`,
         [
           normalizedQueryTextArr, normalizedQueryIdentityArr, normalizedQueryStemArr,
           queryTextArr, monthlyFrequencyArr, reportTypeArr,

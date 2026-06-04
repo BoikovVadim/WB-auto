@@ -4,7 +4,7 @@
   macOS LaunchAgent: ежедневное фоновое обновление карты запросов кластеров
   (wb_cabinet_cluster_queries) через headless Playwright, БЕЗ Safari/AppleScript.
 
-  Что делает каждый день в 09:40:
+  Что делает каждый день в 09:00:
     1. SSH-туннель к проду PostgreSQL (порт 15432).
     2. Login-on-demand для cmp.wildberries.ru: headless-проверка cmp-сессии; если
        cmp-cookie протухла — открывает ВИДИМОЕ окно Chromium, silent-SSO по
@@ -16,7 +16,7 @@
     4. macOS-баннер о результате. Закрывает туннель.
 
   Заменяет прежний Safari-агент com.wb-automation.query-map-update — его нужно
-  выгрузить, чтобы не было двойного обновления в 09:40.
+  выгрузить, чтобы не было двойного обновления в 09:00.
 
   Установка:
     cp com.wb-automation.headless-query-map.plist ~/Library/LaunchAgents/
@@ -44,13 +44,13 @@
     <key>WorkingDirectory</key>
     <string>/Users/elizavetabojkova/wb-automation/backend</string>
 
-    <!-- Каждый день в 09:40 локального времени (после выгрузки частот в 09:00) -->
+    <!-- Каждый день в 09:00 локального времени (перед выгрузкой частот в 09:40) -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
         <integer>9</integer>
         <key>Minute</key>
-        <integer>40</integer>
+        <integer>0</integer>
     </dict>
 
     <key>StandardOutPath</key>
