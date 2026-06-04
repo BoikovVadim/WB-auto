@@ -57,17 +57,6 @@ function extractRowsFromZip(buffer: Buffer): MonthlyFrequencyRow[] {
   });
 }
 
-/** Категории товаров продавца (имена) — их маппим на аналитический subjectID. */
-async function loadSellerCategoryNames(client: Client): Promise<string[]> {
-  const result = await client.query<{ category_name: string }>(
-    `SELECT DISTINCT category_name
-     FROM public.wb_product_catalog
-     WHERE category_name IS NOT NULL
-     ORDER BY category_name`,
-  );
-  return result.rows.map((r) => r.category_name.trim()).filter(Boolean);
-}
-
 async function main(): Promise<void> {
   const dryRun = (process.env.DRY_RUN ?? "").trim() === "1";
   const categoryFilter = (process.env.CATEGORY_FILTER ?? "")
@@ -84,35 +73,26 @@ async function main(): Promise<void> {
   console.log(`=== Headless Monthly Frequency by Category ===`);
   console.log(`Период: ${period.from} → ${period.to} | DRY_RUN: ${dryRun}`);
 
-  // Категории → subjectIds из БД.
+  // Создаём таблицу частот, если ещё нет (отдельное короткое подключение).
   const dbClient = new Client(getRequiredMonthlyFrequencyPostgresConfig());
   await dbClient.connect();
-  let sellerNames: string[];
   try {
     await ensureMonthlyFrequencyTable(dbClient);
-    sellerNames = await loadSellerCategoryNames(dbClient);
   } finally {
     await dbClient.end();
   }
 
-  // Маппинг названий категорий продавца → аналитический subjectID (по одной на категорию).
-  let categories: Array<[string, number]> = [];
-  const unmatched: string[] = [];
-  for (const name of sellerNames) {
-    const id = WB_ANALYTICS_CATEGORY_SUBJECT_IDS[name];
-    if (typeof id === "number") categories.push([name, id]);
-    else unmatched.push(name);
-  }
+  // Качаем ВСЕ категории справочника WB (а не только категории продавца): запрос из
+  // кластера может ранжироваться в чужой категории — её топ-отчёт нужен, чтобы закрыть
+  // его частотность. CATEGORY_FILTER при необходимости сужает набор.
+  let categories: Array<[string, number]> = Object.entries(WB_ANALYTICS_CATEGORY_SUBJECT_IDS);
   if (categoryFilter.length > 0) {
     categories = categories.filter(([name]) => categoryFilter.includes(name));
   }
   if (categories.length === 0) {
-    throw new Error("Ни одна категория продавца не сматчилась с картой subjectID (или фильтр пуст).");
+    throw new Error("Список категорий пуст (проверь CATEGORY_FILTER).");
   }
   console.log(`Категорий к выгрузке: ${categories.length}`);
-  if (unmatched.length > 0) {
-    console.log(`Без аналитического subjectID (пропускаю): ${unmatched.join(", ")}`);
-  }
 
   // Login-on-demand: жива ли сессия? Если нет — откроется окно входа, ждём.
   await ensureWbSession({ storageStatePath: STORAGE_STATE_PATH, log: (m) => console.log(m) });
