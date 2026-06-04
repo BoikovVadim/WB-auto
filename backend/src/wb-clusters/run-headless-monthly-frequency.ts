@@ -125,17 +125,35 @@ async function main(): Promise<void> {
   const globalRows = new Map<string, MonthlyFrequencyRow>();
   const stats: Array<{ category: string; rows: number; passes: number; error?: string }> = [];
 
+  // Скачивание иногда рвётся транзиентно (socket hang up) — ретраим, чтобы одна
+  // сетевая ошибка из 26 категорий не валила весь импорт.
+  const retryAsync = async <T>(fn: () => Promise<T>, attempts = 3): Promise<T> => {
+    let lastErr: unknown;
+    for (let i = 0; i < attempts; i += 1) {
+      try {
+        return await fn();
+      } catch (e) {
+        lastErr = e;
+        if (i < attempts - 1) await new Promise((r) => setTimeout(r, 3000 * (i + 1)));
+      }
+    }
+    throw lastErr;
+  };
+  // Playwright кладёт в error.message весь call log с x-download-token и cookie —
+  // в лог берём только первую строку, чтобы не светить сессию в файлах логов.
+  const firstLine = (m: string) => m.split("\n")[0].slice(0, 200);
+
   await client.runImportSession(REPORT_TYPE, async (session) => {
     for (const [categoryName, subjectId] of categories) {
       const t0 = Date.now();
       try {
-        const desc = await session.createAndDownload([subjectId], "desc");
+        const desc = await retryAsync(() => session.createAndDownload([subjectId], "desc"));
         const rows1 = extractRowsFromZip(desc.buffer);
         let rows = rows1;
         let passes = 1;
         if (rows1.length >= MAX_ROWS) {
           // Возможна обрезка по 300k — добираем хвост по возрастанию и мёржим.
-          const asc = await session.createAndDownload([subjectId], "asc");
+          const asc = await retryAsync(() => session.createAndDownload([subjectId], "asc"));
           const rows2 = extractRowsFromZip(asc.buffer);
           const merged = new Map<string, MonthlyFrequencyRow>();
           for (const r of [...rows1, ...rows2]) {
@@ -157,7 +175,7 @@ async function main(): Promise<void> {
             ` за ${Math.round((Date.now() - t0) / 1000)}с | глобально: ${globalRows.size}`,
         );
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
+        const msg = firstLine(error instanceof Error ? error.message : String(error));
         stats.push({ category: categoryName, rows: 0, passes: 0, error: msg });
         console.error(`  ✗ [${categoryName}] FAILED: ${msg}`);
       }
