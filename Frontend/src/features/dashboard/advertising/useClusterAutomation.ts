@@ -29,15 +29,23 @@ export function useClusterAutomation(
   const [status, setStatus] = useState<ClusterAutomationStatus>(EMPTY);
   const [isBusy, setIsBusy] = useState(false);
   const isMountedRef = useRef(true);
+  // Монотонный счётчик запросов: применяем ответ ТОЛЬКО если он от последнего
+  // выпущенного запроса. Без него медленный начальный GET (тяжёлый getProductCpo),
+  // выпущенный пока в БД ещё mode=off, дорезолвливался ПОСЛЕ свежего setMode и
+  // перетирал его результат на off — флажок сбрасывался, числа обнулялись, и
+  // приходилось кликать второй раз. Последнее действие пользователя авторитетно.
+  const requestGenRef = useRef(0);
 
   const load = useCallback(() => {
     if (nmId === null || advertId === null) {
+      requestGenRef.current += 1; // инвалидируем любые ответы в полёте
       setStatus(EMPTY);
       return;
     }
+    const gen = ++requestGenRef.current;
     fetchClusterAutomationStatus(nmId, advertId)
       .then((s) => {
-        if (isMountedRef.current) setStatus(s);
+        if (isMountedRef.current && gen === requestGenRef.current) setStatus(s);
       })
       .catch(() => {
         /* keep previous */
@@ -60,13 +68,14 @@ export function useClusterAutomation(
     async (mode: AutomationMode) => {
       if (nmId === null || advertId === null) return;
       const prev = status;
+      const gen = ++requestGenRef.current; // write — самый свежий запрос; гасит in-flight GET
       setStatus((s) => ({ ...s, mode })); // optimistic
       setIsBusy(true);
       try {
         const next = await setClusterAutomationMode(nmId, advertId, mode);
-        if (isMountedRef.current) setStatus(next);
+        if (isMountedRef.current && gen === requestGenRef.current) setStatus(next);
       } catch {
-        if (isMountedRef.current) setStatus(prev); // rollback
+        if (isMountedRef.current && gen === requestGenRef.current) setStatus(prev); // rollback
       } finally {
         if (isMountedRef.current) setIsBusy(false);
       }

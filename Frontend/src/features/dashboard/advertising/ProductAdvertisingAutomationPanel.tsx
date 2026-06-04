@@ -29,6 +29,11 @@ export function ProductAdvertisingAutomationPanel(props: {
 }) {
   const isOn = props.mode !== "off";
   const countsVisible = props.alwaysShowCounts || isOn;
+  // Пока идёт первый прогон движка (включили автоматизацию, данных ещё нет) показываем
+  // «…», а не «0», чтобы нули не выглядели как реальный результат расчёта.
+  const totalCount = props.counts.active + props.counts.blacklisted + props.counts.high;
+  const loading = props.busy && totalCount === 0;
+  const num = (n: number) => (loading ? "…" : String(n));
 
   return (
     <div className="wb-automation-panel">
@@ -61,13 +66,13 @@ export function ProductAdvertisingAutomationPanel(props: {
       {countsVisible && (
         <div className="wb-automation-panel__counts">
           <span title="Активные + кандидаты без данных по расходу (даём шанс набрать данные)">
-            актив {props.counts.active}
+            актив {num(props.counts.active)}
           </span>
           <span title="Чёрный список — автоматика всегда держит выключенными">
-            чёрный {props.counts.blacklisted}
+            чёрный {num(props.counts.blacklisted)}
           </span>
           <span title="Исключены: реальный расход и CPO выше макс">
-            искл. по CPO {props.counts.high}
+            искл. по CPO {num(props.counts.high)}
           </span>
         </div>
       )}
