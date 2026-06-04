@@ -271,8 +271,13 @@ export function getAdvertisingDatePresetRange(
   }
 
   if (preset === "month") {
+    // Ровно «сегодня − 30 дней … сегодня», чтобы окно таблицы совпадало с окном
+    // движка автоматизации (бэкенд: stat_date >= CURRENT_DATE - INTERVAL '30 days').
+    // Раньше брался календарный «тот же день месяц назад» (04.05 вместо 05.05) — на день
+    // шире окна движка, из-за чего CPO в таблице расходился с CPO, по которому
+    // принимается решение об исключении кластера.
     return {
-      start: addCalendarMonthsPreservingDay(today, -1),
+      start: addCalendarDays(today, -30),
       end: today,
     };
   }
