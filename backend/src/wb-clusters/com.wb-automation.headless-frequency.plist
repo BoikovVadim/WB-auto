@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS LaunchAgent: ежедневная фоновая выгрузка частот поисковых запросов WB.
+
+  Что делает каждый день в 09:00 (headless Playwright, БЕЗ Safari):
+    1. Открывает SSH-туннель к проду PostgreSQL (порт 15432).
+    2. Login-on-demand: проверяет сессию кабинета headless-запросом. Если сессия
+       мертва — открывает ВИДИМОЕ окно Chromium, шлёт macOS-баннер «нужен вход»,
+       ждёт пока залогинишься (поллинг каждые 15 c), сохраняет storageState.
+    3. Headless-скачивает отчёт «Джем» по каждой категории (interval=month),
+       парсит ~1.2M строк частот, заменяет снапшот в БД.
+    4. macOS-баннер о результате (готово / ошибка). Закрывает туннель.
+
+  Заменяет прежний Safari-механизм (com.wb-automation.monthly-frequency-import) —
+  его нужно выгрузить, чтобы не было двойного импорта в 09:00.
+
+  Предусловия:
+    - SSH-ключ пускает без пароля на root@95.163.226.154.
+    - Playwright chromium установлен (npx playwright install chromium).
+    - Сессия сохраняется автоматически при первом входе; повторно логинишься только
+      когда WB её разлогинит (придёт баннер).
+
+  Установка:
+    cp com.wb-automation.headless-frequency.plist ~/Library/LaunchAgents/
+    launchctl unload ~/Library/LaunchAgents/com.wb-automation.monthly-frequency-import.plist
+    launchctl load ~/Library/LaunchAgents/com.wb-automation.headless-frequency.plist
+
+  Тест немедленно:
+    launchctl start com.wb-automation.headless-frequency
+
+  Логи:
+    tail -f ~/wb-automation/logs/wb-headless-frequency.log
+    tail -f ~/wb-automation/logs/wb-headless-frequency-error.log
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.wb-automation.headless-frequency</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/elizavetabojkova/wb-automation/backend/src/wb-clusters/run-headless-monthly-frequency.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/elizavetabojkova/wb-automation/backend</string>
+
+    <!-- Каждый день в 09:00 локального времени -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/elizavetabojkova/wb-automation/logs/wb-headless-frequency.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/elizavetabojkova/wb-automation/logs/wb-headless-frequency-error.log</string>
+
+    <!-- Не запускать при загрузке, только по расписанию -->
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
