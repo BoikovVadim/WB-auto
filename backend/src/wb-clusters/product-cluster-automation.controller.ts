@@ -4,6 +4,7 @@ import { WbClustersWriteGuard } from "../common/guards/wb-clusters-write.guard";
 import { ProductClusterAutomationService } from "./product-cluster-automation.service";
 import { SetAutomationModeDto } from "./dto/set-automation-mode.dto";
 import { SetClusterFiltersDto } from "./dto/set-cluster-filters.dto";
+import { ReviewClusterDto } from "./dto/review-cluster.dto";
 
 /**
  * Роуты автоматизации управления кластерами по CPO (вкладка «Реклама»). Сиблинг
@@ -54,6 +55,24 @@ export class ProductClusterAutomationController {
     @Body() body: SetAutomationModeDto,
   ) {
     await this.service.setMode(advertId, nmId, body.mode);
+    return this.service.getStatus(advertId, nmId);
+  }
+
+  /** Модерация нового кластера: в работу (approve) | в чёрный список (reject) | защитить (protect). */
+  @Put(":nmId/campaigns/:advertId/automation/review")
+  @UseGuards(WbClustersWriteGuard)
+  async reviewCluster(
+    @Param("nmId", ParseIntPipe) nmId: number,
+    @Param("advertId", ParseIntPipe) advertId: number,
+    @Body() body: ReviewClusterDto,
+  ) {
+    await this.service.reviewCluster(
+      advertId,
+      nmId,
+      body.normalizedClusterName,
+      body.clusterName,
+      body.action,
+    );
     return this.service.getStatus(advertId, nmId);
   }
 

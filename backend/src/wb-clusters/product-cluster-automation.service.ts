@@ -7,6 +7,7 @@ import type {
   ClusterCpoInput,
   ClusterOverrideItem,
   ClusterOverridePickerRow,
+  ClusterReviewStatus,
 } from "./wb-clusters.repository.automation";
 import { WbClustersRepository } from "./wb-clusters.repository";
 import { WbClustersService } from "./wb-clusters.service";
@@ -28,6 +29,8 @@ interface ClusterDecision {
   manualProtected: boolean;
   /** Действие относительно текущего состояния на WB. */
   decision: "include" | "exclude" | "noop";
+  /** Модерация: 'pending' — новый кластер на проверке (движок не трогает); 'approved' — в работе. */
+  reviewStatus: ClusterReviewStatus;
 }
 
 /**
@@ -35,12 +38,16 @@ interface ClusterDecision {
  * автоматизацией пересчитывает CPO каждого кластера и приводит состав к правилу
  * «CPO ≤ макс. CPO товара → включить, CPO > макс → исключить».
  *
- * CPO кластера берётся РОВНО как значение колонки «СРО» таблицы РК (никаких отдельных
- * расчётов): spend / (shks ?? orders_РК) за скользящие 30 дней; при 0 заказов колонка
- * показывает сам расход — его и сравниваем. JAM в CPO-колонке не участвует. Правило:
- * значение ≤ макс. CPO → включить, > макс → исключить — независимо от наличия заказов
- * (если «сумма» ниже плана, кластер должен работать). Нет расхода вовсе → кандидат в
+ * CPO кластера = той же формуле, что колонка «СРО» таблицы РК: spend / max(заказы РК,
+ * джем-заказы) за скользящие 30 дней (РК-часть = shks ?? orders_РК); при 0 заказов колонка
+ * показывает сам расход — его и сравниваем. Правило: значение ≤ макс. CPO → включить,
+ * > макс → исключить — независимо от наличия заказов. Нет расхода вовсе → кандидат в
  * активные (сигнала против нет). Исход «выбыл» (dropped) не назначается.
+ *
+ * Модерация новых кластеров: кластер, который ВБ добавил в РК ПОСЛЕ baseline кампании,
+ * встаёт в `pending_review` — движок его НЕ трогает (decision=noop), пока человек не
+ * примет решение (в работу / чёрный / белый список) через reviewCluster. Существующие на
+ * момент включения автоматизации кластеры грандфазерятся как approved.
  *
  * Режимы: 'preview' — считаем и сохраняем решения, WB НЕ трогаем; 'live' — реально
  * включаем/исключаем через существующую очередь действий (applyProductClusterAction).
@@ -69,12 +76,15 @@ export class ProductClusterAutomationService {
   async getStatus(advertId: number, nmId: number): Promise<{
     mode: AutomationMode;
     maxCpo: number | null;
+    /** Сколько новых кластеров ждёт ручной модерации (state=pending_review). */
+    pendingCount: number;
     clusters: {
       normalizedClusterName: string;
       state: ClusterAutomationStateValue;
       manualProtected: boolean;
       lastCpo: number | null;
       lastDecision: string | null;
+      reviewStatus: ClusterReviewStatus;
     }[];
   }> {
     const [mode, productCpo, states] = await Promise.all([
@@ -84,7 +94,45 @@ export class ProductClusterAutomationService {
       // сходились с «Все N» таблицы РК (исторические строки state не считаем).
       this.repository.getManagedClusterAutomationStates(advertId, nmId),
     ]);
-    return { mode, maxCpo: productCpo.maxCpo, clusters: states };
+    const pendingCount = states.filter((s) => s.reviewStatus === "pending").length;
+    return { mode, maxCpo: productCpo.maxCpo, pendingCount, clusters: states };
+  }
+
+  /**
+   * Ручная модерация нового кластера. action:
+   *   'approve' — в работу (review_status=approved → дальше решает CPO-правило);
+   *   'reject'  — в чёрный список (is_blacklisted=true, больше не всплывёт);
+   *   'protect' — в белый список (is_protected=true, всегда активен).
+   * После — один прогон evaluateOne, чтобы решение применилось сразу (в live — на WB).
+   */
+  async reviewCluster(
+    advertId: number,
+    nmId: number,
+    normalizedClusterName: string,
+    clusterName: string,
+    action: "approve" | "reject" | "protect",
+  ): Promise<void> {
+    if (action === "reject") {
+      await this.repository.setSingleClusterOverride(advertId, nmId, normalizedClusterName, clusterName, {
+        isProtected: false,
+        isBlacklisted: true,
+      });
+    } else if (action === "protect") {
+      await this.repository.setSingleClusterOverride(advertId, nmId, normalizedClusterName, clusterName, {
+        isProtected: true,
+        isBlacklisted: false,
+      });
+    }
+    // Во всех исходах кластер выходит из карантина (approved) — дальше им управляет
+    // CPO-правило / чёрный / белый список по обычной логике движка.
+    await this.repository.setClusterReviewStatus(advertId, nmId, normalizedClusterName, "approved");
+
+    const mode = await this.repository.getAutomationMode(advertId, nmId);
+    if (mode !== "off") {
+      await this.evaluateOne(advertId, nmId, mode).catch((e: unknown) => {
+        this.logger.warn(`reviewCluster evaluate failed ${advertId}/${nmId}: ${String(e)}`);
+      });
+    }
   }
 
   /** Read-model для модалки «Настройка фильтров»: список кластеров + защита. */
@@ -214,21 +262,31 @@ export class ProductClusterAutomationService {
     const maxCpo = (await this.productCpoService.getProductCpo(nmId)).maxCpo;
     if (maxCpo == null) return []; // нет порога (нет цены/выкупа/ДРР) — решать не на чем
 
-    const [inputs, prevStates, roles] = await Promise.all([
+    const [inputs, prevStates, roles, baselinedAt] = await Promise.all([
       this.repository.getClusterCpoInputs(advertId, nmId),
       this.repository.getClusterAutomationStates(advertId, nmId),
       this.repository.getClusterOverrideRoles(advertId, nmId),
+      this.repository.getCampaignBaselinedAt(advertId, nmId),
     ]);
     const prevByCluster = new Map(prevStates.map((s) => [s.normalizedClusterName, s]));
+    // Грандфазер: при ПЕРВОМ прогоне (baseline ещё не зафиксирован) все текущие кластеры
+    // считаются уже проверенными (approved). Кластер уходит на ревью (pending) только если
+    // baseline уже стоит, а строки состояния у кластера ещё нет → ВБ добавил его позже.
+    const isBaselined = baselinedAt !== null;
 
-    const decisions = inputs.map((input) =>
-      this.decideForCluster(input, maxCpo, prevByCluster.get(input.normalizedClusterName), mode, {
+    const decisions = inputs.map((input) => {
+      const prev = prevByCluster.get(input.normalizedClusterName);
+      const reviewStatus: ClusterReviewStatus =
+        prev?.reviewStatus ?? (isBaselined ? "pending" : "approved");
+      return this.decideForCluster(input, maxCpo, prev, mode, {
         isProtected: roles.protectedNames.has(input.normalizedClusterName),
         isBlacklisted: roles.blacklistedNames.has(input.normalizedClusterName),
-      }),
-    );
+        reviewStatus,
+      });
+    });
 
     // Применяем к WB только в live и только при отличии от текущего состояния.
+    // pending-кластеры имеют decision='noop' → applyDecisions их не трогает.
     if (mode === "live") {
       await this.applyDecisions(advertId, nmId, decisions, inputs.length);
     }
@@ -244,7 +302,13 @@ export class ProductClusterAutomationService {
         lastCpo: d.effectiveCpo,
         lastSpend: d.spend,
         lastDecision: d.decision,
+        reviewStatus: d.reviewStatus,
       });
+    }
+
+    // Грандфазер завершён: фиксируем baseline, чтобы СЛЕДУЮЩИЕ новые кластеры шли на ревью.
+    if (!isBaselined) {
+      await this.repository.markCampaignBaselined(advertId, nmId);
     }
     return decisions;
   }
@@ -254,7 +318,7 @@ export class ProductClusterAutomationService {
     maxCpo: number,
     prev: { state: ClusterAutomationStateValue; manualProtected: boolean; lastDecision: string | null } | undefined,
     mode: AutomationMode,
-    roles: { isProtected: boolean; isBlacklisted: boolean },
+    roles: { isProtected: boolean; isBlacklisted: boolean; reviewStatus: ClusterReviewStatus },
   ): ClusterDecision {
     const isExcludedNow = input.currentSourceKind === "excluded";
     // Знаменатель CPO = max(заказы РК, джем-заказы): даём кластеру «зачёт» за
@@ -269,6 +333,22 @@ export class ProductClusterAutomationService {
       orderedItems > 0 ? input.spend / orderedItems : input.spend > 0 ? input.spend : null;
     const effectiveCpoForDisplay = displayCpo != null ? round2(displayCpo) : null;
 
+    // Гейт модерации — НАИВЫСШИЙ приоритет: новый кластер (ВБ добавил после baseline) ждёт
+    // ручной проверки. Движок его НЕ трогает (decision=noop), держит текущее состояние на WB.
+    // CPO (effectiveCpoForDisplay) считаем только для предпросмотра в модалке ревью.
+    if (roles.reviewStatus === "pending") {
+      return {
+        normalizedClusterName: input.normalizedClusterName,
+        clusterName: input.clusterName,
+        effectiveCpo: effectiveCpoForDisplay,
+        spend: input.spend,
+        state: "pending_review",
+        manualProtected: false,
+        decision: "noop",
+        reviewStatus: "pending",
+      };
+    }
+
     // Чёрный список — наивысший приоритет: кластер никогда не должен быть включён.
     // Если сейчас активен на WB — исключаем; иначе noop.
     if (roles.isBlacklisted) {
@@ -280,6 +360,7 @@ export class ProductClusterAutomationService {
         state: "blacklisted",
         manualProtected: false,
         decision: isExcludedNow ? "noop" : "exclude",
+        reviewStatus: roles.reviewStatus,
       };
     }
 
@@ -294,6 +375,7 @@ export class ProductClusterAutomationService {
         state: "protected",
         manualProtected: false,
         decision: isExcludedNow ? "include" : "noop",
+        reviewStatus: roles.reviewStatus,
       };
     }
 
@@ -335,6 +417,7 @@ export class ProductClusterAutomationService {
       state,
       manualProtected,
       decision,
+      reviewStatus: roles.reviewStatus,
     };
   }
 

@@ -70,5 +70,26 @@ export function getClusterAutomationCreateStatements({
       ALTER TABLE ${tableName("wb_cluster_automation_state")}
         ADD COLUMN IF NOT EXISTS last_spend NUMERIC(12,2) NULL
     `,
+    // review_status — модерация новых кластеров: 'pending' (ВБ добавил кластер после baseline,
+    // ждёт ручной проверки — движок его НЕ трогает) | 'approved' (в работе у автоматики).
+    // DEFAULT 'approved' → все ранее существовавшие строки становятся approved (грандфазер).
+    `
+      ALTER TABLE ${tableName("wb_cluster_automation_state")}
+        ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'approved'
+    `,
+    // baselined_at — момент, когда зафиксирован «исходный» набор кластеров кампании.
+    // Кластер без строки state, появившийся ПОСЛЕ baseline → новый → на проверку (pending).
+    `
+      ALTER TABLE ${tableName("wb_campaign_automation")}
+        ADD COLUMN IF NOT EXISTS baselined_at TIMESTAMPTZ NULL
+    `,
+    // Грандфазер уже работающих кампаний на момент миграции: их текущие кластеры уже
+    // имеют approved-строки (DEFAULT выше), проставляем baseline, чтобы НОВЫЕ кластеры
+    // (которые ВБ добавит позже) уходили на ревью, а существующие — нет.
+    `
+      UPDATE ${tableName("wb_campaign_automation")}
+        SET baselined_at = NOW()
+        WHERE mode <> 'off' AND baselined_at IS NULL
+    `,
   ];
 }

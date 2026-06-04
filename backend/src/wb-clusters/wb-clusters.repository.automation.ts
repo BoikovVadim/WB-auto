@@ -1,31 +1,19 @@
-import { WbClustersRepositoryMarginSnapshot } from "./wb-clusters.repository.margin-snapshot";
+import {
+  WbClustersRepositoryAutomationOverrides,
+  type ClusterAutomationStateValue,
+  type ClusterReviewStatus,
+} from "./wb-clusters.repository.automation-overrides";
+
+// Типы override/модерации живут в базовом звене automation-overrides; реэкспортим,
+// чтобы внешние потребители (сервис, repository) импортировали их отсюда как раньше.
+export type {
+  ClusterAutomationStateValue,
+  ClusterReviewStatus,
+  ClusterOverridePickerRow,
+  ClusterOverrideItem,
+} from "./wb-clusters.repository.automation-overrides";
 
 export type AutomationMode = "off" | "preview" | "live";
-export type ClusterAutomationStateValue =
-  | "active"
-  | "excluded_high"
-  | "dropped"
-  | "manual_protected"
-  | "protected"
-  | "blacklisted";
-
-/** Строка пикера «Настройка фильтров»: кластер + его состояние и роли (белый/чёрный). */
-export interface ClusterOverridePickerRow {
-  normalizedClusterName: string;
-  clusterName: string;
-  lastCpo: number | null;
-  /** Расход кластера за окно — для «стоимости» там, где заказов нет и CPO неопределён. */
-  lastSpend: number | null;
-  state: ClusterAutomationStateValue | null;
-  isProtected: boolean;
-  isBlacklisted: boolean;
-}
-
-/** Один override-элемент при сохранении набора (имя + отображаемое имя). */
-export interface ClusterOverrideItem {
-  normalizedClusterName: string;
-  clusterName: string;
-}
 
 /** Вход для расчёта CPO кластера за окно (скользящие 30 дней). */
 export interface ClusterCpoInput {
@@ -51,6 +39,7 @@ export interface ClusterAutomationStateRow {
   manualProtected: boolean;
   lastCpo: number | null;
   lastDecision: string | null;
+  reviewStatus: ClusterReviewStatus;
 }
 
 /**
@@ -58,7 +47,7 @@ export interface ClusterAutomationStateRow {
  * (общий pool/tableName/ensureSchema). Таблицы: wb_campaign_automation (режим на
  * advert+nm) и wb_cluster_automation_state (состояние движка по кластеру).
  */
-export abstract class WbClustersRepositoryAutomation extends WbClustersRepositoryMarginSnapshot {
+export abstract class WbClustersRepositoryAutomation extends WbClustersRepositoryAutomationOverrides {
   async getAutomationMode(advertId: number, nmId: number): Promise<AutomationMode> {
     await this.ensureSchemaOrThrow();
     const result = await this.getPool().query<{ mode: AutomationMode }>(
@@ -250,8 +239,9 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       manual_protected: boolean;
       last_cpo: string | null;
       last_decision: string | null;
+      review_status: ClusterReviewStatus;
     }>(
-      `SELECT normalized_cluster_name, state, manual_protected, last_cpo::text, last_decision
+      `SELECT normalized_cluster_name, state, manual_protected, last_cpo::text, last_decision, review_status
        FROM ${this.tableName("wb_cluster_automation_state")}
        WHERE advert_id = $1 AND nm_id = $2`,
       [advertId, nmId],
@@ -262,6 +252,7 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       manualProtected: r.manual_protected,
       lastCpo: r.last_cpo != null ? Number(r.last_cpo) : null,
       lastDecision: r.last_decision,
+      reviewStatus: r.review_status,
     }));
   }
 
@@ -282,8 +273,9 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       manual_protected: boolean;
       last_cpo: string | null;
       last_decision: string | null;
+      review_status: ClusterReviewStatus;
     }>(
-      `SELECT s.normalized_cluster_name, s.state, s.manual_protected, s.last_cpo::text, s.last_decision
+      `SELECT s.normalized_cluster_name, s.state, s.manual_protected, s.last_cpo::text, s.last_decision, s.review_status
        FROM ${this.tableName("wb_cluster_automation_state")} s
        WHERE s.advert_id = $1 AND s.nm_id = $2
          AND EXISTS (
@@ -308,6 +300,7 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       manualProtected: r.manual_protected,
       lastCpo: r.last_cpo != null ? Number(r.last_cpo) : null,
       lastDecision: r.last_decision,
+      reviewStatus: r.review_status,
     }));
   }
 
@@ -320,18 +313,20 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
     lastCpo: number | null;
     lastSpend: number | null;
     lastDecision: string | null;
+    reviewStatus: ClusterReviewStatus;
   }): Promise<void> {
     await this.ensureSchemaOrThrow();
     await this.getPool().query(
       `INSERT INTO ${this.tableName("wb_cluster_automation_state")}
-         (advert_id, nm_id, normalized_cluster_name, state, manual_protected, last_cpo, last_spend, last_decision, decided_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+         (advert_id, nm_id, normalized_cluster_name, state, manual_protected, last_cpo, last_spend, last_decision, review_status, decided_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
        ON CONFLICT (advert_id, nm_id, normalized_cluster_name) DO UPDATE SET
          state = EXCLUDED.state,
          manual_protected = EXCLUDED.manual_protected,
          last_cpo = EXCLUDED.last_cpo,
          last_spend = EXCLUDED.last_spend,
          last_decision = EXCLUDED.last_decision,
+         review_status = EXCLUDED.review_status,
          decided_at = NOW()`,
       [
         input.advertId,
@@ -342,148 +337,8 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
         input.lastCpo,
         input.lastSpend,
         input.lastDecision,
+        input.reviewStatus,
       ],
     );
-  }
-
-  /** Роли override (белый/чёрный список) одним запросом — для движка. */
-  async getClusterOverrideRoles(
-    advertId: number,
-    nmId: number,
-  ): Promise<{ protectedNames: Set<string>; blacklistedNames: Set<string> }> {
-    await this.ensureSchemaOrThrow();
-    const result = await this.getPool().query<{
-      normalized_cluster_name: string;
-      is_protected: boolean;
-      is_blacklisted: boolean;
-    }>(
-      `SELECT normalized_cluster_name, is_protected, is_blacklisted
-       FROM ${this.tableName("wb_cluster_automation_override")}
-       WHERE advert_id = $1 AND nm_id = $2 AND (is_protected = TRUE OR is_blacklisted = TRUE)`,
-      [advertId, nmId],
-    );
-    const protectedNames = new Set<string>();
-    const blacklistedNames = new Set<string>();
-    for (const r of result.rows) {
-      if (r.is_blacklisted) blacklistedNames.add(r.normalized_cluster_name);
-      else if (r.is_protected) protectedNames.add(r.normalized_cluster_name);
-    }
-    return { protectedNames, blacklistedNames };
-  }
-
-  /**
-   * Read-model для модалки «Настройка фильтров»: управляемые кластеры (тот же предикат,
-   * что у таблицы РК) + их текущее состояние/CPO движка и флаг защиты. Защищённые сверху.
-   */
-  async getClusterOverridePicker(
-    advertId: number,
-    nmId: number,
-  ): Promise<ClusterOverridePickerRow[]> {
-    await this.ensureSchemaOrThrow();
-    const result = await this.getPool().query<{
-      normalized_cluster_name: string;
-      cluster_name: string;
-      last_cpo: string | null;
-      last_spend: string | null;
-      state: ClusterAutomationStateValue | null;
-      is_protected: boolean;
-      is_blacklisted: boolean;
-    }>(
-      `SELECT
-         c.normalized_cluster_name,
-         MAX(c.cluster_name)                                AS cluster_name,
-         MAX(s.last_cpo)::text                              AS last_cpo,
-         MAX(s.last_spend)::text                            AS last_spend,
-         MAX(s.state)                                       AS state,
-         BOOL_OR(COALESCE(o.is_protected, FALSE))           AS is_protected,
-         BOOL_OR(COALESCE(o.is_blacklisted, FALSE))         AS is_blacklisted
-       FROM ${this.tableName("wb_clusters")} c
-       LEFT JOIN ${this.tableName("wb_cluster_actions")} a
-         ON a.advert_id = c.advert_id AND a.nm_id = c.nm_id
-        AND a.normalized_cluster_name = c.normalized_cluster_name
-       LEFT JOIN ${this.tableName("wb_cluster_automation_state")} s
-         ON s.advert_id = c.advert_id AND s.nm_id = c.nm_id
-        AND s.normalized_cluster_name = c.normalized_cluster_name
-       LEFT JOIN ${this.tableName("wb_cluster_automation_override")} o
-         ON o.advert_id = c.advert_id AND o.nm_id = c.nm_id
-        AND o.normalized_cluster_name = c.normalized_cluster_name
-       WHERE c.advert_id = $1 AND c.nm_id = $2
-         AND (
-           a.action_key IS NOT NULL
-           OR c.source_kind IN ('active', 'excluded')
-           OR c.is_active = FALSE
-         )
-       GROUP BY c.normalized_cluster_name
-       ORDER BY BOOL_OR(COALESCE(o.is_protected, FALSE)) DESC, MAX(c.cluster_name) ASC`,
-      [advertId, nmId],
-    );
-    return result.rows.map((r) => ({
-      normalizedClusterName: r.normalized_cluster_name,
-      clusterName: r.cluster_name,
-      lastCpo: r.last_cpo != null ? Number(r.last_cpo) : null,
-      lastSpend: r.last_spend != null ? Number(r.last_spend) : null,
-      state: r.state,
-      isProtected: r.is_protected,
-      isBlacklisted: r.is_blacklisted,
-    }));
-  }
-
-  /**
-   * Полная замена наборов белого (protected) и чёрного (blacklisted) списков (advert, nm).
-   * Транзакция: сбросить обе роли у всех, кого нет в новых наборах, затем проставить роли
-   * переданным (idempotent). Чёрный приоритетнее: при пересечении кластер уходит в чёрный.
-   */
-  async setClusterFilters(
-    advertId: number,
-    nmId: number,
-    input: { protected: ClusterOverrideItem[]; blacklisted: ClusterOverrideItem[] },
-  ): Promise<void> {
-    await this.ensureSchemaOrThrow();
-    const table = this.tableName("wb_cluster_automation_override");
-    // Чёрный приоритетнее белого: если кластер передан в обоих, считаем его только чёрным.
-    const blacklistedKeys = new Set(input.blacklisted.map((i) => i.normalizedClusterName));
-    const protectedItems = input.protected.filter(
-      (i) => !blacklistedKeys.has(i.normalizedClusterName),
-    );
-    const roleByKey = new Map<string, { item: ClusterOverrideItem; isProtected: boolean; isBlacklisted: boolean }>();
-    for (const item of protectedItems) {
-      roleByKey.set(item.normalizedClusterName, { item, isProtected: true, isBlacklisted: false });
-    }
-    for (const item of input.blacklisted) {
-      roleByKey.set(item.normalizedClusterName, { item, isProtected: false, isBlacklisted: true });
-    }
-    const keep = [...roleByKey.keys()];
-
-    const client = await this.getPool().connect();
-    try {
-      await client.query("BEGIN");
-      // Сбросить роли у всех, кого нет в новых наборах.
-      await client.query(
-        `UPDATE ${table} SET is_protected = FALSE, is_blacklisted = FALSE, updated_at = NOW()
-         WHERE advert_id = $1 AND nm_id = $2
-           AND (is_protected = TRUE OR is_blacklisted = TRUE)
-           AND NOT (normalized_cluster_name = ANY($3::text[]))`,
-        [advertId, nmId, keep],
-      );
-      for (const { item, isProtected, isBlacklisted } of roleByKey.values()) {
-        await client.query(
-          `INSERT INTO ${table}
-             (advert_id, nm_id, normalized_cluster_name, cluster_name, is_protected, is_blacklisted, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, NOW())
-           ON CONFLICT (advert_id, nm_id, normalized_cluster_name) DO UPDATE SET
-             is_protected = EXCLUDED.is_protected,
-             is_blacklisted = EXCLUDED.is_blacklisted,
-             cluster_name = EXCLUDED.cluster_name,
-             updated_at = NOW()`,
-          [advertId, nmId, item.normalizedClusterName, item.clusterName, isProtected, isBlacklisted],
-        );
-      }
-      await client.query("COMMIT");
-    } catch (e) {
-      await client.query("ROLLBACK");
-      throw e;
-    } finally {
-      client.release();
-    }
   }
 }

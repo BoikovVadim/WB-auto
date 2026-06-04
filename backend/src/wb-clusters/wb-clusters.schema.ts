@@ -54,7 +54,8 @@ import type { WbClustersSchemaContext } from "./wb-clusters.schema.types";
 // История:
 //   1 — внедрение version-gate (исходный набор схемы на момент внедрения).
 //   2 — wb_cluster_change_log.initiated_by (user/automation) для истории изменений.
-const CURRENT_SCHEMA_VERSION = 2;
+//   3 — модерация новых кластеров: review_status в state + baselined_at в campaign_automation.
+const CURRENT_SCHEMA_VERSION = 3;
 
 const SCHEMA_META_TABLE = "wb_clusters_schema_meta";
 
