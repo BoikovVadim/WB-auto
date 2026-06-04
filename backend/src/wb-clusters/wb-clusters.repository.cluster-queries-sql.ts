@@ -184,6 +184,9 @@ export abstract class WbClustersRepositoryClusterQueriesSql extends WbClustersRe
         AND cq.advert_id = $2
         AND cq.normalized_cluster_name = $3
         ${compositionFilter}
+        -- Только «качественные» запросы — с известной частотностью (>0). Низко-/без-
+        -- частотный хвост (бренд/артикул/сверхдлинные, которых нет в отчётах WB) скрыт.
+        AND f.monthly_frequency > 0
       ORDER BY
         ${cabinetIdentityExpr},
         CASE WHEN cq.normalized_query_text = ${cabinetIdentityExpr} THEN 0 ELSE 1 END,
@@ -228,6 +231,7 @@ export abstract class WbClustersRepositoryClusterQueriesSql extends WbClustersRe
             AND cq.advert_id = $2
             AND cq.normalized_cluster_name = $3
             ${compositionFilter}
+            AND f.monthly_frequency > 0
           ORDER BY
             ${this.normalizedQueryIdentitySql("cq.normalized_query_text")},
             CASE WHEN cq.normalized_query_text = ${this.normalizedQueryIdentitySql("cq.normalized_query_text")} THEN 0 ELSE 1 END,
