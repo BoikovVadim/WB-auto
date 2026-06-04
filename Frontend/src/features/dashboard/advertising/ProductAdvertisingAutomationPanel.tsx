@@ -33,10 +33,10 @@ export function ProductAdvertisingAutomationPanel(props: {
 }) {
   const isOn = props.mode !== "off";
   const countsVisible = props.alwaysShowCounts || isOn;
-  // Пока идёт первый прогон движка (включили автоматизацию, данных ещё нет) показываем
-  // «…», а не «0», чтобы нули не выглядели как реальный результат расчёта.
-  const totalCount = props.counts.active + props.counts.blacklisted + props.counts.high;
-  const loading = props.busy && totalCount === 0;
+  // Пока идёт запрос (включение/пересчёт) показываем «…», а НЕ предыдущие числа: при
+  // переключении оптимистичный апдейт держит старые (устаревшие с прошлого прогона)
+  // счётчики, и без этого они мелькали как настоящие до прихода свежего ответа сервера.
+  const loading = props.busy;
   const num = (n: number) => (loading ? "…" : String(n));
 
   return (
