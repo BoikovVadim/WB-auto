@@ -163,20 +163,27 @@ async function main(): Promise<void> {
   });
 
   console.log(`\n=== Итог скачивания ===`);
+  // Реальная ОШИБКА = выставлен error (сетевой сбой/парсинг). Категория с 0 строк
+  // БЕЗ error — легитимно пустая (напр. Недвижимость, Сервисные услуги: поисковых
+  // запросов товаров там нет), это НЕ повод блокировать импорт.
+  const errored = stats.filter((s) => s.error !== undefined);
+  const emptyOk = stats.filter((s) => s.rows === 0 && s.error === undefined);
   const ok = stats.filter((s) => s.rows > 0).length;
-  const failed = stats.filter((s) => s.rows === 0);
-  console.log(`Категорий успешно: ${ok}/${stats.length} | уникальных строк: ${globalRows.size}`);
-  if (failed.length) {
-    console.log(`Провалились (${failed.length}):`);
-    for (const s of failed) console.log(`  ✗ ${s.category}: ${s.error ?? "0 строк"}`);
+  console.log(`Категорий с данными: ${ok}/${stats.length} | уникальных строк: ${globalRows.size}`);
+  if (emptyOk.length) {
+    console.log(`Пустые категории (норма, без запросов): ${emptyOk.map((s) => s.category).join(", ")}`);
+  }
+  if (errored.length) {
+    console.log(`Провалились (${errored.length}):`);
+    for (const s of errored) console.log(`  ✗ ${s.category}: ${s.error}`);
   }
 
   if (dryRun) {
     console.log("\nDRY_RUN — в БД ничего не пишу.");
     return;
   }
-  if (failed.length > 0) {
-    throw new Error(`Есть упавшие категории (${failed.length}) — НЕ импортирую, чтобы не затереть прод неполными данными. Разберись и перезапусти.`);
+  if (errored.length > 0) {
+    throw new Error(`Есть упавшие категории (${errored.length}) — НЕ импортирую, чтобы не затереть прод неполными данными. Разберись и перезапусти.`);
   }
 
   console.log(`\n=== Импорт ${globalRows.size} строк в БД ===`);

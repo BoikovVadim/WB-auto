@@ -69,6 +69,9 @@ export DATABASE_URL
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 # storageState сессии WB — рядом с проектом, gitignored (содержит куки кабинета).
 export WB_CABINET_STORAGE_STATE_PATH="${WB_CABINET_STORAGE_STATE_PATH:-${BACKEND_DIR}/data/wb-cabinet-storage-state.json}"
+# Все 93 категории дают ~3.7M+ уникальных строк в памяти (дедуп по identity) —
+# дефолтный heap Node (~2 ГБ) переполняется (OOM). Поднимаем лимит.
+export NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=8192"
 
 npx ts-node \
   --project tsconfig.json \
