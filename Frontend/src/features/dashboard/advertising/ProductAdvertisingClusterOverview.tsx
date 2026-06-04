@@ -196,15 +196,49 @@ export function ProductAdvertisingClusterOverview(
 
   return (
     <>
-      <div className="wb-card-header wb-advertising-section-header">
+      <div className="wb-card-header wb-advertising-section-header" style={{ position: "relative" }}>
         <div>
           <h3>{ui.campaignOverviewTitle}</h3>
         </div>
+        {/* Блок «Макс. CPO + панель автоматизации» якорим к верхнему-правому краю
+            шапки секции: справа от заголовка пусто, поэтому вся панель (счётчики +
+            кнопка) помещается даже при одной активной РК без архивных кампаний.
+            Абсолютное позиционирование → рост панели не сдвигает список РК ниже. */}
+        {activeCampaigns.length > 0 && (
+          <div style={{ position: "absolute", top: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
+            {maxCpo !== null && (
+              <span
+                title="Максимальная планка CPO для ставок кластеров = CPO × 2"
+                style={{ fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap", color: "var(--wb-text-main)" }}
+              >
+                Макс. CPO: {formatMoney(maxCpo)}
+              </span>
+            )}
+            {automationAdvertId !== null && (
+              <ProductAdvertisingAutomationPanel
+                mode={automation.mode}
+                counts={autoCounts}
+                busy={automationBusy}
+                onToggle={(enabled) => setAutomationMode(enabled ? "preview" : "off")}
+                actions={
+                  <button
+                    type="button"
+                    disabled={automationBusy}
+                    onClick={() => setAutomationMode(automation.mode === "live" ? "preview" : "live")}
+                    style={{ fontSize: "11px", padding: "2px 8px", cursor: "pointer", border: "1px solid var(--wb-border, #ddd)", borderRadius: "6px", background: automation.mode === "live" ? "#fff" : "#1f8a4c", color: automation.mode === "live" ? "var(--wb-text-main)" : "#fff" }}
+                  >
+                    {automation.mode === "live" ? "В предпросмотр" : "Включить автоматизацию"}
+                  </button>
+                }
+              />
+            )}
+          </div>
+        )}
       </div>
 
       <div className="wb-advertising-campaign-grid">
         {activeCampaigns.length > 0 && (
-          <div style={{ width: "100%", position: "relative" }}>
+          <div style={{ width: "100%" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "8px" }}>
               <button
                 type="button"
@@ -221,37 +255,6 @@ export function ProductAdvertisingClusterOverview(
                 </svg>
                 Активные ({activeCampaigns.length})
               </button>
-              {/* Блок «Макс. CPO + панель автоматизации» позиционируем абсолютно в правом
-                  верхнем углу: при раскрытии панели (счётчики/кнопка) её рост НЕ должен
-                  менять высоту строки заголовка и сдвигать список РК ниже. */}
-              <div style={{ position: "absolute", top: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
-                {maxCpo !== null && (
-                  <span
-                    title="Максимальная планка CPO для ставок кластеров = CPO × 2"
-                    style={{ fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap", color: "var(--wb-text-main)" }}
-                  >
-                    Макс. CPO: {formatMoney(maxCpo)}
-                  </span>
-                )}
-                {automationAdvertId !== null && (
-                  <ProductAdvertisingAutomationPanel
-                    mode={automation.mode}
-                    counts={autoCounts}
-                    busy={automationBusy}
-                    onToggle={(enabled) => setAutomationMode(enabled ? "preview" : "off")}
-                    actions={
-                      <button
-                        type="button"
-                        disabled={automationBusy}
-                        onClick={() => setAutomationMode(automation.mode === "live" ? "preview" : "live")}
-                        style={{ fontSize: "11px", padding: "2px 8px", cursor: "pointer", border: "1px solid var(--wb-border, #ddd)", borderRadius: "6px", background: automation.mode === "live" ? "#fff" : "#1f8a4c", color: automation.mode === "live" ? "var(--wb-text-main)" : "#fff" }}
-                      >
-                        {automation.mode === "live" ? "В предпросмотр" : "Включить автоматизацию"}
-                      </button>
-                    }
-                  />
-                )}
-              </div>
             </div>
             {isActiveExpanded && (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "6px", marginLeft: "16px" }}>
