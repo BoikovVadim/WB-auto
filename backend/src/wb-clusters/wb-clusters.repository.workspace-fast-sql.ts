@@ -184,14 +184,23 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
       -- drill-down). Fallback: если за окно у товара нет подневного JAM вообще
       -- (composition_phrases пуст) — считаем весь кабинетный список (FILTER истинен
       -- для всех), чтобы счётчик не обнулялся.
+      -- ВАЖНО: тот же фильтр качества, что и в getWorkspaceClusterQueriesSQL
+      -- (раскрытый список) — считаем ТОЛЬКО запросы с известной частотностью
+      -- (monthly_frequency > 0). Без него счётчик включал низко-/безчастотный хвост
+      -- (бренд/артикул/сверхдлинные, которых нет в отчётах WB), и свёрнутое число
+      -- было больше раскрытого списка. JOIN на частотность 1:1 — таблица
+      -- import-deduped по identity.
       composition_query_counts AS (
         SELECT
-          advert_id,
-          nm_id,
-          normalized_cluster_name,
-          COUNT(DISTINCT query_identity) FILTER (
-            WHERE EXISTS (SELECT 1 FROM composition_phrases cp WHERE cp.normalized_query_text = nqt)
+          combined.advert_id,
+          combined.nm_id,
+          combined.normalized_cluster_name,
+          COUNT(DISTINCT combined.query_identity) FILTER (
+            WHERE (
+              EXISTS (SELECT 1 FROM composition_phrases cp WHERE cp.normalized_query_text = combined.nqt)
               OR NOT EXISTS (SELECT 1 FROM composition_phrases)
+            )
+            AND f.monthly_frequency > 0
           )::text AS cnt
         FROM (
           SELECT advert_id, nm_id, normalized_cluster_name,
@@ -206,7 +215,9 @@ export abstract class WbClustersRepositoryWorkspaceFastSql extends WbClustersRep
           FROM ${this.tableName("wb_cluster_queries")}
           WHERE nm_id = $1 AND advert_id = $2
         ) combined
-        GROUP BY advert_id, nm_id, normalized_cluster_name
+        LEFT JOIN ${this.tableName("wb_search_query_frequencies")} f
+          ON ${this.buildFrequencyJoinCondition("f", "combined.nqt")}
+        GROUP BY combined.advert_id, combined.nm_id, combined.normalized_cluster_name
       ),
       jam_by_cluster AS (
         SELECT
