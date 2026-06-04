@@ -187,7 +187,7 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
           END AS entity_type,
           cl.nm_id::text AS nm_id,
           cl.advert_id::text AS advert_id,
-          pc.product_name AS product_name,
+          pc.vendor_code AS vendor_code,
           cl.initiated_by AS initiated_by,
           cl.cluster_name AS entity_label,
           cl.change_type,
@@ -205,7 +205,7 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
           sl.entity_type,
           sl.nm_id::text AS nm_id,
           NULL::text AS advert_id,
-          pc.product_name AS product_name,
+          pc.vendor_code AS vendor_code,
           -- Системный лог (себестоимость) — всегда ручное действие пользователя.
           'user' AS initiated_by,
           sl.entity_label,
@@ -236,7 +236,7 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
         entity_type,
         nm_id,
         advert_id,
-        product_name,
+        vendor_code,
         initiated_by,
         entity_label,
         change_type,
@@ -261,7 +261,7 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
       entityType: row.entity_type,
       nmId: row.nm_id !== null ? Number(row.nm_id) : null,
       advertId: row.advert_id !== null ? Number(row.advert_id) : null,
-      productName: row.product_name,
+      vendorCode: row.vendor_code,
       initiatedBy: (row.initiated_by as ChangeLogInitiator | null) ?? null,
       entityLabel: row.entity_label,
       changeType: row.change_type,
@@ -278,7 +278,7 @@ type UnifiedChangeLogRow = {
   entity_type: string;
   nm_id: string | null;
   advert_id: string | null;
-  product_name: string | null;
+  vendor_code: string | null;
   initiated_by: string | null;
   entity_label: string | null;
   change_type: string;
@@ -293,7 +293,7 @@ export type UnifiedChangeLogEntry = {
   entityType: string;
   nmId: number | null;
   advertId: number | null;
-  productName: string | null;
+  vendorCode: string | null;
   initiatedBy: ChangeLogInitiator | null;
   entityLabel: string | null;
   changeType: string;

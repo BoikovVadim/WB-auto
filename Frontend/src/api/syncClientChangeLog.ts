@@ -6,7 +6,7 @@ export type UnifiedChangeLogEntry = {
   entityType: string;
   nmId: number | null;
   advertId: number | null;
-  productName: string | null;
+  vendorCode: string | null;
   initiatedBy: "user" | "automation" | null;
   entityLabel: string | null;
   changeType: string;

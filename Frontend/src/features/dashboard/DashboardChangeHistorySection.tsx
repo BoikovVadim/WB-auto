@@ -100,7 +100,7 @@ function ChangeRow({ entry }: { entry: UnifiedChangeLogEntry }) {
         {entry.advertId !== null ? String(entry.advertId) : <span className="wb-change-history-empty">—</span>}
       </td>
       <td className="wb-change-history-cell wb-change-history-cell--label">
-        {entry.productName ?? (entry.nmId !== null ? `Товар #${String(entry.nmId)}` : "—")}
+        {entry.vendorCode ?? (entry.nmId !== null ? `#${String(entry.nmId)}` : "—")}
       </td>
       <td className="wb-change-history-cell">
         {changeTypeLabel(entry.changeType)}
