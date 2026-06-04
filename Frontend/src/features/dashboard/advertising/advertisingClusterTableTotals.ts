@@ -2,7 +2,10 @@ import type {
   ProductAdvertisingWorkspaceClusterRow,
   ProductAdvertisingWorkspaceClusterTableTotals,
 } from "../../../api/syncClient";
-import { getAdvertisingCpoOrSpend } from "./advertisingModelMetrics";
+import {
+  getAdvertisingCpoOrSpend,
+  getAdvertisingCpoOrderedItems,
+} from "./advertisingModelMetrics";
 
 export function getEmptyAdvertisingClusterTotals(currency: string | null) {
   return {
@@ -88,6 +91,8 @@ export function computeClusterTotalsFromRows(
   const jamClicks = sumNullable(rows.map((r) => r.jamClicks));
   const jamAddToCart = sumNullable(rows.map((r) => r.jamAddToCart));
   const jamOrders = sumNullable(rows.map((r) => r.jamOrders));
+  // Знаменатель CPO = Σ max(заказы РК, джем-заказы) по строкам (та же формула, что per-row).
+  const cpoOrders = sumNullable(rows.map((r) => getAdvertisingCpoOrderedItems(r)));
 
   return {
     count: rows.length,
@@ -119,7 +124,7 @@ export function computeClusterTotalsFromRows(
     cpc: perUnit(spend, clicks),
     cpm:
       spend !== null && views !== null && views > 0 ? (spend / views) * 1000 : null,
-    cpo: getAdvertisingCpoOrSpend(spend, orders),
+    cpo: getAdvertisingCpoOrSpend(spend, cpoOrders),
     viewToOrder: ratio(orders, views),
     spend,
     currency,

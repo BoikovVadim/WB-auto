@@ -257,10 +257,12 @@ export class ProductClusterAutomationService {
     roles: { isProtected: boolean; isBlacklisted: boolean },
   ): ClusterDecision {
     const isExcludedNow = input.currentSourceKind === "excluded";
-    // Решаем ровно по тому числу, что показано в колонке «СРО» таблицы — никаких
-    // отдельных расчётов. Знаменатель — как getAdvertisingOrderedItems: заказанные
-    // товары shks, если есть, иначе заказы РК (JAM в CPO-колонке НЕ участвует).
-    const orderedItems = input.shks !== null ? input.shks : input.ordersRk;
+    // Знаменатель CPO = max(заказы РК, джем-заказы): даём кластеру «зачёт» за
+    // органические/джемовые заказы. РК-часть — заказанные товары shks, если есть,
+    // иначе заказы РК. JAM = 0 при отсутствии, тогда max сводится к РК-части.
+    // Та же формула в колонке «СРО» таблицы (getAdvertisingCpoOrderedItems на фронте).
+    const rkOrdered = input.shks !== null ? input.shks : input.ordersRk;
+    const orderedItems = Math.max(rkOrdered, input.ordersJam);
     // «CPO» = ровно getAdvertisingCpoOrSpend: есть заказы → расход/заказы; нет заказов,
     // но есть расход → показываем расход (это и есть «сумма» в колонке); нет расхода → null.
     const displayCpo =

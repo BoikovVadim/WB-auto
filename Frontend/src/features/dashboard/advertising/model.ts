@@ -17,6 +17,7 @@ export {
   averageAdvertisingValues,
   getAdvertisingMoneyPerAction,
   getAdvertisingCpoOrSpend,
+  getAdvertisingCpoOrderedItems,
   getAdvertisingCostPerThousand,
   getAdvertisingRatio,
   getAdvertisingOrderedItems,

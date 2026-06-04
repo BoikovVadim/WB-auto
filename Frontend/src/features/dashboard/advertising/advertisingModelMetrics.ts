@@ -85,6 +85,24 @@ export function getAdvertisingOrderedItems(input: {
   return typeof input.shks === "number" ? input.shks : input.orders;
 }
 
+/**
+ * Знаменатель CPO = max(заказанные товары РК, джем-заказы): кластеру засчитываются
+ * органические/джемовые заказы. РК-часть — shks ?? orders (как getAdvertisingOrderedItems).
+ * JAM учитывается ТОЛЬКО в CPO — в колонке «Заказанные товары» и прочих метриках нет.
+ * jamOrders отсутствует (null) → max сводится к РК-части. Та же формула в движке
+ * автоматизации (decideForCluster: max(rkOrdered, ordersJam)).
+ */
+export function getAdvertisingCpoOrderedItems(input: {
+  orders: number | null;
+  shks?: number | null;
+  jamOrders: number | null;
+}): number | null {
+  const rk = getAdvertisingOrderedItems(input);
+  const jam = input.jamOrders;
+  if (rk === null && jam === null) return null;
+  return Math.max(rk ?? 0, jam ?? 0);
+}
+
 export function hasJamMetrics(query: AdvertisingClusterQueryRow) {
   return (
     query.jamFrequency !== null ||
@@ -136,7 +154,7 @@ export function readAdvertisingNumericValue(
   }
 
   if (key === "cpo") {
-    return getAdvertisingCpoOrSpend(row.spend, getAdvertisingOrderedItems(row));
+    return getAdvertisingCpoOrSpend(row.spend, getAdvertisingCpoOrderedItems(row));
   }
 
   if (key === "viewToOrder") {

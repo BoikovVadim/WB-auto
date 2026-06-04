@@ -9,6 +9,7 @@ export {
   coerceAdvertisingProjectedTotal,
   getAdvertisingCostPerThousand,
   getAdvertisingCpoOrSpend,
+  getAdvertisingCpoOrderedItems,
   getAdvertisingMoneyPerAction,
   getAdvertisingOrderedItems,
   getAdvertisingRatio,

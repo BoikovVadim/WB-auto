@@ -7,6 +7,7 @@ import type {
 import {
   getAdvertisingCostPerThousand,
   getAdvertisingCpoOrSpend,
+  getAdvertisingCpoOrderedItems,
   getAdvertisingMoneyPerAction,
   getAdvertisingOrderedItems,
   getAdvertisingRatio,
@@ -236,7 +237,7 @@ function readClusterMetricValue(
     case "cpm":
       return row.cpm;
     case "cpo":
-      return getAdvertisingCpoOrSpend(row.spend, getAdvertisingOrderedItems(row));
+      return getAdvertisingCpoOrSpend(row.spend, getAdvertisingCpoOrderedItems(row));
     case "viewToOrder":
       return getAdvertisingRatio(getAdvertisingOrderedItems(row), row.views);
     case "spend":
@@ -280,6 +281,9 @@ function buildClusterTableTotals(
   const clicks = sumNullableNumbers(rows.map((row) => row.clicks));
   const addToCart = sumNullableNumbers(rows.map((row) => row.addToCart));
   const orders = sumNullableNumbers(rows.map((row) => getAdvertisingOrderedItems(row)));
+  // Отдельный знаменатель для CPO = Σ max(заказы РК, джем-заказы) по строкам, чтобы
+  // итоговый CPO считался по той же формуле, что и per-row (orders для CPO ≠ orders колонки).
+  const cpoOrders = sumNullableNumbers(rows.map((row) => getAdvertisingCpoOrderedItems(row)));
   const spend = sumNullableNumbers(rows.map((row) => row.spend));
 
   return {
@@ -302,7 +306,7 @@ function buildClusterTableTotals(
     avgPosition: averageNullableNumbers(rows.map((row) => row.avgPosition)),
     cpc: getAdvertisingMoneyPerAction(spend, clicks),
     cpm: getAdvertisingCostPerThousand(spend, views),
-    cpo: getAdvertisingCpoOrSpend(spend, orders),
+    cpo: getAdvertisingCpoOrSpend(spend, cpoOrders),
     viewToOrder: getAdvertisingRatio(orders, views),
     spend,
     currency:
