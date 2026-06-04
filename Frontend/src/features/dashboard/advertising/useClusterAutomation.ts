@@ -2,20 +2,29 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   fetchClusterAutomationStatus,
+  reviewClusterAutomation,
   setClusterAutomationMode,
   type AutomationMode,
   type ClusterAutomationStatus,
+  type ClusterReviewAction,
 } from "../../../api/syncClientClusterAutomation";
 
 // Движок крутится кроном каждые 10 мин; статус освежаем с тем же интервалом.
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 
-const EMPTY: ClusterAutomationStatus = { mode: "off", maxCpo: null, clusters: [] };
+const EMPTY: ClusterAutomationStatus = { mode: "off", maxCpo: null, pendingCount: 0, clusters: [] };
+
+export type ReviewClusterInput = {
+  normalizedClusterName: string;
+  clusterName: string;
+  action: ClusterReviewAction;
+};
 
 export type UseClusterAutomationResult = {
   status: ClusterAutomationStatus;
   isBusy: boolean;
   setMode: (mode: AutomationMode) => Promise<void>;
+  reviewCluster: (input: ReviewClusterInput) => Promise<void>;
 };
 
 /**
@@ -83,5 +92,34 @@ export function useClusterAutomation(
     [nmId, advertId, status],
   );
 
-  return { status, isBusy, setMode };
+  const reviewCluster = useCallback(
+    async (input: ReviewClusterInput) => {
+      if (nmId === null || advertId === null) return;
+      const prev = status;
+      const gen = ++requestGenRef.current;
+      // Оптимистично убираем кластер из «на проверке»: чтобы UI откликнулся сразу,
+      // ставим его в approved (списки/счётчик pending пересчитаются по ответу бэка).
+      setStatus((s) => ({
+        ...s,
+        pendingCount: Math.max(0, s.pendingCount - 1),
+        clusters: s.clusters.map((c) =>
+          c.normalizedClusterName === input.normalizedClusterName
+            ? { ...c, reviewStatus: "approved" as const }
+            : c,
+        ),
+      }));
+      setIsBusy(true);
+      try {
+        const next = await reviewClusterAutomation(nmId, advertId, input);
+        if (isMountedRef.current && gen === requestGenRef.current) setStatus(next);
+      } catch {
+        if (isMountedRef.current && gen === requestGenRef.current) setStatus(prev); // rollback
+      } finally {
+        if (isMountedRef.current) setIsBusy(false);
+      }
+    },
+    [nmId, advertId, status],
+  );
+
+  return { status, isBusy, setMode, reviewCluster };
 }

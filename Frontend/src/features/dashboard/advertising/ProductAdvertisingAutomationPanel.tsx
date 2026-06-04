@@ -26,6 +26,10 @@ export function ProductAdvertisingAutomationPanel(props: {
   alwaysShowCounts?: boolean;
   /** Слот действий под счётчиками (кнопки). */
   actions?: ReactNode;
+  /** Сколько новых кластеров на ручной проверке (>0 → строка-CTA «на проверке N»). */
+  pendingCount?: number;
+  /** Клик по «на проверке N» — открыть модалку модерации. */
+  onReview?: () => void;
 }) {
   const isOn = props.mode !== "off";
   const countsVisible = props.alwaysShowCounts || isOn;
@@ -75,6 +79,17 @@ export function ProductAdvertisingAutomationPanel(props: {
             искл. по CPO {num(props.counts.high)}
           </span>
         </div>
+      )}
+
+      {isOn && (props.pendingCount ?? 0) > 0 && (
+        <button
+          type="button"
+          className="wb-automation-panel__pending"
+          onClick={props.onReview}
+          title="Новые кластеры, которые ВБ добавил в РК — ждут вашей проверки, автоматика их не трогает"
+        >
+          🆕 на проверке {props.pendingCount}
+        </button>
       )}
 
       {isOn && props.actions ? <div className="wb-automation-panel__actions">{props.actions}</div> : null}

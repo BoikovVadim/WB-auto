@@ -8,6 +8,7 @@ import { useClusterAutomation } from "./useClusterAutomation";
 import { ProductAdvertisingDateFilter } from "./ProductAdvertisingDateFilter";
 import { ProductAdvertisingChangeLogPanel } from "./ProductAdvertisingChangeLogPanel";
 import { ProductAdvertisingFilterSettingsModal } from "./ProductAdvertisingFilterSettingsModal";
+import { ProductAdvertisingReviewModal } from "./ProductAdvertisingReviewModal";
 import type { ProductAdvertisingClusterTableSectionProps } from "./ProductAdvertisingClusterTableSection";
 import {
   getAdvertisingCampaignLabel,
@@ -94,20 +95,27 @@ export function ProductAdvertisingClusterOverview(
   const [isArchivedExpanded, setIsArchivedExpanded] = useState(false);
   const [isChangeLogOpen, setIsChangeLogOpen] = useState(false);
   const [isFilterSettingsOpen, setIsFilterSettingsOpen] = useState(false);
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
   const hasSelectedCampaign = props.selectedCampaignAdvertId !== null;
 
   const handleOpenChangeLog = useCallback(() => setIsChangeLogOpen(true), []);
   const handleCloseChangeLog = useCallback(() => setIsChangeLogOpen(false), []);
   const handleOpenFilterSettings = useCallback(() => setIsFilterSettingsOpen(true), []);
   const handleCloseFilterSettings = useCallback(() => setIsFilterSettingsOpen(false), []);
+  const handleOpenReview = useCallback(() => setIsReviewOpen(true), []);
+  const handleCloseReview = useCallback(() => setIsReviewOpen(false), []);
 
   // Планка CPO товара (= CPO × 2, считается на бэке) — на одной линии с «Активные».
   const { maxCpo } = useProductMaxCpo(props.nmId);
 
   // Автоматизация управления кластерами по CPO для выбранной (активной) кампании.
   const automationAdvertId = props.selectedCampaignAdvertId;
-  const { status: automation, isBusy: automationBusy, setMode: setAutomationMode } =
-    useClusterAutomation(props.nmId, automationAdvertId);
+  const {
+    status: automation,
+    isBusy: automationBusy,
+    setMode: setAutomationMode,
+    reviewCluster,
+  } = useClusterAutomation(props.nmId, automationAdvertId);
   const autoCounts = {
     active: automation.clusters.filter(
       (c) => c.state === "active" || c.state === "manual_protected" || c.state === "protected",
@@ -219,6 +227,8 @@ export function ProductAdvertisingClusterOverview(
                 mode={automation.mode}
                 counts={autoCounts}
                 busy={automationBusy}
+                pendingCount={automation.pendingCount}
+                onReview={handleOpenReview}
                 onToggle={(enabled) => setAutomationMode(enabled ? "preview" : "off")}
                 actions={
                   <button
@@ -411,6 +421,15 @@ export function ProductAdvertisingClusterOverview(
             onClose={handleCloseFilterSettings}
           />
         )}
+
+      {isReviewOpen && (
+        <ProductAdvertisingReviewModal
+          status={automation}
+          busy={automationBusy}
+          onReview={reviewCluster}
+          onClose={handleCloseReview}
+        />
+      )}
     </>
   );
 }

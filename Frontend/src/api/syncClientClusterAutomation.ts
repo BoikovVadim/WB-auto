@@ -7,22 +7,29 @@ export type ClusterAutomationState =
   | "dropped"
   | "manual_protected"
   | "protected"
-  | "blacklisted";
+  | "blacklisted"
+  // Новый кластер от ВБ на ручной модерации — движок не трогает, пока человек не решит.
+  | "pending_review";
+export type ClusterReviewStatus = "pending" | "approved";
+export type ClusterReviewAction = "approve" | "reject" | "protect";
 
 export type ClusterAutomationStatus = {
   mode: AutomationMode;
   /** Макс. CPO товара (порог) — ₽. */
   maxCpo: number | null;
+  /** Сколько новых кластеров ждёт ручной модерации. */
+  pendingCount: number;
   clusters: {
     normalizedClusterName: string;
     state: ClusterAutomationState;
     manualProtected: boolean;
     lastCpo: number | null;
     lastDecision: string | null;
+    reviewStatus: ClusterReviewStatus;
   }[];
 };
 
-const EMPTY: ClusterAutomationStatus = { mode: "off", maxCpo: null, clusters: [] };
+const EMPTY: ClusterAutomationStatus = { mode: "off", maxCpo: null, pendingCount: 0, clusters: [] };
 
 export async function fetchClusterAutomationStatus(
   nmId: number,
@@ -45,6 +52,20 @@ export async function setClusterAutomationMode(
     { headers: buildWbClustersWriteHeaders() },
   );
   return response.data ?? { ...EMPTY, mode };
+}
+
+/** Модерация нового кластера: approve (в работу) | reject (чёрный) | protect (белый). */
+export async function reviewClusterAutomation(
+  nmId: number,
+  advertId: number,
+  input: { normalizedClusterName: string; clusterName: string; action: ClusterReviewAction },
+): Promise<ClusterAutomationStatus> {
+  const response = await apiClient.put<ClusterAutomationStatus>(
+    `/wb-clusters/products/${nmId}/campaigns/${advertId}/automation/review`,
+    input,
+    { headers: buildWbClustersWriteHeaders() },
+  );
+  return response.data ?? EMPTY;
 }
 
 export type ProductAutomationStatusEntry = {
