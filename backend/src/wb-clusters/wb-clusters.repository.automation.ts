@@ -304,22 +304,49 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
     }));
   }
 
-  async upsertClusterAutomationState(input: {
-    advertId: number;
-    nmId: number;
-    normalizedClusterName: string;
-    state: ClusterAutomationStateValue;
-    manualProtected: boolean;
-    lastCpo: number | null;
-    lastSpend: number | null;
-    lastDecision: string | null;
-    reviewStatus: ClusterReviewStatus;
-  }): Promise<void> {
+  /**
+   * Батч-апсерт состояний кластеров одним multi-row INSERT (вместо N последовательных
+   * запросов). Критично для отзывчивости: при первом включении preview движок пишет
+   * состояние ~всех кластеров кампании — серийный цикл давал десятки round-trip и панель
+   * висела на «…». Один запрос на всю пачку.
+   */
+  async upsertClusterAutomationStates(
+    rows: {
+      advertId: number;
+      nmId: number;
+      normalizedClusterName: string;
+      state: ClusterAutomationStateValue;
+      manualProtected: boolean;
+      lastCpo: number | null;
+      lastSpend: number | null;
+      lastDecision: string | null;
+      reviewStatus: ClusterReviewStatus;
+    }[],
+  ): Promise<void> {
+    if (rows.length === 0) return;
     await this.ensureSchemaOrThrow();
+    const cols = 9;
+    const placeholders = rows
+      .map(
+        (_, i) =>
+          `($${i * cols + 1}, $${i * cols + 2}, $${i * cols + 3}, $${i * cols + 4}, $${i * cols + 5}, $${i * cols + 6}, $${i * cols + 7}, $${i * cols + 8}, $${i * cols + 9}, NOW())`,
+      )
+      .join(", ");
+    const values = rows.flatMap((r) => [
+      r.advertId,
+      r.nmId,
+      r.normalizedClusterName,
+      r.state,
+      r.manualProtected,
+      r.lastCpo,
+      r.lastSpend,
+      r.lastDecision,
+      r.reviewStatus,
+    ]);
     await this.getPool().query(
       `INSERT INTO ${this.tableName("wb_cluster_automation_state")}
          (advert_id, nm_id, normalized_cluster_name, state, manual_protected, last_cpo, last_spend, last_decision, review_status, decided_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+       VALUES ${placeholders}
        ON CONFLICT (advert_id, nm_id, normalized_cluster_name) DO UPDATE SET
          state = EXCLUDED.state,
          manual_protected = EXCLUDED.manual_protected,
@@ -328,17 +355,7 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
          last_decision = EXCLUDED.last_decision,
          review_status = EXCLUDED.review_status,
          decided_at = NOW()`,
-      [
-        input.advertId,
-        input.nmId,
-        input.normalizedClusterName,
-        input.state,
-        input.manualProtected,
-        input.lastCpo,
-        input.lastSpend,
-        input.lastDecision,
-        input.reviewStatus,
-      ],
+      values,
     );
   }
 }

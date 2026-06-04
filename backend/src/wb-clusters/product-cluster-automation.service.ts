@@ -291,9 +291,11 @@ export class ProductClusterAutomationService {
       await this.applyDecisions(advertId, nmId, decisions, inputs.length);
     }
 
-    // Сохраняем состояние (и в preview — для отображения «что бы сделали»).
-    for (const d of decisions) {
-      await this.repository.upsertClusterAutomationState({
+    // Сохраняем состояние (и в preview — для отображения «что бы сделали») ОДНИМ батч-
+    // запросом — серийный цикл по ~всем кластерам давал десятки round-trip и тормозил
+    // первый показ цифр в панели.
+    await this.repository.upsertClusterAutomationStates(
+      decisions.map((d) => ({
         advertId,
         nmId,
         normalizedClusterName: d.normalizedClusterName,
@@ -303,8 +305,8 @@ export class ProductClusterAutomationService {
         lastSpend: d.spend,
         lastDecision: d.decision,
         reviewStatus: d.reviewStatus,
-      });
-    }
+      })),
+    );
 
     // Грандфазер завершён: фиксируем baseline, чтобы СЛЕДУЮЩИЕ новые кластеры шли на ревью.
     if (!isBaselined) {
