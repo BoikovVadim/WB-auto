@@ -422,9 +422,11 @@ export function ProductAdvertisingClusterOverview(
           />
         )}
 
-      {isReviewOpen && (
+      {isReviewOpen && automationAdvertId !== null && props.nmId !== null && (
         <ProductAdvertisingReviewModal
-          status={automation}
+          nmId={props.nmId}
+          advertId={automationAdvertId}
+          maxCpo={automation.maxCpo}
           busy={automationBusy}
           onReview={reviewCluster}
           onClose={handleCloseReview}

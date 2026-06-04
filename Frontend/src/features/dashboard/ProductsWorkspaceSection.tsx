@@ -37,20 +37,40 @@ function renderAutomationBadge(entry: ProductAutomationStatusEntry | undefined):
     ? `Автоматизация включена (live)${entry.campaignsWithAutomation > 1 ? `, кампаний: ${String(entry.campaignsWithAutomation)}` : ""}`
     : `Автоматизация в предпросмотре${entry.campaignsWithAutomation > 1 ? `, кампаний: ${String(entry.campaignsWithAutomation)}` : ""}`;
   return (
-    <span
-      title={title}
-      style={{
-        display: "inline-block",
-        fontSize: "10px",
-        fontWeight: 600,
-        padding: "1px 6px",
-        borderRadius: "6px",
-        whiteSpace: "nowrap",
-        background: isLive ? "#1f8a4c" : "rgba(0,0,0,0.06)",
-        color: isLive ? "#fff" : "var(--wb-text-muted)",
-      }}
-    >
-      {isLive ? "вкл" : "предпросмотр"}
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+      <span
+        title={title}
+        style={{
+          display: "inline-block",
+          fontSize: "10px",
+          fontWeight: 600,
+          padding: "1px 6px",
+          borderRadius: "6px",
+          whiteSpace: "nowrap",
+          background: isLive ? "#1f8a4c" : "rgba(0,0,0,0.06)",
+          color: isLive ? "#fff" : "var(--wb-text-muted)",
+        }}
+      >
+        {isLive ? "вкл" : "предпросмотр"}
+      </span>
+      {entry.pendingCount > 0 && (
+        <span
+          title={`Новые кластеры на проверке: ${String(entry.pendingCount)} — откройте товар, чтобы обработать`}
+          style={{
+            display: "inline-block",
+            fontSize: "10px",
+            fontWeight: 600,
+            padding: "1px 6px",
+            borderRadius: "6px",
+            whiteSpace: "nowrap",
+            background: "rgba(232,197,71,0.22)",
+            color: "#7a5c00",
+            border: "1px solid #d8a200",
+          }}
+        >
+          🆕 {entry.pendingCount}
+        </span>
+      )}
     </span>
   );
 }

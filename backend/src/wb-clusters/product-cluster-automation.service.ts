@@ -1,10 +1,10 @@
 import { Injectable, Logger } from "@nestjs/common";
 
 import { ProductCpoService } from "./product-cpo.service";
+import { decideForCluster, type ClusterDecision } from "./product-cluster-decision";
 import type {
   AutomationMode,
   ClusterAutomationStateValue,
-  ClusterCpoInput,
   ClusterOverrideItem,
   ClusterOverridePickerRow,
   ClusterReviewStatus,
@@ -15,22 +15,20 @@ import { WbClustersService } from "./wb-clusters.service";
 /** Доля кластеров, выше которой массовое авто-исключение блокируется (защита от обнуления РК). */
 const MAX_EXCLUDE_SHARE = 0.8;
 
-function round2(v: number): number {
-  return Math.round(v * 100) / 100;
-}
-
-interface ClusterDecision {
-  normalizedClusterName: string;
-  clusterName: string;
-  effectiveCpo: number | null;
-  /** Расход кластера за окно — для отображения «стоимости» там, где CPO неопределён (нет заказов). */
-  spend: number | null;
-  state: ClusterAutomationStateValue;
-  manualProtected: boolean;
-  /** Действие относительно текущего состояния на WB. */
-  decision: "include" | "exclude" | "noop";
-  /** Модерация: 'pending' — новый кластер на проверке (движок не трогает); 'approved' — в работе. */
-  reviewStatus: ClusterReviewStatus;
+/** Статус автоматизации кампании для UI (режим + порог + счётчик ревью + per-cluster решения). */
+export interface ClusterAutomationStatusResult {
+  mode: AutomationMode;
+  maxCpo: number | null;
+  /** Сколько новых кластеров ждёт ручной модерации (review_status=pending). */
+  pendingCount: number;
+  clusters: {
+    normalizedClusterName: string;
+    state: ClusterAutomationStateValue;
+    manualProtected: boolean;
+    lastCpo: number | null;
+    lastDecision: string | null;
+    reviewStatus: ClusterReviewStatus;
+  }[];
 }
 
 /**
@@ -62,31 +60,28 @@ export class ProductClusterAutomationService {
     private readonly productCpoService: ProductCpoService,
   ) {}
 
-  async setMode(advertId: number, nmId: number, mode: AutomationMode): Promise<void> {
+  /**
+   * Смена режима + немедленный прогон. Возвращает статус, собранный ПРЯМО из посчитанных
+   * decisions — без второго тяжёлого чтения (getManagedClusterAutomationStates). Это делает
+   * первый показ цифр в панели моментальным. На off / без порога — обычное чтение getStatus.
+   */
+  async setMode(advertId: number, nmId: number, mode: AutomationMode): Promise<ClusterAutomationStatusResult> {
     await this.repository.setAutomationMode(advertId, nmId, mode);
-    // Сразу один прогон, чтобы решения появились без ожидания крона (preview — без записи в WB).
-    if (mode !== "off") {
-      await this.evaluateOne(advertId, nmId, mode).catch((e: unknown) => {
-        this.logger.warn(`Initial automation pass failed for ${advertId}/${nmId}: ${String(e)}`);
-      });
+    if (mode === "off") {
+      return { mode: "off", maxCpo: null, pendingCount: 0, clusters: [] };
+    }
+    try {
+      const { decisions, maxCpo } = await this.evaluateOne(advertId, nmId, mode);
+      if (maxCpo === null) return this.getStatus(advertId, nmId); // нет порога — отдадим как есть
+      return this.buildStatusFromDecisions(mode, maxCpo, decisions);
+    } catch (e: unknown) {
+      this.logger.warn(`Initial automation pass failed for ${advertId}/${nmId}: ${String(e)}`);
+      return this.getStatus(advertId, nmId);
     }
   }
 
   /** Статус автоматизации + per-cluster решения (для UI рекламного воркспейса). */
-  async getStatus(advertId: number, nmId: number): Promise<{
-    mode: AutomationMode;
-    maxCpo: number | null;
-    /** Сколько новых кластеров ждёт ручной модерации (state=pending_review). */
-    pendingCount: number;
-    clusters: {
-      normalizedClusterName: string;
-      state: ClusterAutomationStateValue;
-      manualProtected: boolean;
-      lastCpo: number | null;
-      lastDecision: string | null;
-      reviewStatus: ClusterReviewStatus;
-    }[];
-  }> {
+  async getStatus(advertId: number, nmId: number): Promise<ClusterAutomationStatusResult> {
     const [mode, productCpo, states] = await Promise.all([
       this.repository.getAutomationMode(advertId, nmId),
       this.productCpoService.getProductCpo(nmId),
@@ -111,7 +106,7 @@ export class ProductClusterAutomationService {
     normalizedClusterName: string,
     clusterName: string,
     action: "approve" | "reject" | "protect",
-  ): Promise<void> {
+  ): Promise<ClusterAutomationStatusResult> {
     if (action === "reject") {
       await this.repository.setSingleClusterOverride(advertId, nmId, normalizedClusterName, clusterName, {
         isProtected: false,
@@ -128,10 +123,14 @@ export class ProductClusterAutomationService {
     await this.repository.setClusterReviewStatus(advertId, nmId, normalizedClusterName, "approved");
 
     const mode = await this.repository.getAutomationMode(advertId, nmId);
-    if (mode !== "off") {
-      await this.evaluateOne(advertId, nmId, mode).catch((e: unknown) => {
-        this.logger.warn(`reviewCluster evaluate failed ${advertId}/${nmId}: ${String(e)}`);
-      });
+    if (mode === "off") return this.getStatus(advertId, nmId);
+    try {
+      const { decisions, maxCpo } = await this.evaluateOne(advertId, nmId, mode);
+      if (maxCpo === null) return this.getStatus(advertId, nmId);
+      return this.buildStatusFromDecisions(mode, maxCpo, decisions);
+    } catch (e: unknown) {
+      this.logger.warn(`reviewCluster evaluate failed ${advertId}/${nmId}: ${String(e)}`);
+      return this.getStatus(advertId, nmId);
     }
   }
 
@@ -143,18 +142,32 @@ export class ProductClusterAutomationService {
     return { clusters };
   }
 
+  /** Кластеры на проверке кампании, обогащённые (имя + предв. CPO + частота + JAM) — для модалки ревью. */
+  async getPendingClusters(advertId: number, nmId: number) {
+    return this.repository.getPendingClusters(advertId, nmId);
+  }
+
   /**
    * Сводный статус автоматизации по всем товарам с включённой автоматизацией — для колонки
-   * в таблице товаров (понять, у кого включено). byNmId: nmId → режим товара + число кампаний.
-   * Товары без автоматизации в карте отсутствуют (фронт трактует как "off").
+   * в таблице товаров (понять, у кого включено). byNmId: nmId → режим товара + число кампаний
+   * + сколько новых кластеров на проверке (pendingCount, для бейджа). Товары без автоматизации
+   * в карте отсутствуют (фронт трактует как "off").
    */
   async getProductAutomationStatuses(): Promise<{
-    byNmId: Record<number, { mode: AutomationMode; campaignsWithAutomation: number }>;
+    byNmId: Record<number, { mode: AutomationMode; campaignsWithAutomation: number; pendingCount: number }>;
   }> {
-    const rows = await this.repository.getProductAutomationModes();
-    const byNmId: Record<number, { mode: AutomationMode; campaignsWithAutomation: number }> = {};
+    const [rows, pending] = await Promise.all([
+      this.repository.getProductAutomationModes(),
+      this.repository.getProductPendingCounts(),
+    ]);
+    const pendingByNmId = new Map(pending.map((p) => [p.nmId, p.pendingCount]));
+    const byNmId: Record<number, { mode: AutomationMode; campaignsWithAutomation: number; pendingCount: number }> = {};
     for (const r of rows) {
-      byNmId[r.nmId] = { mode: r.mode, campaignsWithAutomation: r.campaignsWithAutomation };
+      byNmId[r.nmId] = {
+        mode: r.mode,
+        campaignsWithAutomation: r.campaignsWithAutomation,
+        pendingCount: pendingByNmId.get(r.nmId) ?? 0,
+      };
     }
     return { byNmId };
   }
@@ -256,11 +269,19 @@ export class ProductClusterAutomationService {
     }
   }
 
-  /** Считает решения по всем кластерам кампании; в live — применяет к WB. */
-  async evaluateOne(advertId: number, nmId: number, mode: AutomationMode): Promise<ClusterDecision[]> {
-    if (mode === "off") return [];
+  /**
+   * Считает решения по всем кластерам кампании; в live — применяет к WB. Возвращает решения
+   * И maxCpo, чтобы вызывающий (setMode/reviewCluster) собрал статус БЕЗ повторного тяжёлого
+   * чтения (getManagedClusterAutomationStates) — это и делает первый показ цифр моментальным.
+   */
+  async evaluateOne(
+    advertId: number,
+    nmId: number,
+    mode: AutomationMode,
+  ): Promise<{ decisions: ClusterDecision[]; maxCpo: number | null }> {
+    if (mode === "off") return { decisions: [], maxCpo: null };
     const maxCpo = (await this.productCpoService.getProductCpo(nmId)).maxCpo;
-    if (maxCpo == null) return []; // нет порога (нет цены/выкупа/ДРР) — решать не на чем
+    if (maxCpo == null) return { decisions: [], maxCpo: null }; // нет порога — решать не на чем
 
     const [inputs, prevStates, roles, baselinedAt] = await Promise.all([
       this.repository.getClusterCpoInputs(advertId, nmId),
@@ -278,7 +299,7 @@ export class ProductClusterAutomationService {
       const prev = prevByCluster.get(input.normalizedClusterName);
       const reviewStatus: ClusterReviewStatus =
         prev?.reviewStatus ?? (isBaselined ? "pending" : "approved");
-      return this.decideForCluster(input, maxCpo, prev, mode, {
+      return decideForCluster(input, maxCpo, prev, mode, {
         isProtected: roles.protectedNames.has(input.normalizedClusterName),
         isBlacklisted: roles.blacklistedNames.has(input.normalizedClusterName),
         reviewStatus,
@@ -312,115 +333,25 @@ export class ProductClusterAutomationService {
     if (!isBaselined) {
       await this.repository.markCampaignBaselined(advertId, nmId);
     }
-    return decisions;
+    return { decisions, maxCpo };
   }
 
-  private decideForCluster(
-    input: ClusterCpoInput,
-    maxCpo: number,
-    prev: { state: ClusterAutomationStateValue; manualProtected: boolean; lastDecision: string | null } | undefined,
+  /** Статус (как getStatus) из уже посчитанных decisions — без повторного чтения из БД. */
+  private buildStatusFromDecisions(
     mode: AutomationMode,
-    roles: { isProtected: boolean; isBlacklisted: boolean; reviewStatus: ClusterReviewStatus },
-  ): ClusterDecision {
-    const isExcludedNow = input.currentSourceKind === "excluded";
-    // Знаменатель CPO = max(заказы РК, джем-заказы): даём кластеру «зачёт» за
-    // органические/джемовые заказы. РК-часть — заказанные товары shks, если есть,
-    // иначе заказы РК. JAM = 0 при отсутствии, тогда max сводится к РК-части.
-    // Та же формула в колонке «СРО» таблицы (getAdvertisingCpoOrderedItems на фронте).
-    const rkOrdered = input.shks !== null ? input.shks : input.ordersRk;
-    const orderedItems = Math.max(rkOrdered, input.ordersJam);
-    // «CPO» = ровно getAdvertisingCpoOrSpend: есть заказы → расход/заказы; нет заказов,
-    // но есть расход → показываем расход (это и есть «сумма» в колонке); нет расхода → null.
-    const displayCpo =
-      orderedItems > 0 ? input.spend / orderedItems : input.spend > 0 ? input.spend : null;
-    const effectiveCpoForDisplay = displayCpo != null ? round2(displayCpo) : null;
-
-    // Гейт модерации — НАИВЫСШИЙ приоритет: новый кластер (ВБ добавил после baseline) ждёт
-    // ручной проверки. Движок его НЕ трогает (decision=noop), держит текущее состояние на WB.
-    // CPO (effectiveCpoForDisplay) считаем только для предпросмотра в модалке ревью.
-    if (roles.reviewStatus === "pending") {
-      return {
-        normalizedClusterName: input.normalizedClusterName,
-        clusterName: input.clusterName,
-        effectiveCpo: effectiveCpoForDisplay,
-        spend: input.spend,
-        state: "pending_review",
-        manualProtected: false,
-        decision: "noop",
-        reviewStatus: "pending",
-      };
-    }
-
-    // Чёрный список — наивысший приоритет: кластер никогда не должен быть включён.
-    // Если сейчас активен на WB — исключаем; иначе noop.
-    if (roles.isBlacklisted) {
-      return {
-        normalizedClusterName: input.normalizedClusterName,
-        clusterName: input.clusterName,
-        effectiveCpo: effectiveCpoForDisplay,
-        spend: input.spend,
-        state: "blacklisted",
-        manualProtected: false,
-        decision: isExcludedNow ? "noop" : "exclude",
-        reviewStatus: roles.reviewStatus,
-      };
-    }
-
-    // Белый список — приоритет над CPO-правилом: кластер всегда активен. Если сейчас
-    // исключён на WB — включаем; иначе noop. CPO считаем только для отображения.
-    if (roles.isProtected) {
-      return {
-        normalizedClusterName: input.normalizedClusterName,
-        clusterName: input.clusterName,
-        effectiveCpo: effectiveCpoForDisplay,
-        spend: input.spend,
-        state: "protected",
-        manualProtected: false,
-        decision: isExcludedNow ? "include" : "noop",
-        reviewStatus: roles.reviewStatus,
-      };
-    }
-
-    // Ручная защита: в live, если кластер сейчас активен, а автоматика в прошлый прогон
-    // его исключала — значит сотрудник вернул вручную → иммунитет к выбыванию по «нет данных».
-    let manualProtected = prev?.manualProtected ?? false;
-    if (mode === "live" && !isExcludedNow && prev?.lastDecision === "exclude") {
-      manualProtected = true;
-    }
-
-    // Решение РОВНО по числу из колонки «СРО»: ≤ макс. CPO товара → кластер работает
-    // (включить), > макс → исключить. Есть заказы или нет — неважно: важно само значение
-    // в колонке (при 0 заказов это расход = «сумма»). Если расхода вовсе нет
-    // (displayCpo=null) → сигнала против нет → кандидат в активные.
-    let desiredActive: boolean;
-    let state: ClusterAutomationStateValue;
-    if (displayCpo === null) {
-      desiredActive = true;
-      state = manualProtected ? "manual_protected" : "active";
-    } else if (displayCpo <= maxCpo) {
-      desiredActive = true;
-      state = "active";
-      manualProtected = false; // CPO в пределах плана — защита не нужна
-    } else {
-      desiredActive = false;
-      state = "excluded_high";
-      manualProtected = false; // авто-исключение по CPO сильнее ручной защиты
-    }
-
-    let decision: ClusterDecision["decision"] = "noop";
-    if (desiredActive && isExcludedNow) decision = "include";
-    else if (!desiredActive && !isExcludedNow) decision = "exclude";
-
-    return {
-      normalizedClusterName: input.normalizedClusterName,
-      clusterName: input.clusterName,
-      effectiveCpo: effectiveCpoForDisplay,
-      spend: input.spend,
-      state,
-      manualProtected,
-      decision,
-      reviewStatus: roles.reviewStatus,
-    };
+    maxCpo: number | null,
+    decisions: ClusterDecision[],
+  ): ClusterAutomationStatusResult {
+    const clusters = decisions.map((d) => ({
+      normalizedClusterName: d.normalizedClusterName,
+      state: d.state,
+      manualProtected: d.manualProtected,
+      lastCpo: d.effectiveCpo,
+      lastDecision: d.decision,
+      reviewStatus: d.reviewStatus,
+    }));
+    const pendingCount = clusters.filter((c) => c.reviewStatus === "pending").length;
+    return { mode, maxCpo, pendingCount, clusters };
   }
 
   private async applyDecisions(

@@ -71,7 +71,31 @@ export async function reviewClusterAutomation(
 export type ProductAutomationStatusEntry = {
   mode: AutomationMode;
   campaignsWithAutomation: number;
+  /** Сколько новых кластеров товара ждёт ручной модерации (для бейджа в колонке «Авто»). */
+  pendingCount: number;
 };
+
+/** Кластер на проверке, обогащённый для модалки ревью. */
+export type PendingClusterRow = {
+  normalizedClusterName: string;
+  /** Предв. CPO (₽) — куда попадёт после «В работу»; null если нет данных. */
+  lastCpo: number | null;
+  /** Частота запроса (Σ monthly_frequency). */
+  frequency: number | null;
+  /** JAM-заказы (органические/общие за 30 дней). */
+  jamOrders: number | null;
+};
+
+/** Кластеры на проверке кампании (имя + предв. CPO + частота + JAM) — для модалки ревью. */
+export async function fetchPendingClusters(
+  nmId: number,
+  advertId: number,
+): Promise<PendingClusterRow[]> {
+  const response = await apiClient.get<PendingClusterRow[]>(
+    `/wb-clusters/products/${nmId}/campaigns/${advertId}/automation/pending`,
+  );
+  return response.data ?? [];
+}
 
 export type ProductAutomationStatusesResponse = {
   byNmId: Record<number, ProductAutomationStatusEntry>;

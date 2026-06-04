@@ -54,8 +54,9 @@ export class ProductClusterAutomationController {
     @Param("advertId", ParseIntPipe) advertId: number,
     @Body() body: SetAutomationModeDto,
   ) {
-    await this.service.setMode(advertId, nmId, body.mode);
-    return this.service.getStatus(advertId, nmId);
+    // setMode сам возвращает свежий статус (собран из посчитанных decisions) — без
+    // второго тяжёлого getStatus, чтобы цифры в панели появились моментально.
+    return this.service.setMode(advertId, nmId, body.mode);
   }
 
   /** Модерация нового кластера: в работу (approve) | в чёрный список (reject) | защитить (protect). */
@@ -66,14 +67,22 @@ export class ProductClusterAutomationController {
     @Param("advertId", ParseIntPipe) advertId: number,
     @Body() body: ReviewClusterDto,
   ) {
-    await this.service.reviewCluster(
+    return this.service.reviewCluster(
       advertId,
       nmId,
       body.normalizedClusterName,
       body.clusterName,
       body.action,
     );
-    return this.service.getStatus(advertId, nmId);
+  }
+
+  /** Кластеры на проверке кампании (имя + предв. CPO + частота + JAM) — для модалки ревью. */
+  @Get(":nmId/campaigns/:advertId/automation/pending")
+  getPendingClusters(
+    @Param("nmId", ParseIntPipe) nmId: number,
+    @Param("advertId", ParseIntPipe) advertId: number,
+  ) {
+    return this.service.getPendingClusters(advertId, nmId);
   }
 
   /** Настройка фильтров: список кластеров + флаги защиты (для модалки). */

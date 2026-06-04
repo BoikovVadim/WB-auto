@@ -115,6 +115,86 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
   }
 
   /**
+   * Сколько новых кластеров на ручной проверке по каждому товару (для бейджа в колонке
+   * «Авто» таблицы товаров). Считаем pending-строки состояния у товаров, где есть хотя бы
+   * одна включённая (preview/live) кампания. nm_id → pendingCount.
+   */
+  async getProductPendingCounts(): Promise<{ nmId: number; pendingCount: number }[]> {
+    await this.ensureSchemaOrThrow();
+    const result = await this.getPool().query<{ nm_id: string; pending_count: string }>(
+      `SELECT s.nm_id::text, COUNT(*)::text AS pending_count
+       FROM ${this.tableName("wb_cluster_automation_state")} s
+       WHERE s.review_status = 'pending'
+         AND EXISTS (
+           SELECT 1 FROM ${this.tableName("wb_campaign_automation")} a
+           WHERE a.advert_id = s.advert_id AND a.nm_id = s.nm_id
+             AND a.mode IN ('preview', 'live')
+         )
+       GROUP BY s.nm_id`,
+    );
+    return result.rows.map((r) => ({
+      nmId: Number(r.nm_id),
+      pendingCount: Number(r.pending_count),
+    }));
+  }
+
+  /**
+   * Кластеры на ручной проверке (review_status='pending') кампании, обогащённые данными для
+   * модалки ревью: предв. CPO (last_cpo), частота запроса (Σ monthly_frequency — для одной
+   * кампании дублей нет, UNIQUE по nm+advert+query) и JAM-заказы (тот же jam-CTE, что в CPO).
+   */
+  async getPendingClusters(
+    advertId: number,
+    nmId: number,
+  ): Promise<{ normalizedClusterName: string; lastCpo: number | null; frequency: number | null; jamOrders: number | null }[]> {
+    await this.ensureSchemaOrThrow();
+    const result = await this.getPool().query<{
+      normalized_cluster_name: string;
+      last_cpo: string | null;
+      frequency: string | null;
+      orders_jam: string | null;
+    }>(
+      `
+      WITH jam AS (
+        SELECT LOWER(TRIM(cq.cluster_name)) AS ncn,
+               SUM(r.orders_current)        AS orders_jam
+        FROM ${this.tableName("wb_cabinet_cluster_queries")} cq
+        JOIN ${this.tableName("wb_product_search_text_range_snapshots")} s
+          ON s.nm_id = $2 AND s.start_date = s.end_date
+         AND s.start_date >= (CURRENT_DATE - INTERVAL '30 days')
+        JOIN ${this.tableName("wb_product_search_text_range_rows")} r
+          ON r.snapshot_key = s.snapshot_key
+         AND r.normalized_query_text = cq.normalized_query_text
+        WHERE cq.advert_id = $1 AND cq.nm_id = $2
+        GROUP BY LOWER(TRIM(cq.cluster_name))
+      ),
+      freq AS (
+        SELECT normalized_cluster_name, NULLIF(SUM(monthly_frequency), 0) AS frequency
+        FROM ${this.tableName("wb_cabinet_cluster_queries")}
+        WHERE advert_id = $1 AND nm_id = $2
+        GROUP BY normalized_cluster_name
+      )
+      SELECT st.normalized_cluster_name,
+             st.last_cpo::text       AS last_cpo,
+             freq.frequency::text    AS frequency,
+             jam.orders_jam::text    AS orders_jam
+      FROM ${this.tableName("wb_cluster_automation_state")} st
+      LEFT JOIN freq ON freq.normalized_cluster_name = st.normalized_cluster_name
+      LEFT JOIN jam  ON jam.ncn = st.normalized_cluster_name
+      WHERE st.advert_id = $1 AND st.nm_id = $2 AND st.review_status = 'pending'
+      ORDER BY freq.frequency DESC NULLS LAST, st.normalized_cluster_name
+      `,
+      [advertId, nmId],
+    );
+    return result.rows.map((r) => ({
+      normalizedClusterName: r.normalized_cluster_name,
+      lastCpo: r.last_cpo != null ? Number(r.last_cpo) : null,
+      frequency: r.frequency != null ? Number(r.frequency) : null,
+      jamOrders: r.orders_jam != null ? Number(r.orders_jam) : null,
+    }));
+  }
+
+  /**
    * Кампании товара (для per-product автоматизации из таблицы товаров): все РК, в которых
    * участвует nmId. Имя — для подписи в модалке. Множество совпадает с колонкой «РК»
    * таблицы товаров (источник тот же — wb_campaign_products).
