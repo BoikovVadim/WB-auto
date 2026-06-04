@@ -1,6 +1,7 @@
 import type { Client, ClientConfig } from "pg";
 
 import { appEnv } from "../common/env";
+import { runPostFrequencyImportMaintenance } from "./monthly-frequency-import.maintenance";
 import type { MonthlyFrequencyRow } from "./monthly-frequency-analytics.types";
 import type { MonthlyFrequencyImportPeriod } from "./monthly-frequency-import.period";
 
@@ -320,64 +321,10 @@ export async function replaceMonthlyFrequencySnapshot(
       console.error("Weekly frequency history snapshot failed (non-fatal):", historyError);
     }
 
-    // Propagate the freshly replaced snapshot to the denormalized monthly_frequency
-    // on cabinet queries — a full refresh so stale data is overwritten by the latest
-    // report. The per-import lookup only fills rows captured while the matching
-    // frequency already existed, so without this almost every cabinet row stays NULL.
-    // Matched by punctuation-stripped identity (both sides use the same
-    // normalizeAdvertisingIdentity algorithm). statement_timeout was disabled above
-    // for this connection. Best-effort: a failure here must not fail the import.
-    // Both statements touch only rows whose value actually changes (IS DISTINCT FROM),
-    // keeping write volume / WAL proportional to the weekly delta.
-    try {
-      // 0) Backfill the punctuation-stripped identity for any cabinet rows that
-      // predate the column (or were written by an older import). New imports set it
-      // inline; this heals the rest. The expression replicates
-      // normalizeAdvertisingIdentity() exactly (trim raw -> lower -> punctuation->space
-      // -> collapse, no final trim). Runs off the hot path with statement_timeout = 0.
-      const identityBackfill = await client.query(
-        `UPDATE ${tableName("wb_cabinet_cluster_queries")}
-            SET normalized_query_identity = REGEXP_REPLACE(
-                  REGEXP_REPLACE(
-                    LOWER(TRIM(query_text)),
-                    '[]_/\\\\|.,:;!?(){}"''+=*%#№@\`~^&[-]+',
-                    ' ', 'g'),
-                  '\\s+', ' ', 'g')
-          WHERE normalized_query_identity IS NULL`,
-      );
-      if ((identityBackfill.rowCount ?? 0) > 0) {
-        console.log(
-          `  Cabinet identity backfill: ${identityBackfill.rowCount} rows populated.`,
-        );
-      }
-      // 1) Set/refresh frequency for queries present in the new report.
-      const matched = await client.query(
-        `UPDATE ${tableName("wb_cabinet_cluster_queries")} c
-           SET monthly_frequency = f.monthly_frequency
-           FROM (
-             SELECT normalized_query_identity, MAX(monthly_frequency) AS monthly_frequency
-             FROM ${tableName("wb_search_query_frequencies")}
-             GROUP BY normalized_query_identity
-           ) f
-          WHERE c.normalized_query_identity = f.normalized_query_identity
-            AND c.monthly_frequency IS DISTINCT FROM f.monthly_frequency`,
-      );
-      // 2) Clear frequency for queries that dropped out of the new report.
-      const cleared = await client.query(
-        `UPDATE ${tableName("wb_cabinet_cluster_queries")} c
-           SET monthly_frequency = NULL
-          WHERE c.monthly_frequency IS NOT NULL
-            AND NOT EXISTS (
-              SELECT 1 FROM ${tableName("wb_search_query_frequencies")} f
-              WHERE f.normalized_query_identity = c.normalized_query_identity
-            )`,
-      );
-      console.log(
-        `  Cabinet frequency backfill: ${matched.rowCount ?? 0} refreshed, ${cleared.rowCount ?? 0} cleared.`,
-      );
-    } catch (backfillError) {
-      console.error("Cabinet frequency backfill failed (non-fatal):", backfillError);
-    }
+    // Пост-импорт (best-effort, вне транзакции): backfill denormalized частоты в составе
+    // кластеров из свежего снапшота + VACUUM (ANALYZE) частот, чтобы таблица не копила
+    // dead-строки на диске после полной замены. Вынесено в maintenance-модуль.
+    await runPostFrequencyImportMaintenance(client, tableName);
 
     return deduplicatedRows.size;
   } catch (error) {
