@@ -3830,6 +3830,12 @@ input {
   text-align: center;
 }
 
+.wb-change-history-cell--num {
+  text-align: center;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .wb-change-history-row:hover td {
   background: rgba(0,0,0,0.02);
 }

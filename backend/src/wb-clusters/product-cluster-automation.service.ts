@@ -359,6 +359,7 @@ export class ProductClusterAutomationService {
         advertId,
         "exclude",
         toExclude.map((d) => d.clusterName),
+        "automation",
       );
     }
     if (toInclude.length > 0) {
@@ -367,6 +368,7 @@ export class ProductClusterAutomationService {
         advertId,
         "include",
         toInclude.map((d) => d.clusterName),
+        "automation",
       );
     }
   }

@@ -1,5 +1,7 @@
 import { WbClustersRepositoryCostPrice } from "./wb-clusters.repository.cost-price";
 
+export type ChangeLogInitiator = "user" | "automation";
+
 export type ChangeLogEntryInput = {
   nmId: number;
   advertId: number;
@@ -8,6 +10,8 @@ export type ChangeLogEntryInput = {
   oldValue: string | null;
   newValue: string;
   jobId: string | null;
+  /** Кто инициировал: 'user' (вручную) или 'automation' (движок CPO). */
+  initiatedBy: ChangeLogInitiator;
 };
 
 type ChangeLogEntryRow = {
@@ -75,10 +79,11 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
     if (entries.length === 0) return;
     const pool = this.getPool();
 
+    const cols = 8;
     const placeholders = entries
       .map(
         (_, i) =>
-          `($${i * 7 + 1}, $${i * 7 + 2}, $${i * 7 + 3}, $${i * 7 + 4}, $${i * 7 + 5}, $${i * 7 + 6}, $${i * 7 + 7})`,
+          `($${i * cols + 1}, $${i * cols + 2}, $${i * cols + 3}, $${i * cols + 4}, $${i * cols + 5}, $${i * cols + 6}, $${i * cols + 7}, $${i * cols + 8})`,
       )
       .join(", ");
 
@@ -90,12 +95,13 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
       e.oldValue,
       e.newValue,
       e.jobId,
+      e.initiatedBy,
     ]);
 
     await pool.query(
       `
       INSERT INTO ${this.tableName("wb_cluster_change_log")}
-        (nm_id, advert_id, cluster_name, change_type, old_value, new_value, job_id)
+        (nm_id, advert_id, cluster_name, change_type, old_value, new_value, job_id, initiated_by)
       VALUES ${placeholders}
       `,
       values,
@@ -172,36 +178,45 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
       `
       WITH unified AS (
         SELECT
-          id,
+          cl.id,
           'cluster' AS source,
-          CASE change_type
+          CASE cl.change_type
             WHEN 'bid_change'    THEN 'cluster_bid'
             WHEN 'status_change' THEN 'cluster_status'
-            ELSE change_type
+            ELSE cl.change_type
           END AS entity_type,
-          nm_id::text AS nm_id,
-          cluster_name AS entity_label,
-          change_type,
-          old_value,
-          new_value,
-          applied_at AS event_at
-        FROM ${this.tableName("wb_cluster_change_log")}
+          cl.nm_id::text AS nm_id,
+          cl.advert_id::text AS advert_id,
+          pc.product_name AS product_name,
+          cl.initiated_by AS initiated_by,
+          cl.cluster_name AS entity_label,
+          cl.change_type,
+          cl.old_value,
+          cl.new_value,
+          cl.applied_at AS event_at
+        FROM ${this.tableName("wb_cluster_change_log")} cl
+        LEFT JOIN ${this.tableName("wb_product_catalog")} pc ON pc.nm_id = cl.nm_id
 
         UNION ALL
 
         SELECT
-          id,
+          sl.id,
           'system' AS source,
-          entity_type,
-          nm_id::text AS nm_id,
-          entity_label,
-          change_type,
+          sl.entity_type,
+          sl.nm_id::text AS nm_id,
+          NULL::text AS advert_id,
+          pc.product_name AS product_name,
+          -- Системный лог (себестоимость) — всегда ручное действие пользователя.
+          'user' AS initiated_by,
+          sl.entity_label,
+          sl.change_type,
           -- В истории показываем цену без «(база N)» — служебная база нужна только в
           -- сыром аудите. Дедуп ниже работает уже по очищенному значению.
-          regexp_replace(old_value, ' \\(база [0-9]+\\)$', '') AS old_value,
-          regexp_replace(new_value, ' \\(база [0-9]+\\)$', '') AS new_value,
-          created_at AS event_at
-        FROM ${this.tableName("wb_system_change_log")}
+          regexp_replace(sl.old_value, ' \\(база [0-9]+\\)$', '') AS old_value,
+          regexp_replace(sl.new_value, ' \\(база [0-9]+\\)$', '') AS new_value,
+          sl.created_at AS event_at
+        FROM ${this.tableName("wb_system_change_log")} sl
+        LEFT JOIN ${this.tableName("wb_product_catalog")} pc ON pc.nm_id = sl.nm_id
       ),
       flagged AS (
         SELECT
@@ -220,6 +235,9 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
         source,
         entity_type,
         nm_id,
+        advert_id,
+        product_name,
+        initiated_by,
         entity_label,
         change_type,
         old_value,
@@ -242,6 +260,9 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
       source: row.source as "cluster" | "system",
       entityType: row.entity_type,
       nmId: row.nm_id !== null ? Number(row.nm_id) : null,
+      advertId: row.advert_id !== null ? Number(row.advert_id) : null,
+      productName: row.product_name,
+      initiatedBy: (row.initiated_by as ChangeLogInitiator | null) ?? null,
       entityLabel: row.entity_label,
       changeType: row.change_type,
       oldValue: row.old_value,
@@ -256,6 +277,9 @@ type UnifiedChangeLogRow = {
   source: string;
   entity_type: string;
   nm_id: string | null;
+  advert_id: string | null;
+  product_name: string | null;
+  initiated_by: string | null;
   entity_label: string | null;
   change_type: string;
   old_value: string | null;
@@ -268,6 +292,9 @@ export type UnifiedChangeLogEntry = {
   source: "cluster" | "system";
   entityType: string;
   nmId: number | null;
+  advertId: number | null;
+  productName: string | null;
+  initiatedBy: ChangeLogInitiator | null;
   entityLabel: string | null;
   changeType: string;
   oldValue: string | null;

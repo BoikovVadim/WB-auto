@@ -356,8 +356,17 @@ export function getChangeLogCreateStatements({
         old_value TEXT NULL,
         new_value TEXT NOT NULL,
         job_id TEXT NULL,
+        initiated_by TEXT NULL,
         applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
+    `,
+    // initiated_by: кто инициировал изменение — 'user' (вручную через UI) либо
+    // 'automation' (движок автоматизации по CPO, крон каждые 10 мин). ALTER нужен
+    // для уже существующих таблиц на проде; старые записи остаются NULL → фронт
+    // показывает «—».
+    `
+      ALTER TABLE ${tableName("wb_cluster_change_log")}
+      ADD COLUMN IF NOT EXISTS initiated_by TEXT NULL
     `,
     `
       CREATE INDEX IF NOT EXISTS wb_cluster_change_log_campaign_idx

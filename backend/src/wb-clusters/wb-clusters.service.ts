@@ -1306,6 +1306,7 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     advertId: number,
     action: ProductAdvertisingClusterAction,
     clusterNames: string[],
+    initiatedBy: "user" | "automation" = "user",
   ): Promise<ProductAdvertisingClusterActionResponse> {
     return wb_clusters_command_flow.applyProductClusterAction(
       this,
@@ -1313,6 +1314,7 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
       advertId,
       action,
       clusterNames,
+      initiatedBy,
     ) as Promise<ProductAdvertisingClusterActionResponse>;
   }
 

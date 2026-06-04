@@ -5,6 +5,9 @@ export type UnifiedChangeLogEntry = {
   source: "cluster" | "system";
   entityType: string;
   nmId: number | null;
+  advertId: number | null;
+  productName: string | null;
+  initiatedBy: "user" | "automation" | null;
   entityLabel: string | null;
   changeType: string;
   oldValue: string | null;

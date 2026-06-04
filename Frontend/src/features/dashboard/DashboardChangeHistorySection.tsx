@@ -47,6 +47,15 @@ function valueLabel(entityType: string, value: string | null): string | null {
   return value;
 }
 
+/** Кто инициировал изменение: вручную пользователь или движок автоматизации по CPO. */
+function initiatorLabel(initiatedBy: "user" | "automation" | null): string {
+  switch (initiatedBy) {
+    case "user":       return "Пользователь";
+    case "automation": return "Автоматизация";
+    default:           return "—";
+  }
+}
+
 type BadgeColor = "blue" | "red" | "green" | "orange" | "gray";
 
 function entityTypeBadgeColor(entityType: string): BadgeColor {
@@ -87,6 +96,12 @@ function ChangeRow({ entry }: { entry: UnifiedChangeLogEntry }) {
       <td className="wb-change-history-cell wb-change-history-cell--label">
         {entry.entityLabel ?? (entry.nmId !== null ? `Товар #${String(entry.nmId)}` : "—")}
       </td>
+      <td className="wb-change-history-cell wb-change-history-cell--num">
+        {entry.advertId !== null ? String(entry.advertId) : <span className="wb-change-history-empty">—</span>}
+      </td>
+      <td className="wb-change-history-cell wb-change-history-cell--label">
+        {entry.productName ?? (entry.nmId !== null ? `Товар #${String(entry.nmId)}` : "—")}
+      </td>
       <td className="wb-change-history-cell">
         {changeTypeLabel(entry.changeType)}
       </td>
@@ -100,6 +115,18 @@ function ChangeRow({ entry }: { entry: UnifiedChangeLogEntry }) {
       <td className="wb-change-history-cell wb-change-history-cell--value">
         {entry.newValue != null ? (
           <span className="wb-change-history-new">{valueLabel(entry.entityType, entry.newValue)}</span>
+        ) : (
+          <span className="wb-change-history-empty">—</span>
+        )}
+      </td>
+      <td className="wb-change-history-cell">
+        {entry.initiatedBy !== null ? (
+          <span
+            className="wb-change-history-badge"
+            style={entry.initiatedBy === "automation" ? BADGE_STYLES.blue : BADGE_STYLES.gray}
+          >
+            {initiatorLabel(entry.initiatedBy)}
+          </span>
         ) : (
           <span className="wb-change-history-empty">—</span>
         )}
@@ -147,9 +174,12 @@ export const DashboardChangeHistorySection = memo(function DashboardChangeHistor
                 <th style={{ minWidth: 130 }}>Дата и время</th>
                 <th style={{ minWidth: 130 }}>Тип</th>
                 <th style={{ minWidth: 200 }}>Объект</th>
+                <th style={{ minWidth: 110, textAlign: "center" }}>ID РК</th>
+                <th style={{ minWidth: 200 }}>Товар</th>
                 <th style={{ minWidth: 130 }}>Действие</th>
                 <th style={{ minWidth: 100 }}>Было</th>
                 <th style={{ minWidth: 100 }}>Стало</th>
+                <th style={{ minWidth: 130 }}>Инициатор</th>
               </tr>
             </thead>
             <tbody>

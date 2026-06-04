@@ -10,6 +10,7 @@ export async function applyProductClusterAction(
   advertId: number,
   action: string,
   clusterNames: string[],
+  initiatedBy: "user" | "automation" = "user",
 ) {
   if (!self.wbClustersRepository.isConfigured()) {
     throw new ServiceUnavailableException(
@@ -125,6 +126,7 @@ export async function applyProductClusterAction(
         oldValue: item.desiredIsActive ? "excluded" : "active",
         newValue: item.desiredIsActive ? "active" : "excluded",
         jobId: queuedJob.jobId,
+        initiatedBy,
       })),
     );
   } catch (err: unknown) {
@@ -327,6 +329,7 @@ export async function applyProductClusterBids(
           oldValue: oldBid !== null ? String(oldBid) : null,
           newValue: String(item.bid),
           jobId: queuedJob.jobId,
+          initiatedBy: "user" as const,
         };
       }),
     );
