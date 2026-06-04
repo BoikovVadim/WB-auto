@@ -1,6 +1,6 @@
 import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import type { ProductAutomationStatusEntry } from "../../api/syncClientClusterAutomation";
+import { renderAutomationBadge } from "./ProductsAutomationBadge";
 import { ProductAutomationModal } from "./advertising/ProductAutomationModal";
 import { useProductAutomationStatuses } from "./advertising/useProductAutomationStatuses";
 import { ui } from "./copy";
@@ -26,56 +26,6 @@ type ProductsWorkspaceSectionProps = {
   onProductHover: (nmId: number | null) => void;
   onProductFocus: (nmId: number | null) => void;
 };
-
-/** Бейдж статуса автоматизации товара для колонки «Авто». */
-function renderAutomationBadge(entry: ProductAutomationStatusEntry | undefined): ReactNode {
-  if (!entry || entry.mode === "off") {
-    return <span style={{ color: "var(--wb-text-muted)" }}>—</span>;
-  }
-  const isLive = entry.mode === "live";
-  const title = isLive
-    ? `Автоматизация включена (live)${entry.campaignsWithAutomation > 1 ? `, кампаний: ${String(entry.campaignsWithAutomation)}` : ""}`
-    : `Автоматизация в предпросмотре${entry.campaignsWithAutomation > 1 ? `, кампаний: ${String(entry.campaignsWithAutomation)}` : ""}`;
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-      {/* Бейдж «на проверке» — ПЕРВЫМ (слева): «Авто» крайняя правая колонка, и если
-          контент клипается правым краем, важный «🆕 N» должен остаться виден. */}
-      {entry.pendingCount > 0 && (
-        <span
-          title={`Новые кластеры на проверке: ${String(entry.pendingCount)} — откройте товар, чтобы обработать`}
-          style={{
-            display: "inline-block",
-            fontSize: "10px",
-            fontWeight: 600,
-            padding: "1px 6px",
-            borderRadius: "6px",
-            whiteSpace: "nowrap",
-            background: "rgba(232,197,71,0.22)",
-            color: "#7a5c00",
-            border: "1px solid #d8a200",
-          }}
-        >
-          🆕 {entry.pendingCount}
-        </span>
-      )}
-      <span
-        title={title}
-        style={{
-          display: "inline-block",
-          fontSize: "10px",
-          fontWeight: 600,
-          padding: "1px 6px",
-          borderRadius: "6px",
-          whiteSpace: "nowrap",
-          background: isLive ? "#1f8a4c" : "rgba(0,0,0,0.06)",
-          color: isLive ? "#fff" : "var(--wb-text-muted)",
-        }}
-      >
-        {isLive ? "вкл" : "предпросмотр"}
-      </span>
-    </span>
-  );
-}
 
 export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
   props: ProductsWorkspaceSectionProps,
@@ -242,12 +192,22 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
     [props.filteredProducts],
   );
 
+  // Сумма необработанных (на проверке) кластеров по всем видимым товарам — для «Итого».
+  const pendingTotal = useMemo(
+    () =>
+      props.filteredProducts.reduce(
+        (sum, p) => sum + (p.nmId !== null ? automationByNmId[p.nmId]?.pendingCount ?? 0 : 0),
+        0,
+      ),
+    [props.filteredProducts, automationByNmId],
+  );
+
   if (props.productsMode === "detail") {
     return <>{props.detailWorkspace}</>;
   }
 
   if (props.hasCatalogItems) {
-    const totalW = 48 + 110 + nameColWidth + 80 + 54 + 62 + 54 + 96;
+    const totalW = 48 + 110 + nameColWidth + 80 + 54 + 62 + 54 + 96 + 84;
     return (
       <div className="wb-products-page">
         <section className="wb-table-section">
@@ -365,6 +325,9 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                   <th className="wb-table-cell--numeric" title="Автоматизация управления кластерами по CPO" style={{ position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
                     Авто
                   </th>
+                  <th className="wb-table-cell--numeric" title="Новые кластеры на проверке — ВБ добавил, ждут ручной обработки" style={{ width: 84, position: "sticky", top: 0, background: "var(--wb-table-header-bg)", zIndex: 3 }}>
+                    На пров.
+                  </th>
                 </tr>
                 {props.filteredProducts.length > 0 ? (
                   <tr className="wb-products-totals-row wb-thead-row--second">
@@ -384,6 +347,9 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                       {campaignTotals.disabled > 0 ? String(campaignTotals.disabled) : "—"}
                     </th>
                     <th className="wb-table-cell--numeric" style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3 }} />
+                    <th className="wb-table-cell--numeric" style={{ position: "sticky", top: 26, background: "var(--wb-table-totals-bg)", zIndex: 3, fontWeight: 700, color: pendingTotal > 0 ? "#7a5c00" : undefined }}>
+                      {pendingTotal > 0 ? String(pendingTotal) : "—"}
+                    </th>
                   </tr>
                 ) : null}
               </thead>
@@ -435,11 +401,29 @@ export const ProductsWorkspaceSection = memo(function ProductsWorkspaceSection(
                           </button>
                         )}
                       </td>
+                      <td className="wb-table-cell--numeric">
+                        {(() => {
+                          const pendingCount =
+                            product.nmId !== null
+                              ? automationByNmId[product.nmId]?.pendingCount ?? 0
+                              : 0;
+                          return pendingCount > 0 ? (
+                            <span
+                              title="Новые кластеры на проверке — откройте товар, чтобы обработать"
+                              style={{ fontWeight: 700, color: "#7a5c00" }}
+                            >
+                              {String(pendingCount)}
+                            </span>
+                          ) : (
+                            <span style={{ color: "var(--wb-text-muted)" }}>—</span>
+                          );
+                        })()}
+                      </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={8}>{ui.noProductsFound}</td>
+                    <td colSpan={9}>{ui.noProductsFound}</td>
                   </tr>
                 )}
               </tbody>
