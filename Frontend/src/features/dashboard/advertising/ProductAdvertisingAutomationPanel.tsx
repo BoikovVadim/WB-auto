@@ -9,13 +9,12 @@ export interface AutomationPanelCounts {
 }
 
 /**
- * Панель статуса автоматизации кластеров по CPO — 4 строки фиксированной компоновки:
- *   1) чекбокс «Автоматизация · режим»
- *   2) актив N
- *   3) чёрный N
- *   4) искл. по CPO N
- * Счётчики занимают место всегда (visibility, не условный рендер) — переключение
- * флажка НЕ меняет ширину/высоту блока, поэтому соседние элементы не сдвигаются.
+ * Панель статуса автоматизации кластеров по CPO — компактная компоновка:
+ *   1) «режим · чекбокс Автоматизация» (метка режима — слева от флажка)
+ *   2) счётчики одной строкой: актив N · чёрный N · искл. по CPO N
+ *   3) кнопка действия
+ * Счётчики в одну строку, чтобы блок оставался низким и при одной активной РК
+ * (нет архивных кампаний → мало вертикального места) полностью помещался в шапке.
  * Кнопки действий передаются слотом `actions` (в шапке — одна, в модалке — две).
  */
 export function ProductAdvertisingAutomationPanel(props: {
@@ -34,19 +33,12 @@ export function ProductAdvertisingAutomationPanel(props: {
   return (
     <div className="wb-automation-panel">
       <label className="wb-automation-panel__toggle" title="Автоматическое вкл/выкл кластеров по CPO каждые 10 минут">
-        <input
-          type="checkbox"
-          checked={isOn}
-          disabled={props.busy}
-          onChange={(e) => props.onToggle(e.target.checked)}
-        />
-        <span>Автоматизация</span>
         {props.mode === "live" && (
           <span
             className="wb-automation-panel__mode wb-automation-panel__mode--live"
             title="Боевой режим: автоматика реально вкл/выкл кластеры на WB каждые 10 минут"
           >
-            · активна
+            активна
           </span>
         )}
         {props.mode === "preview" && (
@@ -54,9 +46,16 @@ export function ProductAdvertisingAutomationPanel(props: {
             className="wb-automation-panel__mode wb-automation-panel__mode--preview"
             title="Предпросмотр: автоматика считает решения, но НЕ меняет кластеры на WB. Нажмите «Включить автоматизацию», чтобы применять изменения."
           >
-            · предпросмотр
+            предпросмотр
           </span>
         )}
+        <input
+          type="checkbox"
+          checked={isOn}
+          disabled={props.busy}
+          onChange={(e) => props.onToggle(e.target.checked)}
+        />
+        <span>Автоматизация</span>
       </label>
 
       {countsVisible && (
