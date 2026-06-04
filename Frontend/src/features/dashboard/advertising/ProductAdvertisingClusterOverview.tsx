@@ -204,7 +204,7 @@ export function ProductAdvertisingClusterOverview(
 
       <div className="wb-advertising-campaign-grid">
         {activeCampaigns.length > 0 && (
-          <div style={{ width: "100%" }}>
+          <div style={{ width: "100%", position: "relative" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "8px" }}>
               <button
                 type="button"
@@ -221,7 +221,10 @@ export function ProductAdvertisingClusterOverview(
                 </svg>
                 Активные ({activeCampaigns.length})
               </button>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
+              {/* Блок «Макс. CPO + панель автоматизации» позиционируем абсолютно в правом
+                  верхнем углу: при раскрытии панели (счётчики/кнопка) её рост НЕ должен
+                  менять высоту строки заголовка и сдвигать список РК ниже. */}
+              <div style={{ position: "absolute", top: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
                 {maxCpo !== null && (
                   <span
                     title="Максимальная планка CPO для ставок кластеров = CPO × 2"
