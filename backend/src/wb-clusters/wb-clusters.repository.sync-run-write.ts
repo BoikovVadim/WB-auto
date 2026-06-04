@@ -175,14 +175,16 @@ export abstract class WbClustersRepositorySyncRunWrite extends WbClustersReposit
   }
 
   /**
-   * Deletes raw WB API archive payloads older than `keepDays` calendar days (default: 14).
+   * Deletes raw WB API archive payloads older than `keepDays` calendar days (default: 7).
    * Only the JSONB blobs in wb_cluster_raw_archive are deleted — the parent
    * wb_cluster_sync_runs rows are preserved forever so the sync audit log never shrinks.
    * Raw archives are large ephemeral data (campaign lists, stats snapshots) that are
    * never needed after the data has been normalized into wb_cluster_daily_stats.
+   * Окно 7 дней: TOAST payload очень тяжёлый (~1.5 ГБ/день), при 14 днях таблица
+   * раздувалась до ~23 ГБ. Читатели берут только свежую запись на ключ, синк ежедневный.
    * Returns the number of archive rows deleted.
    */
-  async pruneOldRawArchives(keepDays = 14): Promise<{ archivesDeleted: number }> {
+  async pruneOldRawArchives(keepDays = 7): Promise<{ archivesDeleted: number }> {
     if (!this.isConfigured()) {
       return { archivesDeleted: 0 };
     }

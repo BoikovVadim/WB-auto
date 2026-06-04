@@ -242,7 +242,7 @@ export async function handleScheduledJamSync(self: WbClustersService) {
         const archivePruned = await self.wbClustersRepository.pruneOldRawArchives();
         if (archivePruned.archivesDeleted > 0) {
           self.logger.log(
-            `Nightly DB prune: deleted ${archivePruned.archivesDeleted} raw WB API archive entries older than 14 days.`,
+            `Nightly DB prune: deleted ${archivePruned.archivesDeleted} raw WB API archive entries older than 7 days.`,
           );
         }
       } catch (pruneError) {
