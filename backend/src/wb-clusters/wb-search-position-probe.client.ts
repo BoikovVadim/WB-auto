@@ -12,6 +12,7 @@ import {
   Socks5HttpRelay,
   type ParsedProxy,
 } from "./wb-search-position-probe.relay";
+import { ProbeSessionStore } from "./wb-search-position-probe.state";
 
 /**
  * Зонд места товара в публичной выдаче WB через РЕАЛЬНЫЙ браузер (browser-render).
@@ -81,18 +82,27 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
   private idleTimer: NodeJS.Timeout | null = null;
   /** Мьютекс: замеры идут строго по одному (одна страница на всех). */
   private chain: Promise<unknown> = Promise.resolve();
+  /** Персистенция тёплой сессии между рестартами процесса (мгновенно после деплоя). */
+  private readonly store = new ProbeSessionStore();
+  /** Шаблон эндпоинта, восстановленный с диска и ждущий проверки лёгким запросом. */
+  private pendingRestore: { url: string; spa: string } | null = null;
 
   private async ensureReady(proxy: ParsedProxy): Promise<Page> {
     if (this.page && this.browser?.isConnected()) return this.page;
     if (!this.relayPort) this.relayPort = await this.relay.start(proxy);
 
+    // Восстанавливаем сохранённые cookies WB — после рестарта это позволяет пропустить
+    // 75с challenge (проверим сессию лёгким запросом в ensureWarm).
+    const hasState = this.store.hasStorageState();
     this.browser = await chromium.launch({ headless: true });
     this.context = await this.browser.newContext({
       proxy: { server: `http://127.0.0.1:${this.relayPort}` },
       locale: "ru-RU",
       userAgent: PROBE_UA,
       viewport: { width: 1366, height: 900 },
+      ...(hasState ? { storageState: this.store.storageStatePath } : {}),
     });
+    this.pendingRestore = hasState ? this.store.loadTemplate() : null;
     await this.context.addInitScript(() => {
       Object.defineProperty(navigator, "webdriver", { get: () => undefined });
     });
@@ -237,6 +247,23 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
     query: string,
   ): Promise<"ok" | "throttled" | "blocked"> {
     if (this.searchBaseUrl) return "ok";
+
+    // Быстрое восстановление после рестарта: есть сохранённый шаблон + cookies → проверяем
+    // сессию одним лёгким запросом (~1с) вместо ~75с challenge.
+    if (this.pendingRestore) {
+      const restore = this.pendingRestore;
+      this.pendingRestore = null;
+      this.searchBaseUrl = restore.url;
+      this.spaVersion = restore.spa;
+      const check = await this.fetchProductPage(query, 1).catch(() => []);
+      if (check.length > 0) {
+        this.warmed = true;
+        this.logger.log("probe: тёплое восстановление из сохранённой сессии (без прогрева)");
+        return "ok";
+      }
+      this.searchBaseUrl = null; // сессия протухла → полный прогрев ниже
+    }
+
     const holder: { value: { url: string; spa: string } | null } = { value: null };
     const onRequest = (req: Request) => {
       const u = req.url();
@@ -280,6 +307,12 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
     this.searchBaseUrl = captured.url;
     if (captured.spa) this.spaVersion = captured.spa;
     this.warmed = true;
+    // Сохраняем сессию на диск — следующий рестарт восстановится без 75с прогрева.
+    if (this.context) {
+      await this.store
+        .persist(this.context, { url: captured.url, spa: this.spaVersion })
+        .catch((e: Error) => this.logger.warn(`persist session: ${e.message}`));
+    }
     return "ok";
   }
 
