@@ -78,6 +78,45 @@ export abstract class WbClustersRepositoryPositions extends WbClustersRepository
     }));
   }
 
+  /**
+   * Топ-частотный запрос ОДНОГО кластера товара (для on-demand замера по строке).
+   * Матчим по нормализованному имени кластера (LOWER(TRIM(cluster_name))) — фронт
+   * присылает отображаемое имя кластера из той же WB-выдачи.
+   */
+  async getRepresentativeClusterQueryForCluster(
+    nmId: number,
+    clusterName: string,
+  ): Promise<RepresentativeClusterQuery | null> {
+    await this.ensureSchemaOrThrow();
+    const result = await this.getPool().query<{
+      normalized_cluster_name: string;
+      cluster_name: string;
+      top_query: string;
+      freq: string;
+    }>(
+      `
+      SELECT
+        (array_agg(normalized_cluster_name ORDER BY monthly_frequency DESC NULLS LAST))[1] AS normalized_cluster_name,
+        (array_agg(cluster_name ORDER BY monthly_frequency DESC NULLS LAST))[1]            AS cluster_name,
+        (array_agg(query_text ORDER BY monthly_frequency DESC NULLS LAST))[1]              AS top_query,
+        MAX(monthly_frequency)                                                             AS freq
+      FROM ${this.tableName("wb_cabinet_cluster_queries")}
+      WHERE nm_id = $1
+        AND LOWER(TRIM(cluster_name)) = LOWER(TRIM($2))
+        AND monthly_frequency > 0
+      `,
+      [nmId, clusterName],
+    );
+    const row = result.rows[0];
+    if (!row || !row.top_query) return null;
+    return {
+      normalizedClusterName: row.normalized_cluster_name,
+      clusterName: row.cluster_name,
+      topQuery: row.top_query,
+      monthlyFrequency: Number(row.freq),
+    };
+  }
+
   async insertClusterPositionSnapshot(
     input: ClusterPositionSnapshotInput,
   ): Promise<void> {

@@ -23,6 +23,7 @@ import {
   getAdvertisingOrderedItems,
 } from "./model";
 import { ratio } from "./advertisingClusterTableLayout";
+import { ClusterPositionCell } from "./ClusterPositionCell";
 
 export function renderAdvertisingTotalsCell(
   columnKey: AdvertisingClusterSortKey,
@@ -102,6 +103,8 @@ export function renderAdvertisingTotalsCell(
       return formatNullablePercent(visibleClusterTotals.viewToOrder);
     case "spend":
       return formatMoneyValue(visibleClusterTotals.spend, visibleClusterTotals.currency);
+    case "productPosition":
+      return null;
   }
 }
 
@@ -218,6 +221,8 @@ export function renderAdvertisingGroupCell(input: {
       return formatPercentRatio(getAdvertisingOrderedItems(row), row.views);
     case "spend":
       return formatMoneyValue(row.spend, row.currency);
+    case "productPosition":
+      return <ClusterPositionCell clusterName={row.clusterName} />;
   }
 }
 
@@ -302,6 +307,7 @@ export function renderAdvertisingQueryCell(
     case "cpm":
     case "cpo":
     case "spend":
+    case "productPosition":
       return "-";
     case "viewToOrder":
       return formatPercentRatio(getAdvertisingOrderedItems(query), query.views);

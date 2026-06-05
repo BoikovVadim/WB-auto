@@ -30,6 +30,7 @@ export function buildAdvertisingClusterWidths(
     advertId: 72,
     campaignName: 140,
     clusterName: 188,
+    productPosition: 124,
     jamFrequency: 110,
     jamClicks: 96,
     jamAddToCart: 106,

@@ -26,7 +26,14 @@ export type AdvertisingClusterSortKey =
   | "cpm"
   | "cpo"
   | "viewToOrder"
-  | "spend";
+  | "spend"
+  | "productPosition";
+
+/** Колонки, по которым реально можно сортировать (без вычисляемых вне строки, как позиция). */
+export type AdvertisingClusterSortableKey = Exclude<
+  AdvertisingClusterSortKey,
+  "productPosition"
+>;
 
 export type AdvertisingClusterSortDirection = "asc" | "desc";
 

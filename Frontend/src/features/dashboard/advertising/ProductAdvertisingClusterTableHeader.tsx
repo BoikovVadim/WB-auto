@@ -160,6 +160,8 @@ export const ProductAdvertisingClusterTableHeader = forwardRef<
             {tableProps.orderedAdvertisingColumns.map(({ key: value, label }) => {
               const isActive = tableProps.sortState.key === value;
               const isClusterName = value === "clusterName";
+              // «Позиция товара» считается вне строки (по запросу), сортировать нечего.
+              const isSortable = value !== "productPosition";
               const ariaSort = !isActive
                 ? "none"
                 : tableProps.sortState.direction === "asc"
@@ -187,28 +189,34 @@ export const ProductAdvertisingClusterTableHeader = forwardRef<
                       <span className="wb-raw-table-drag-line" />
                       <span className="wb-raw-table-drag-line" />
                     </span>
-                    <button
-                      type="button"
-                      className="wb-data-table__sort-button"
-                      onClick={() => tableProps.onSortChange(value)}
-                      aria-label={`${label}: ${
-                        isActive && tableProps.sortState.direction === "asc"
-                          ? "По убыванию"
-                          : "По возрастанию"
-                      }`}
-                    >
-                      <span>{label}</span>
-                      <span
-                        className={`wb-data-table__sort-arrow${isActive ? " is-active" : ""}`}
-                        aria-hidden="true"
+                    {isSortable ? (
+                      <button
+                        type="button"
+                        className="wb-data-table__sort-button"
+                        onClick={() => tableProps.onSortChange(value)}
+                        aria-label={`${label}: ${
+                          isActive && tableProps.sortState.direction === "asc"
+                            ? "По убыванию"
+                            : "По возрастанию"
+                        }`}
                       >
-                        {isActive
-                          ? tableProps.sortState.direction === "asc"
-                            ? "↑"
-                            : "↓"
-                          : "↕"}
+                        <span>{label}</span>
+                        <span
+                          className={`wb-data-table__sort-arrow${isActive ? " is-active" : ""}`}
+                          aria-hidden="true"
+                        >
+                          {isActive
+                            ? tableProps.sortState.direction === "asc"
+                              ? "↑"
+                              : "↓"
+                            : "↕"}
+                        </span>
+                      </button>
+                    ) : (
+                      <span className="wb-data-table__sort-button" style={{ cursor: "default" }}>
+                        <span>{label}</span>
                       </span>
-                    </button>
+                    )}
                   </div>
                   {isClusterName ? (
                     <span

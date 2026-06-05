@@ -6,6 +6,7 @@ import type {
   AdvertisingClusterStatusFilter,
   AdvertisingClusterSortDirection,
   AdvertisingClusterSortKey,
+  AdvertisingClusterSortableKey,
 } from "./advertisingTableTypes";
 import {
   createAdvertisingClusterNumericFilters,
@@ -41,7 +42,7 @@ function clearStoredStatusFilter() {
   }
 }
 
-function readStoredSortState(): { key: AdvertisingClusterSortKey; direction: AdvertisingClusterSortDirection } | null {
+function readStoredSortState(): { key: AdvertisingClusterSortableKey; direction: AdvertisingClusterSortDirection } | null {
   try {
     const raw = window.sessionStorage.getItem(SORT_SESSION_KEY);
     if (!raw) return null;
@@ -54,7 +55,7 @@ function readStoredSortState(): { key: AdvertisingClusterSortKey; direction: Adv
       typeof (parsed as { key: unknown }).key === "string" &&
       typeof (parsed as { direction: unknown }).direction === "string"
     ) {
-      return parsed as { key: AdvertisingClusterSortKey; direction: AdvertisingClusterSortDirection };
+      return parsed as { key: AdvertisingClusterSortableKey; direction: AdvertisingClusterSortDirection };
     }
   } catch {
     // ignore malformed storage
@@ -62,7 +63,7 @@ function readStoredSortState(): { key: AdvertisingClusterSortKey; direction: Adv
   return null;
 }
 
-function writeStoredSortState(state: { key: AdvertisingClusterSortKey; direction: AdvertisingClusterSortDirection }) {
+function writeStoredSortState(state: { key: AdvertisingClusterSortableKey; direction: AdvertisingClusterSortDirection }) {
   try {
     window.sessionStorage.setItem(SORT_SESSION_KEY, JSON.stringify(state));
   } catch {
@@ -78,7 +79,7 @@ function clearStoredSortState() {
   }
 }
 
-const DEFAULT_SORT_STATE = { key: "spend" as AdvertisingClusterSortKey, direction: "desc" as AdvertisingClusterSortDirection };
+const DEFAULT_SORT_STATE = { key: "spend" as AdvertisingClusterSortableKey, direction: "desc" as AdvertisingClusterSortDirection };
 
 export function useAdvertisingClusterTableControls(input: {
   productNmId: number | null;
@@ -98,7 +99,7 @@ export function useAdvertisingClusterTableControls(input: {
     setStatusFilter(value);
   }, []);
   const [sortState, setSortState] = useState<{
-    key: AdvertisingClusterSortKey;
+    key: AdvertisingClusterSortableKey;
     direction: AdvertisingClusterSortDirection;
   }>(() => readStoredSortState() ?? DEFAULT_SORT_STATE);
 
@@ -140,6 +141,7 @@ export function useAdvertisingClusterTableControls(input: {
   ]);
 
   const handleSortChange = useCallback((key: AdvertisingClusterSortKey) => {
+    if (key === "productPosition") return; // несортируемая колонка (значение вне строки)
     setSortState((currentValue) => {
       const direction: AdvertisingClusterSortDirection =
         currentValue.key === key

@@ -15,6 +15,7 @@ export type AdvertisingColumnWidths = Record<AdvertisingColumnRenderKey, number>
 
 export const advertisingClusterTableColumns: AdvertisingColumnDefinition[] = [
   { key: "clusterName", label: ui.wbCluster, filterKind: "search" },
+  { key: "productPosition", label: ui.productPosition, filterKind: "none" },
   { key: "bid", label: ui.bid, filterKind: "number" },
   { key: "spend", label: ui.spend, filterKind: "number" },
   { key: "monthlyFrequency", label: ui.frequency, filterKind: "number" },

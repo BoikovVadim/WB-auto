@@ -1,4 +1,4 @@
-import type { DragEvent, ReactNode } from "react";
+import { useMemo, type DragEvent, type ReactNode } from "react";
 
 import type {
   ProductAdvertisingWorkspaceClusterQueriesResponse,
@@ -18,6 +18,7 @@ import type { AdvertisingDateBounds, AdvertisingDatePreset, AdvertisingDateRange
 import { ProductAdvertisingClusterDataTable } from "./ProductAdvertisingClusterDataTable";
 import { ProductAdvertisingClusterOverview } from "./ProductAdvertisingClusterOverview";
 import { ProductAdvertisingClusterTableSkeleton } from "./ProductAdvertisingClusterTableSkeleton";
+import { ClusterPositionContext, useClusterPositions } from "./useClusterPositions";
 
 type ClusterQueriesState = {
   loading: boolean;
@@ -123,6 +124,17 @@ export type ProductAdvertisingClusterTableSectionProps = {
 export function ProductAdvertisingClusterTableSection(
   props: ProductAdvertisingClusterTableSectionProps,
 ) {
+  const positions = useClusterPositions(props.nmId);
+  // Порядок видимых кластеров = текущая сортировка/экран — по нему идёт глобальный обход.
+  const orderedClusterNames = useMemo(
+    () => props.visibleClusterRows.map((row) => row.clusterName),
+    [props.visibleClusterRows],
+  );
+  const positionContextValue = useMemo(
+    () => ({ ...positions, orderedClusterNames }),
+    [positions, orderedClusterNames],
+  );
+
   const showSkeleton =
     props.selectedCampaignAdvertId !== null &&
     props.isClusterTableLoading &&
@@ -179,7 +191,7 @@ export function ProductAdvertisingClusterTableSection(
       (!props.isClusterTableLoading && !props.isClusterTableRefreshing));
 
   return (
-    <>
+    <ClusterPositionContext.Provider value={positionContextValue}>
       <ProductAdvertisingClusterOverview {...props} />
       {props.selectedCampaignAdvertId !== null ? (
         showSkeleton ? (
@@ -198,6 +210,6 @@ export function ProductAdvertisingClusterTableSection(
       ) : !props.isWorkspaceLoading && props.campaignSummaries.length === 0 ? (
         <p className="wb-empty-copy">{ui.noCampaignsForPeriod}</p>
       ) : null}
-    </>
+    </ClusterPositionContext.Provider>
   );
 }

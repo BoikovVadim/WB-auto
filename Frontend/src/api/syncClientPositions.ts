@@ -1,9 +1,9 @@
 import { apiClient } from "./syncClientHttp";
 
 /**
- * Место товара в поисковой выдаче WB по кластеру на момент замера (v1, ручной парсер).
- * Бэкенд зондирует search.wb.ru по топ-частотному запросу кластера; фронт только
- * запускает обход и отображает результат + статус (в т.ч. throttled — лимит на 1 IP).
+ * Место товара в поисковой выдаче WB по кластеру на момент замера (v1, ручной замер).
+ * Бэкенд зондирует search.wb.ru по топ-частотному запросу кластера; фронт запускает замер
+ * (по строке или последовательно глобальной кнопкой) и рисует результат + статус.
  */
 export type ClusterPositionStatus =
   | "found"
@@ -25,55 +25,28 @@ export type ClusterPositionLatest = {
   capturedAt: string;
 };
 
-export type PositionRunStatus = {
+export type PositionsResponse = {
   nmId: number;
-  status: "idle" | "running" | "done";
-  total: number;
-  processed: number;
-  found: number;
-  notFound: number;
-  throttled: number;
-  blocked: number;
-  startedAt: string | null;
-  finishedAt: string | null;
-  stoppedEarly: boolean;
   items: ClusterPositionLatest[];
 };
 
-const emptyStatus = (nmId: number): PositionRunStatus => ({
-  nmId,
-  status: "idle",
-  total: 0,
-  processed: 0,
-  found: 0,
-  notFound: 0,
-  throttled: 0,
-  blocked: 0,
-  startedAt: null,
-  finishedAt: null,
-  stoppedEarly: false,
-  items: [],
-});
-
-/** Запустить обход позиций по товару (фоновый; статус читать через fetchPositionStatus). */
-export async function startPositionRun(
-  nmId: number,
-  limit?: number,
-): Promise<PositionRunStatus> {
-  const response = await apiClient.post<PositionRunStatus>(
-    `/wb-clusters/products/${nmId}/positions/run`,
-    undefined,
-    limit !== undefined ? { params: { limit } } : undefined,
-  );
-  return response.data ?? emptyStatus(nmId);
-}
-
-/** Статус обхода + последние замеры мест по кластерам товара. */
-export async function fetchPositionStatus(
-  nmId: number,
-): Promise<PositionRunStatus> {
-  const response = await apiClient.get<PositionRunStatus>(
+/** Последние замеры мест по всем кластерам товара. */
+export async function fetchPositions(nmId: number): Promise<ClusterPositionLatest[]> {
+  const response = await apiClient.get<PositionsResponse>(
     `/wb-clusters/products/${nmId}/positions`,
   );
-  return response.data ?? emptyStatus(nmId);
+  return response.data?.items ?? [];
+}
+
+/** Замерить место товара по одному кластеру (возвращает свежий снапшот). */
+export async function probeClusterPosition(
+  nmId: number,
+  clusterName: string,
+): Promise<ClusterPositionLatest> {
+  const response = await apiClient.post<ClusterPositionLatest>(
+    `/wb-clusters/products/${nmId}/positions/run-cluster`,
+    undefined,
+    { params: { clusterName } },
+  );
+  return response.data;
 }

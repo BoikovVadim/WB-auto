@@ -24,6 +24,7 @@ export const dashboardUiCopyTables = {
   cto: "CTO",
   clickToOrder: "Клик-заказ",
   wbCluster: "Кластер WB",
+  productPosition: "Позиция товара",
   weight: "Вес",
   openToCart: "Конверсия в корзину",
   visibility: "Видимость",
