@@ -325,7 +325,7 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
   private async fetchProductPage(
     query: string,
     pageNumber: number,
-  ): Promise<Array<{ id: number; log?: unknown }>> {
+  ): Promise<Array<{ id: number; logs?: unknown[] }>> {
     if (!this.context || !this.searchBaseUrl) return [];
     const url = new URL(this.searchBaseUrl);
     url.searchParams.set("query", query);
@@ -342,13 +342,16 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
     if (res.status() !== 200) return [];
     try {
       const json = JSON.parse(await res.text()) as {
-        products?: Array<{ id: number; log?: unknown }>;
+        products?: Array<{ id: number; logs?: unknown[] }>;
       };
       const products = json.products ?? [];
-      // ВРЕМЕННАЯ диагностика: какие поля у карточки и есть ли рекламные маркеры.
-      if (pageNumber === 1 && products[0]) {
+      // ВРЕМЕННАЯ диагностика: сколько карточек с непустым logs + структура первой рекламной.
+      if (pageNumber === 1) {
+        const withLogs = products.filter(
+          (p) => Array.isArray(p.logs) && p.logs.length > 0,
+        );
         this.logger.log(
-          `DIAG keys=${Object.keys(products[0]).join(",")} | withLog=${products.filter((p) => (p as { log?: unknown }).log).length}`,
+          `DIAG withLogs=${withLogs.length} sample=${JSON.stringify(withLogs[0]?.logs)?.slice(0, 300)}`,
         );
       }
       return products;
@@ -415,7 +418,7 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
         for (const product of products) {
           raw++;
           if (raw > depth) break outer;
-          const isAdCard = !!product.log;
+          const isAdCard = Array.isArray(product.logs) && product.logs.length > 0;
           if (isAdCard) adCards++;
           else organic++;
           if (product.id === nmId) {
