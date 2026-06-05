@@ -1,28 +1,27 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
+import net from "node:net";
+import http from "node:http";
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 
 /**
- * Зонд места товара в публичной поисковой выдаче WB (search.wb.ru).
+ * Зонд места товара в публичной выдаче WB через РЕАЛЬНЫЙ браузер (browser-render).
  *
- * Снаружи это «ввели запрос → нашли наш товар по ID → отдали место», но под капотом —
- * лёгкий JSON-запрос к API выдачи, а НЕ загрузка тяжёлой веб-страницы (дешевле/быстрее).
+ * Почему браузер, а не голый fetch: сырой API search.wb.ru отдаёт боту анти-бот заглушку
+ * (preset-метадата без товаров) и 429. А загрузка самой страницы выдачи в Chromium через
+ * чистый (мобильный) IP проходит JS-challenge WB (~40-60с ОДИН раз на прогрев сессии) и
+ * SSR-ит реальные карточки — мы читаем их из DOM (data-nm-id = порядок выдачи).
  *
- * Нюансы WB, которые здесь учтены:
- *  - Двухшаговый preset: на популярный запрос WB отдаёт не товары, а metadata с
- *    catalog_type=preset; товары добираем вторым вызовом с тем же query + &preset=<id>.
- *    Метадата приходит с битым хвостом (не парсится JSON) — preset достаём regex'ом.
- *  - Анти-бот по IP: на нагрузке прилетает HTTP 429 (на 1 чистый IP держится только
- *    щадящий темп). 429 возвращаем статусом throttled — оркестратор делает backoff.
- *  - Реклама: у буст-карточки есть поле log (рекламный слот). Различаем органическую
- *    позицию (порядок карточки в выдаче) и рекламную (log.position).
- *
- * v1 ходит с IP прод-сервера напрямую (без прокси). Гео фиксируем dest=Москва — место
- * воспроизводимо независимо от того, откуда физически идёт запрос.
+ * Тёплый браузер держим между замерами (прогрев платится один раз). Замеры сериализуем
+ * (одна страница — один навигатор за раз). Картинки/шрифты блокируем — экономим трафик
+ * мобильного прокси. Прокси задаётся в env WB_SEARCH_PROBE_PROXY (socks5://user:pass@host:port);
+ * Chromium не умеет SOCKS-auth, поэтому поднимаем локальный http→socks5 релей.
  */
 
-const SEARCH_BASE = "https://search.wb.ru/exactmatch/ru/common/v13/search";
 const DEST_MOSCOW = "-1257786";
 const PROBE_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0 Safari/537.36";
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36";
+/** Браузер закрываем после простоя — освобождаем ~400МБ RAM. */
+const IDLE_CLOSE_MS = 10 * 60_000;
 
 export type PositionProbeStatus =
   | "found"
@@ -33,203 +32,310 @@ export type PositionProbeStatus =
 
 export interface PositionProbeResult {
   status: PositionProbeStatus;
-  /** Порядковый номер карточки в выдаче (что видит покупатель), 1-based. */
   organicPosition: number | null;
-  /** Рекламный слот, если карточка стоит как буст (поле log в ответе WB). */
   adPosition: number | null;
   isAd: boolean;
-  /** Страница выдачи, на которой нашли товар. */
   page: number | null;
-  /** Сколько карточек просмотрели (глубина «не в топ-N»). */
   scanned: number;
 }
 
 export interface PositionProbeOptions {
-  /** Максимум страниц выдачи (по ~100 карточек). По умолчанию топ-300. */
-  maxPages?: number;
   dest?: string;
-  /** Пауза между страницами одного кластера, мс. */
-  pageDelayMs?: number;
-  /** Таймаут одного HTTP-запроса, мс. */
-  timeoutMs?: number;
+  /** Сколько прокруток для дозагрузки карточек (глубина «не в топ-N»). */
+  scrolls?: number;
 }
 
-interface WbSearchProduct {
-  id: number;
-  log?: { position?: number | null } | null;
+interface ParsedProxy {
+  host: string;
+  port: number;
+  user: string;
+  pass: string;
 }
 
-interface FetchPageResult {
-  httpStatus: number;
-  products: WbSearchProduct[] | null;
-  presetId: string | null;
-  /** Подписанный токен запроса из preset-метадаты: без него step2 чаще ловит 429. */
-  qv: string | null;
-}
-
-interface PresetContext {
-  presetId: string;
-  qv: string | null;
-}
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const NOT_FOUND: PositionProbeResult = {
+  status: "not_found",
+  organicPosition: null,
+  adPosition: null,
+  isAd: false,
+  page: null,
+  scanned: 0,
+};
 
 @Injectable()
-export class WbSearchPositionProbeClient {
+export class WbSearchPositionProbeClient implements OnModuleDestroy {
   private readonly logger = new Logger(WbSearchPositionProbeClient.name);
 
-  private buildUrl(
-    query: string,
-    page: number,
-    dest: string,
-    preset: PresetContext | null,
-  ) {
-    const params = new URLSearchParams({
-      ab_testing: "false",
-      appType: "1",
-      curr: "rub",
-      dest,
-      hide_dtype: "13",
-      lang: "ru",
-      page: String(page),
-      resultset: "catalog",
-      sort: "popular",
-      spp: "30",
-      suppressSpellcheck: "false",
-      query,
-    });
-    if (preset) {
-      params.set("preset", preset.presetId);
-      // qv из метадаты step1 заметно снижает 429 на step2 (проверено эмпирически).
-      if (preset.qv) params.set("qv", preset.qv);
-    }
-    return `${SEARCH_BASE}?${params.toString()}`;
-  }
+  private browser: Browser | null = null;
+  private context: BrowserContext | null = null;
+  private page: Page | null = null;
+  private relay: http.Server | null = null;
+  private relayPort = 0;
+  private warmed = false;
+  private idleTimer: NodeJS.Timeout | null = null;
+  /** Мьютекс: замеры идут строго по одному (одна страница на всех). */
+  private chain: Promise<unknown> = Promise.resolve();
 
-  private async fetchPage(
-    query: string,
-    page: number,
-    dest: string,
-    preset: PresetContext | null,
-    timeoutMs: number,
-  ): Promise<FetchPageResult> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+  private parseProxy(): ParsedProxy | null {
+    const raw = process.env.WB_SEARCH_PROBE_PROXY;
+    if (!raw) return null;
     try {
-      const res = await fetch(this.buildUrl(query, page, dest, preset), {
-        headers: {
-          Accept: "*/*",
-          "Accept-Encoding": "gzip, deflate, br",
-          Origin: "https://www.wildberries.ru",
-          Referer: "https://www.wildberries.ru/",
-          "User-Agent": PROBE_UA,
-        },
-        signal: controller.signal,
-      });
-      if (res.status === 429) {
-        await res.text().catch(() => undefined);
-        return { httpStatus: 429, products: null, presetId: null, qv: null };
-      }
-      const raw = await res.text();
-      // Товары приходят валидным JSON; metadata preset — с битым хвостом (не парсится).
-      try {
-        const json = JSON.parse(raw) as { data?: { products?: WbSearchProduct[] } };
-        const products = json.data?.products;
-        if (Array.isArray(products)) {
-          return { httpStatus: res.status, products, presetId: null, qv: null };
-        }
-      } catch {
-        // не JSON — ниже пробуем достать preset + qv
-      }
-      const presetMatch = raw.match(/"catalog_value":"preset=(\d+)/);
-      const qvMatch = raw.match(/"qv":"([^"]+)"/);
+      const u = new URL(raw);
       return {
-        httpStatus: res.status,
-        products: null,
-        presetId: presetMatch ? presetMatch[1]! : null,
-        qv: qvMatch ? qvMatch[1]! : null,
+        host: u.hostname,
+        port: Number(u.port),
+        user: decodeURIComponent(u.username),
+        pass: decodeURIComponent(u.password),
       };
-    } finally {
-      clearTimeout(timer);
+    } catch {
+      return null;
     }
   }
 
-  /**
-   * Найти место nm_id в выдаче по одному запросу. Шаг 1 — обычный поиск; если ушло в
-   * preset — шаг 2 с тем же query и &preset=<id>. Дальше листаем до maxPages, ищем nm_id.
-   */
+  // --- SOCKS5 (RFC1928 + RFC1929 auth) → локальный http CONNECT релей ---
+  private socks5Connect(
+    proxy: ParsedProxy,
+    host: string,
+    port: number,
+  ): Promise<{ sock: net.Socket; leftover: Buffer }> {
+    return new Promise((resolve, reject) => {
+      const s = net.connect(proxy.port, proxy.host);
+      let buf = Buffer.alloc(0);
+      let stage = 0;
+      const fail = (e: unknown) => {
+        s.destroy();
+        reject(e instanceof Error ? e : new Error(String(e)));
+      };
+      s.once("error", fail);
+      s.once("connect", () => s.write(Buffer.from([0x05, 0x01, 0x02])));
+      const onData = (d: Buffer) => {
+        buf = Buffer.concat([buf, d]);
+        if (stage === 0) {
+          if (buf.length < 2) return;
+          if (buf[0] !== 0x05 || buf[1] !== 0x02) return fail("no userpass auth");
+          buf = buf.subarray(2);
+          stage = 1;
+          const ub = Buffer.from(proxy.user);
+          const pb = Buffer.from(proxy.pass);
+          s.write(
+            Buffer.concat([Buffer.from([0x01, ub.length]), ub, Buffer.from([pb.length]), pb]),
+          );
+        }
+        if (stage === 1) {
+          if (buf.length < 2) return;
+          if (buf[1] !== 0x00) return fail("auth rejected");
+          buf = buf.subarray(2);
+          stage = 2;
+          const hb = Buffer.from(host);
+          s.write(
+            Buffer.concat([
+              Buffer.from([0x05, 0x01, 0x00, 0x03, hb.length]),
+              hb,
+              Buffer.from([port >> 8, port & 0xff]),
+            ]),
+          );
+        }
+        if (stage === 2) {
+          if (buf.length < 5) return;
+          if (buf[1] !== 0x00) return fail("connect failed " + buf[1]);
+          const atyp = buf[3];
+          const need = atyp === 0x01 ? 10 : atyp === 0x04 ? 22 : 4 + 1 + buf[4]! + 2;
+          if (buf.length < need) return;
+          const leftover = buf.subarray(need);
+          s.removeListener("data", onData);
+          s.removeListener("error", fail);
+          resolve({ sock: s, leftover });
+        }
+      };
+      s.on("data", onData);
+    });
+  }
+
+  private startRelay(proxy: ParsedProxy): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const server = http.createServer();
+      server.on("connect", (req, clientSocket, head) => {
+        const [host, portStr] = (req.url ?? "").split(":");
+        void this.socks5Connect(proxy, host!, Number(portStr || 443))
+          .then(({ sock, leftover }) => {
+            clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+            if (leftover.length) clientSocket.write(leftover);
+            if (head.length) sock.write(head);
+            sock.pipe(clientSocket);
+            clientSocket.pipe(sock);
+            const kill = () => {
+              sock.destroy();
+              clientSocket.destroy();
+            };
+            sock.on("error", kill);
+            clientSocket.on("error", kill);
+          })
+          .catch(() => {
+            try {
+              clientSocket.write("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+            } catch {
+              /* noop */
+            }
+            clientSocket.destroy();
+          });
+      });
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => {
+        const addr = server.address();
+        this.relay = server;
+        resolve(typeof addr === "object" && addr ? addr.port : 0);
+      });
+    });
+  }
+
+  private async ensureReady(proxy: ParsedProxy): Promise<Page> {
+    if (this.page && this.browser?.isConnected()) return this.page;
+    if (!this.relay) this.relayPort = await this.startRelay(proxy);
+
+    this.browser = await chromium.launch({ headless: true });
+    this.context = await this.browser.newContext({
+      proxy: { server: `http://127.0.0.1:${this.relayPort}` },
+      locale: "ru-RU",
+      userAgent: PROBE_UA,
+      viewport: { width: 1366, height: 900 },
+    });
+    await this.context.addInitScript(() => {
+      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+    });
+    // Картинки/шрифты/медиа не грузим — экономим трафик мобильного прокси.
+    await this.context.route("**/*", (route) => {
+      const type = route.request().resourceType();
+      if (type === "image" || type === "media" || type === "font") return route.abort();
+      return route.continue();
+    });
+    this.page = await this.context.newPage();
+    this.warmed = false;
+    return this.page;
+  }
+
+  private scheduleIdleClose() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => void this.close(), IDLE_CLOSE_MS);
+  }
+
+  private async close() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+    const browser = this.browser;
+    this.browser = null;
+    this.context = null;
+    this.page = null;
+    this.warmed = false;
+    if (browser) await browser.close().catch(() => undefined);
+  }
+
+  async onModuleDestroy() {
+    await this.close();
+    this.relay?.close();
+  }
+
   async probeQueryPosition(
     query: string,
     nmId: number,
     options: PositionProbeOptions = {},
   ): Promise<PositionProbeResult> {
-    const maxPages = options.maxPages ?? 3;
-    const dest = options.dest ?? DEST_MOSCOW;
-    const pageDelayMs = options.pageDelayMs ?? 1500;
-    const timeoutMs = options.timeoutMs ?? 25_000;
+    const run = this.chain.then(
+      () => this.doProbe(query, nmId, options),
+      () => this.doProbe(query, nmId, options),
+    );
+    this.chain = run.catch(() => undefined);
+    return run;
+  }
 
-    const notFound: PositionProbeResult = {
-      status: "not_found",
-      organicPosition: null,
-      adPosition: null,
-      isAd: false,
-      page: null,
-      scanned: 0,
-    };
+  private async doProbe(
+    query: string,
+    nmId: number,
+    options: PositionProbeOptions,
+  ): Promise<PositionProbeResult> {
+    const proxy = this.parseProxy();
+    if (!proxy) {
+      this.logger.warn("WB_SEARCH_PROBE_PROXY не задан — замер позиций невозможен.");
+      return { ...NOT_FOUND, status: "blocked" };
+    }
+    const dest = options.dest ?? DEST_MOSCOW;
+    const scrolls = options.scrolls ?? 4;
 
     try {
-      // Шаг 1 — определяем, inline-товары или preset.
-      let first = await this.fetchPage(query, 1, dest, null, timeoutMs);
-      if (first.httpStatus === 429) return { ...notFound, status: "throttled" };
-      let preset: PresetContext | null = null;
-      if (!first.products) {
-        if (!first.presetId) return { ...notFound, status: "blocked" };
-        // Тащим preset + qv-токен из метадаты step1 в добор (qv снижает 429).
-        preset = { presetId: first.presetId, qv: first.qv };
-        await sleep(pageDelayMs);
-        first = await this.fetchPage(query, 1, dest, preset, timeoutMs);
-        if (first.httpStatus === 429) return { ...notFound, status: "throttled" };
-        if (!first.products) return { ...notFound, status: "blocked" };
+      const page = await this.ensureReady(proxy);
+      const url = `https://www.wildberries.ru/catalog/0/search.aspx?search=${encodeURIComponent(
+        query,
+      )}&dest=${dest}`;
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 });
+
+      // Первый заход проходит challenge (до ~70с); прогретый — карточки появляются быстро.
+      const deadline = Date.now() + (this.warmed ? 25_000 : 75_000);
+      let count = 0;
+      while (Date.now() < deadline) {
+        count = await page.locator("[data-nm-id]").count().catch(() => 0);
+        if (count > 0) break;
+        await page.waitForTimeout(2500);
+      }
+      if (count === 0) {
+        const challenge = await page
+          .evaluate(() => {
+            const g = globalThis as unknown as {
+              document: { body: { innerText: string } | null };
+            };
+            return /Подозрительная|Почти готово|Что-то не так/.test(
+              g.document.body?.innerText ?? "",
+            );
+          })
+          .catch(() => false);
+        this.scheduleIdleClose();
+        return { ...NOT_FOUND, status: challenge ? "throttled" : "blocked" };
+      }
+      this.warmed = true;
+
+      // Дозагружаем карточки прокруткой (глубина «не в топ-N»).
+      for (let i = 0; i < scrolls; i++) {
+        await page.mouse.wheel(0, 6000);
+        await page.waitForTimeout(1200);
       }
 
+      const items = await page.evaluate(() => {
+        const g = globalThis as unknown as {
+          document: {
+            querySelectorAll(
+              sel: string,
+            ): ArrayLike<{ getAttribute(n: string): string | null; innerText: string }>;
+          };
+        };
+        return Array.from(g.document.querySelectorAll("[data-nm-id]"))
+          .map((el) => ({
+            nmId: Number(el.getAttribute("data-nm-id")),
+            isAd: /реклама/i.test(el.innerText ?? ""),
+          }))
+          .filter((x) => Number.isFinite(x.nmId) && x.nmId > 0);
+      });
+
+      this.scheduleIdleClose();
+
       let rank = 0;
-      for (let page = 1; page <= maxPages; page++) {
-        const pageResult =
-          page === 1
-            ? first
-            : await this.fetchPage(query, page, dest, preset, timeoutMs);
-        if (page > 1) {
-          if (pageResult.httpStatus === 429)
-            return { ...notFound, status: "throttled", scanned: rank };
-          if (!pageResult.products) break;
+      for (const item of items) {
+        rank++;
+        if (item.nmId === nmId) {
+          return {
+            status: "found",
+            organicPosition: rank,
+            adPosition: null,
+            isAd: item.isAd,
+            page: Math.ceil(rank / 100),
+            scanned: items.length,
+          };
         }
-        const products = pageResult.products ?? [];
-        if (products.length === 0) break;
-        for (const product of products) {
-          rank++;
-          if (product.id === nmId) {
-            const adPosition =
-              product.log && typeof product.log.position === "number"
-                ? product.log.position
-                : null;
-            return {
-              status: "found",
-              organicPosition: rank,
-              adPosition,
-              isAd: !!product.log,
-              page,
-              scanned: rank,
-            };
-          }
-        }
-        if (page < maxPages) await sleep(pageDelayMs);
       }
-      return { ...notFound, scanned: rank };
+      return { ...NOT_FOUND, scanned: items.length };
     } catch (error) {
       this.logger.warn(
-        `probeQueryPosition failed for nm ${nmId} «${query}»: ${(error as Error).message}`,
+        `probeQueryPosition «${query}» nm ${nmId}: ${(error as Error).message}`,
       );
-      return { ...notFound, status: "error" };
+      // Сбрасываем браузер — следующий замер поднимет свежий.
+      await this.close();
+      return { ...NOT_FOUND, status: "error" };
     }
   }
 }

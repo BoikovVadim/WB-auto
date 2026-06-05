@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 
 import type { ClusterPositionLatest } from "./wb-clusters.repository.positions";
 import { WbClustersRepository } from "./wb-clusters.repository";
@@ -10,12 +10,18 @@ const DEST_MOSCOW = "-1257786";
  * Фича «место товара в выдаче WB по кластеру на момент замера» (v1, ручной запуск, 1 IP).
  *
  * Замер делается ПО ОДНОМУ кластеру (по строке таблицы или последовательно при глобальном
- * пуске — порядок задаёт фронт по текущей сортировке/экрану). Зонд ходит к search.wb.ru
- * с IP прод-сервера. Результат пишется в историю (wb_cluster_position_snapshots) и держится
- * до следующего ручного замера / перезахода в товар.
+ * пуске — порядок задаёт фронт). Зонд грузит страницу выдачи в реальном браузере через
+ * мобильный прокси (browser-render проходит анти-бот). Первый замер «холодный» (~75с на
+ * прогрев сессии), поэтому замер запускается ФОНОМ (startClusterProbe), а фронт поллит
+ * getLatestPositions, пока не появится свежий снапшот. Результат держится в истории
+ * (wb_cluster_position_snapshots) до следующего ручного замера / перезахода.
  */
 @Injectable()
 export class ProductPositionService {
+  private readonly logger = new Logger(ProductPositionService.name);
+  /** Кластеры с замером «в полёте» — дедуп повторных кликов/пусков. */
+  private readonly inFlight = new Set<string>();
+
   constructor(
     private readonly repository: WbClustersRepository,
     private readonly probe: WbSearchPositionProbeClient,
@@ -24,6 +30,22 @@ export class ProductPositionService {
   /** Все последние замеры по кластерам товара (для отрисовки колонки). */
   getLatestPositions(nmId: number): Promise<ClusterPositionLatest[]> {
     return this.repository.getLatestClusterPositions(nmId);
+  }
+
+  /**
+   * Запустить замер кластера ФОНОМ (не держим HTTP — холодный замер ~75с). Дедупим
+   * повторные запросы по (nmId, кластер). Результат фронт заберёт поллингом позиций.
+   */
+  startClusterProbe(nmId: number, clusterName: string): { queued: boolean } {
+    const key = `${nmId}:${clusterName.trim().toLowerCase()}`;
+    if (this.inFlight.has(key)) return { queued: false };
+    this.inFlight.add(key);
+    void this.probeCluster(nmId, clusterName)
+      .catch((error: Error) =>
+        this.logger.warn(`probe «${clusterName}» nm ${nmId}: ${error.message}`),
+      )
+      .finally(() => this.inFlight.delete(key));
+    return { queued: true };
   }
 
   /**

@@ -2,14 +2,23 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 
 import {
   fetchPositions,
-  probeClusterPosition,
+  triggerClusterProbe,
   type ClusterPositionLatest,
 } from "../../../api/syncClientPositions";
 
 /** Пауза между кластерами при глобальном обходе — щадящий темп для 1 IP. */
-const RUN_ALL_GAP_MS = 3500;
+const RUN_ALL_GAP_MS = 1500;
+/** Поллинг результата замера: холодный старт браузера ~75с. */
+const POLL_INTERVAL_MS = 3000;
+const POLL_MAX_TRIES = 32;
 
 const keyOf = (clusterName: string) => clusterName.trim().toLowerCase();
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const buildMap = (items: ClusterPositionLatest[]) => {
+  const map = new Map<string, ClusterPositionLatest>();
+  for (const item of items) map.set(keyOf(item.clusterName), item);
+  return map;
+};
 
 export type ClusterPositionContextValue = {
   getPosition: (clusterName: string) => ClusterPositionLatest | undefined;
@@ -50,6 +59,11 @@ export function useClusterPositions(nmId: number | null): UseClusterPositionsRes
   const [runningAll, setRunningAll] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const cancelRef = useRef(false);
+  // Зеркало позиций для чтения «было/стало» в поллинге без stale-замыкания.
+  const positionsRef = useRef(positions);
+  useEffect(() => {
+    positionsRef.current = positions;
+  }, [positions]);
 
   useEffect(() => {
     if (nmId === null) return;
@@ -57,9 +71,7 @@ export function useClusterPositions(nmId: number | null): UseClusterPositionsRes
     void fetchPositions(nmId)
       .then((items) => {
         if (!alive) return;
-        const map = new Map<string, ClusterPositionLatest>();
-        for (const item of items) map.set(keyOf(item.clusterName), item);
-        setPositions(map);
+        setPositions(buildMap(items));
       })
       .catch(() => undefined);
     return () => {
@@ -72,10 +84,21 @@ export function useClusterPositions(nmId: number | null): UseClusterPositionsRes
     async (clusterName: string) => {
       if (nmId === null) return;
       const key = keyOf(clusterName);
+      const before = positionsRef.current.get(key)?.capturedAt ?? null;
       setProbing((prev) => new Set(prev).add(key));
       try {
-        const snapshot = await probeClusterPosition(nmId, clusterName);
-        setPositions((prev) => new Map(prev).set(key, snapshot));
+        await triggerClusterProbe(nmId, clusterName);
+        // Поллим позиции, пока по этому кластеру не появится свежий снапшот.
+        for (let i = 0; i < POLL_MAX_TRIES; i++) {
+          await sleep(POLL_INTERVAL_MS);
+          const items = await fetchPositions(nmId).catch(() => null);
+          if (!items) continue;
+          const snap = items.find((it) => keyOf(it.clusterName) === key);
+          if (snap && snap.capturedAt !== before) {
+            setPositions(buildMap(items));
+            return;
+          }
+        }
       } catch {
         // оставляем прежнее значение ячейки
       } finally {

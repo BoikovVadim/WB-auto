@@ -38,15 +38,18 @@ export async function fetchPositions(nmId: number): Promise<ClusterPositionLates
   return response.data?.items ?? [];
 }
 
-/** Замерить место товара по одному кластеру (возвращает свежий снапшот). */
-export async function probeClusterPosition(
+/**
+ * Запустить замер места по одному кластеру (фоновый, ~75с холодный старт). Результат
+ * забирается поллингом fetchPositions — здесь только триггерим.
+ */
+export async function triggerClusterProbe(
   nmId: number,
   clusterName: string,
-): Promise<ClusterPositionLatest> {
-  const response = await apiClient.post<ClusterPositionLatest>(
+): Promise<{ queued: boolean }> {
+  const response = await apiClient.post<{ queued: boolean }>(
     `/wb-clusters/products/${nmId}/positions/run-cluster`,
     undefined,
     { params: { clusterName } },
   );
-  return response.data;
+  return response.data ?? { queued: false };
 }
