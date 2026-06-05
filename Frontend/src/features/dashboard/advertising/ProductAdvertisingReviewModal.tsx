@@ -8,6 +8,11 @@ import {
   type PendingClusterRow,
 } from "../../../api/syncClientClusterAutomation";
 import type { ReviewClusterInput } from "./useClusterAutomation";
+import {
+  clearClusterReviewDraft,
+  readClusterReviewDraft,
+  writeClusterReviewDraft,
+} from "./clusterReviewDraftStorage";
 
 type Props = {
   nmId: number;
@@ -42,6 +47,14 @@ function formatCount(n: number | null): string {
 export function ProductAdvertisingReviewModal({ nmId, advertId, maxCpo, busy, onReview, onClose }: Props) {
   const [rows, setRows] = useState<PendingClusterRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Выбор решения по каждому кластеру (normalizedClusterName → действие). Не применяется
+  // сразу: запоминается, персистится в localStorage (переживает F5) и улетает на бэкенд
+  // только по «Сохранить». Повторный клик по выбранному сегменту снимает выбор.
+  const [selections, setSelections] = useState<Map<string, ClusterReviewAction>>(
+    () => new Map(Object.entries(readClusterReviewDraft(nmId, advertId))),
+  );
   const isMountedRef = useRef(true);
 
   const load = useCallback(() => {
@@ -66,18 +79,85 @@ export function ProductAdvertisingReviewModal({ nmId, advertId, maxCpo, busy, on
     };
   }, [load]);
 
-  const handleReview = useCallback(
-    async (input: ReviewClusterInput) => {
-      // Оптимистично убираем строку, затем шлём действие и перечитываем enriched-список.
-      setRows((prev) => prev.filter((r) => r.normalizedClusterName !== input.normalizedClusterName));
-      await onReview(input);
-      if (isMountedRef.current) load();
+  const setSelection = useCallback(
+    (name: string, action: ClusterReviewAction) => {
+      setSelections((prev) => {
+        const next = new Map(prev);
+        if (next.get(name) === action) next.delete(name);
+        else next.set(name, action);
+        writeClusterReviewDraft(nmId, advertId, Object.fromEntries(next));
+        return next;
+      });
     },
-    [onReview, load],
+    [nmId, advertId],
   );
 
+  // Кол-во выбранных решений среди реально присутствующих строк (без «висящих» в черновике).
+  const selectedCount = rows.reduce(
+    (acc, r) => acc + (selections.has(r.normalizedClusterName) ? 1 : 0),
+    0,
+  );
+
+  const handleSave = useCallback(async () => {
+    const targets = rows.filter((r) => selections.has(r.normalizedClusterName));
+    if (targets.length === 0) return;
+    setSaving(true);
+    setError(null);
+    // Оптимистично убираем выбранные строки; затем применяем ПОСЛЕДОВАТЕЛЬНО (reviewCluster
+    // возвращает полный снапшот статуса и защищён generation-guard — параллель гонялась бы).
+    setRows((prev) => prev.filter((r) => !selections.has(r.normalizedClusterName)));
+    let anyFailed = false;
+    for (const r of targets) {
+      const action = selections.get(r.normalizedClusterName);
+      if (!action) continue;
+      try {
+        await onReview({
+          normalizedClusterName: r.normalizedClusterName,
+          clusterName: r.normalizedClusterName,
+          action,
+        });
+      } catch {
+        anyFailed = true;
+      }
+    }
+    clearClusterReviewDraft(nmId, advertId);
+    if (isMountedRef.current) {
+      setSelections(new Map());
+      setSaving(false);
+      if (anyFailed) setError("Часть кластеров не удалось применить — список обновлён, повторите.");
+      load();
+    }
+  }, [rows, selections, onReview, load, nmId, advertId]);
+
   return (
-    <Modal title={`Новые кластеры на проверке (${rows.length})`} onClose={onClose} width={760}>
+    <Modal
+      title={`Новые кластеры на проверке (${rows.length})`}
+      onClose={onClose}
+      width={760}
+      footer={
+        <>
+          {error ? (
+            <span style={{ marginRight: "auto", fontSize: "11px", color: "#c0392b" }}>{error}</span>
+          ) : null}
+          <button
+            type="button"
+            className="wb-toggle-pill wb-toggle-pill--compact"
+            onClick={onClose}
+            disabled={saving}
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            className="wb-toggle-pill wb-toggle-pill--compact active"
+            onClick={() => void handleSave()}
+            disabled={saving || busy || selectedCount === 0}
+          >
+            {saving ? "Сохранение..." : `Сохранить${selectedCount > 0 ? ` (${selectedCount})` : ""}`}
+          </button>
+        </>
+      }
+    >
       {loading && rows.length === 0 ? (
         <p className="wb-empty-copy" style={{ padding: 16 }}>Загрузка…</p>
       ) : rows.length === 0 ? (
@@ -109,24 +189,21 @@ export function ProductAdvertisingReviewModal({ nmId, advertId, maxCpo, busy, on
                   </span>
                 </div>
                 <span className="wb-filter-role" role="group" aria-label="Решение по кластеру">
-                  {ACTIONS.map(({ action, label, cls, title }) => (
-                    <button
-                      key={action}
-                      type="button"
-                      className={`wb-filter-role__btn${cls ? ` ${cls}` : ""}`}
-                      disabled={busy}
-                      title={title}
-                      onClick={() =>
-                        void handleReview({
-                          normalizedClusterName: c.normalizedClusterName,
-                          clusterName: c.normalizedClusterName,
-                          action,
-                        })
-                      }
-                    >
-                      {label}
-                    </button>
-                  ))}
+                  {ACTIONS.map(({ action, label, cls, title }) => {
+                    const selected = selections.get(c.normalizedClusterName) === action;
+                    return (
+                      <button
+                        key={action}
+                        type="button"
+                        className={`wb-filter-role__btn${cls ? ` ${cls}` : ""}${selected ? " is-active" : ""}`}
+                        disabled={busy || saving}
+                        title={title}
+                        onClick={() => setSelection(c.normalizedClusterName, action)}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
                 </span>
               </div>
             );
