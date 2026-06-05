@@ -57,7 +57,8 @@ import type { WbClustersSchemaContext } from "./wb-clusters.schema.types";
 //   2 — wb_cluster_change_log.initiated_by (user/automation) для истории изменений.
 //   3 — модерация новых кластеров: review_status в state + baselined_at в campaign_automation.
 //   4 — wb_cluster_position_snapshots: место товара в выдаче по кластеру на момент замера.
-const CURRENT_SCHEMA_VERSION = 4;
+//   5 — wb_cluster_position_snapshots.display_position: органика С рекламой (3 метрики позиции).
+const CURRENT_SCHEMA_VERSION = 5;
 
 const SCHEMA_META_TABLE = "wb_clusters_schema_meta";
 

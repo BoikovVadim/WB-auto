@@ -344,7 +344,14 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       const json = JSON.parse(await res.text()) as {
         products?: Array<{ id: number; log?: unknown }>;
       };
-      return json.products ?? [];
+      const products = json.products ?? [];
+      // ВРЕМЕННАЯ диагностика: какие поля у карточки и есть ли рекламные маркеры.
+      if (pageNumber === 1 && products[0]) {
+        this.logger.log(
+          `DIAG keys=${Object.keys(products[0]).join(",")} | withLog=${products.filter((p) => (p as { log?: unknown }).log).length}`,
+        );
+      }
+      return products;
     } catch {
       return [];
     }
