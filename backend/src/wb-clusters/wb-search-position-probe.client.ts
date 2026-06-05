@@ -303,14 +303,21 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       }
       this.warmed = true;
 
-      // Догружаем выдачу прокруткой до depth карточек (или пока перестаёт расти).
+      // Догружаем выдачу до depth карточек: скроллим в самый низ (триггер бесконечной
+      // ленты WB) с паузой на подгрузку; стоп, когда дошли до depth или счёт перестал расти.
       let stable = 0;
-      for (let i = 0; i < 30 && count < depth; i++) {
-        await page.mouse.wheel(0, 8000);
-        await page.waitForTimeout(1100);
+      for (let i = 0; i < 40 && count < depth; i++) {
+        await page.evaluate(() => {
+          const g = globalThis as unknown as {
+            scrollTo(x: number, y: number): void;
+            document: { body: { scrollHeight: number } };
+          };
+          g.scrollTo(0, g.document.body.scrollHeight);
+        });
+        await page.waitForTimeout(1500);
         const next = await page.locator("[data-nm-id]").count().catch(() => count);
         if (next <= count) {
-          if (++stable >= 3) break;
+          if (++stable >= 4) break;
         } else {
           stable = 0;
         }
