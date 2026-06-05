@@ -292,6 +292,28 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
           .catch(() => undefined);
         await page.waitForTimeout(1500);
       }
+      // ВРЕМЕННО: показывает ли НАША страница рекламу? Считаем метки «Реклама» в DOM
+      // и карточки с рекламным маркером (data-link/класс/aria), дампим пример.
+      const dom = await page
+        .evaluate(() => {
+          const g = globalThis as unknown as {
+            document: {
+              body: { innerText: string } | null;
+              querySelectorAll: (s: string) => ArrayLike<unknown>;
+            };
+          };
+          const txt = g.document.body?.innerText ?? "";
+          const reklama = (txt.match(/Реклама/g) ?? []).length;
+          const cards = g.document.querySelectorAll("[data-nm-id], article.product-card, .product-card").length;
+          const adCards = g.document.querySelectorAll(
+            ".product-card--adv, [class*='adv'], [class*='promo'], [data-popup*='adv']",
+          ).length;
+          return { reklama, cards, adCards };
+        })
+        .catch(() => ({ reklama: -1, cards: -1, adCards: -1 }));
+      this.logger.log(
+        `DIAGDOM Реклама=${dom.reklama} cards=${dom.cards} adCards=${dom.adCards}`,
+      );
     } finally {
       page.off("request", onRequest);
     }
