@@ -277,7 +277,8 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       if (u.includes("/__internal/u-search/") && !holder.value) {
         holder.value = { url: u, spa: req.headers()["x-spa-version"] ?? "" };
       }
-      if (/ads|advert|promo|catalog-ads|search\.wb\.ru|u-search|cards\/v|nm-2-card/i.test(u)) {
+      const rt = req.resourceType();
+      if (rt === "xhr" || rt === "fetch") {
         seen.add(u.split("?")[0]!);
       }
     };
@@ -361,57 +362,9 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       const json = JSON.parse(await res.text()) as {
         products?: Array<{ id: number; logs?: unknown[] }>;
       };
-      const products = json.products ?? [];
-      // ВРЕМЕННАЯ диагностика (стр.1): пробуем варианты параметров — вдруг реклама (logs)
-      // появится, если не прятать рекламные view-flags / dtype.
-      if (pageNumber === 1) {
-        await this.diagAdVariants(url);
-      }
-      return products;
+      return json.products ?? [];
     } catch {
       return [];
-    }
-  }
-
-  /** ВРЕМЕННО: сравниваем withLogs при разных параметрах u-search — ищем, что включает рекламу. */
-  private async diagAdVariants(baseUrl: URL): Promise<void> {
-    if (!this.context) return;
-    const variants: Array<[string, (u: URL) => void]> = [
-      ["base", () => undefined],
-      ["no-vflags", (u) => u.searchParams.delete("hide_vflags")],
-      ["no-dtype", (u) => u.searchParams.delete("hide_dtype")],
-      [
-        "no-both",
-        (u) => {
-          u.searchParams.delete("hide_vflags");
-          u.searchParams.delete("hide_dtype");
-        },
-      ],
-    ];
-    for (const [label, mutate] of variants) {
-      try {
-        const u = new URL(baseUrl.toString());
-        mutate(u);
-        const r = await this.context.request.get(u.toString(), {
-          headers: {
-            "x-requested-with": "XMLHttpRequest",
-            "x-spa-version": this.spaVersion,
-            "x-userid": "0",
-            "x-queryid": `qid${Date.now()}${Math.floor(Math.random() * 1_000_000)}`,
-          },
-          timeout: 15_000,
-        });
-        const j = JSON.parse(await r.text()) as {
-          products?: Array<{ logs?: unknown[] }>;
-        };
-        const ps = j.products ?? [];
-        const withLogs = ps.filter((p) => Array.isArray(p.logs) && p.logs.length > 0);
-        this.logger.log(
-          `DIAGV ${label}: products=${ps.length} withLogs=${withLogs.length} sample=${JSON.stringify(withLogs[0]?.logs)?.slice(0, 200)}`,
-        );
-      } catch (e) {
-        this.logger.log(`DIAGV ${label}: ERR ${(e as Error).message}`);
-      }
     }
   }
 
