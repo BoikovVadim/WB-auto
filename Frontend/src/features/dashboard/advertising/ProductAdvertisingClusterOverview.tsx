@@ -9,6 +9,7 @@ import { ProductAdvertisingDateFilter } from "./ProductAdvertisingDateFilter";
 import { ProductAdvertisingChangeLogPanel } from "./ProductAdvertisingChangeLogPanel";
 import { ProductAdvertisingFilterSettingsModal } from "./ProductAdvertisingFilterSettingsModal";
 import { ProductAdvertisingReviewModal } from "./ProductAdvertisingReviewModal";
+import { ProductPositionPanel } from "./ProductPositionPanel";
 import type { ProductAdvertisingClusterTableSectionProps } from "./ProductAdvertisingClusterTableSection";
 import {
   getAdvertisingCampaignLabel,
@@ -432,6 +433,8 @@ export function ProductAdvertisingClusterOverview(
           onClose={handleCloseReview}
         />
       )}
+
+      {props.nmId !== null && <ProductPositionPanel nmId={props.nmId} />}
     </>
   );
 }

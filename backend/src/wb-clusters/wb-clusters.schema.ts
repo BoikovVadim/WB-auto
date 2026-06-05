@@ -37,6 +37,7 @@ import {
   executeSchemaStatements,
 } from "./wb-clusters.schema.executor";
 import { getProductAcquiringWeeklyCreateStatements } from "./wb-clusters.schema.acquiring";
+import { getClusterPositionSnapshotCreateStatements } from "./wb-clusters.schema.positions";
 import { getIndexStatements } from "./wb-clusters.schema.indexes";
 import {
   getUnitEconomicsMarginSnapshotCreateStatements,
@@ -55,7 +56,8 @@ import type { WbClustersSchemaContext } from "./wb-clusters.schema.types";
 //   1 — внедрение version-gate (исходный набор схемы на момент внедрения).
 //   2 — wb_cluster_change_log.initiated_by (user/automation) для истории изменений.
 //   3 — модерация новых кластеров: review_status в state + baselined_at в campaign_automation.
-const CURRENT_SCHEMA_VERSION = 3;
+//   4 — wb_cluster_position_snapshots: место товара в выдаче по кластеру на момент замера.
+const CURRENT_SCHEMA_VERSION = 4;
 
 const SCHEMA_META_TABLE = "wb_clusters_schema_meta";
 
@@ -144,6 +146,7 @@ export async function initializeWbClustersSchema(input: {
   await executeSchemaStatements(context, getProductDailyPricesCreateStatements(context));
   await executeSchemaStatements(context, getProductPriceChangesCreateStatements(context));
   await executeSchemaStatements(context, getProductAcquiringWeeklyCreateStatements(context));
+  await executeSchemaStatements(context, getClusterPositionSnapshotCreateStatements(context));
   await executeSchemaStatements(context, getUnitEconomicsSettingsCreateStatements(context));
   await executeSchemaStatements(context, getUnitEconomicsMarginSnapshotCreateStatements(context));
   await executeSchemaStatements(context, getClusterAutomationCreateStatements(context));

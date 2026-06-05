@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 
-import { WbClustersRepositoryAutomation } from "./wb-clusters.repository.automation";
+import { WbClustersRepositoryPositions } from "./wb-clusters.repository.positions";
 
 export type {
   PreferredProductAdvertisingSnapshotSummaryRecord,
@@ -25,4 +25,4 @@ export type { DailyOrdersRow } from "./wb-clusters.repository.orders";
 export type { DailyStocksRow } from "./wb-clusters.repository.stocks";
 
 @Injectable()
-export class WbClustersRepository extends WbClustersRepositoryAutomation {}
+export class WbClustersRepository extends WbClustersRepositoryPositions {}
