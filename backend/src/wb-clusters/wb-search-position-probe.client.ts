@@ -344,17 +344,7 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       const json = JSON.parse(await res.text()) as {
         products?: Array<{ id: number; logs?: unknown[] }>;
       };
-      const products = json.products ?? [];
-      // ВРЕМЕННАЯ диагностика: сколько карточек с непустым logs + структура первой рекламной.
-      if (pageNumber === 1) {
-        const withLogs = products.filter(
-          (p) => Array.isArray(p.logs) && p.logs.length > 0,
-        );
-        this.logger.log(
-          `DIAG withLogs=${withLogs.length} sample=${JSON.stringify(withLogs[0]?.logs)?.slice(0, 300)}`,
-        );
-      }
-      return products;
+      return json.products ?? [];
     } catch {
       return [];
     }
@@ -436,15 +426,18 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
         `probe «${query}»: cards=${raw} organic=${organic} ads=${adCards}`,
       );
 
-      if (adPosition !== null || displayPosition !== null) {
+      if (organicPosition !== null || adPosition !== null) {
+        // «Органика с рекламой» достоверна только если в фиде ЕСТЬ рекламные карточки
+        // (u-search их сейчас не отдаёт → null). adPosition аналогично пуст без рекламы.
+        const display = adCards > 0 ? displayPosition : null;
         this.logger.log(
-          `probe «${query}» nm ${nmId}: орг ${organicPosition ?? "—"} / показ ${displayPosition ?? "—"} / рек ${adPosition ?? "—"} за ${elapsed()}`,
+          `probe «${query}» nm ${nmId}: орг ${organicPosition ?? "—"} / показ ${display ?? "—"} / рек ${adPosition ?? "—"} за ${elapsed()}`,
         );
-        const refPos = displayPosition ?? adPosition!;
+        const refPos = organicPosition ?? adPosition!;
         return {
           status: "found",
           organicPosition,
-          displayPosition,
+          displayPosition: display,
           adPosition,
           isAd: adPosition !== null,
           page: Math.ceil(refPos / 100),
