@@ -313,13 +313,20 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       )}&dest=${dest}`;
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 });
 
+      const scrollBy = (px: number) =>
+        page.evaluate((y) => {
+          const g = globalThis as unknown as { scrollBy(x: number, y: number): void };
+          g.scrollBy(0, y);
+        }, px);
+
       // Ждём появления карточек до 75с (холодный заход / повторный challenge проходят
-      // за ~40с; прогретый — за секунды). Не обрываем рано: пустой результат тоже подождёт.
+      // за ~40с; прогретый — за секунды). Подталкиваем скроллом — это ускоряет рендер.
       const start = Date.now();
       let count = 0;
       while (Date.now() - start < 75_000) {
         count = await page.locator("[data-nm-id]").count().catch(() => 0);
         if (count > 0) break;
+        await scrollBy(1200);
         await page.waitForTimeout(2500);
       }
       if (count === 0) {
@@ -332,71 +339,60 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       }
       this.warmed = true;
 
-      // WB виртуализирует ленту (рециклит карточки в DOM), поэтому собираем nm_id ПО ХОДУ
-      // прокрутки, накапливая порядок с дедупом, до depth или пока перестают появляться
-      // новые. Скроллим инкрементально (не прыжком в низ) — чтобы не проскочить карточки.
-      const collectBatch = () =>
-        page.evaluate(() => {
-          const g = globalThis as unknown as {
-            document: {
-              querySelectorAll(
-                sel: string,
-              ): ArrayLike<{ getAttribute(n: string): string | null; innerText: string }>;
-            };
-          };
-          return Array.from(g.document.querySelectorAll("[data-nm-id]"))
-            .map((el) => ({
-              nmId: Number(el.getAttribute("data-nm-id")),
-              isAd: /реклама/i.test(el.innerText ?? ""),
-            }))
-            .filter((x) => Number.isFinite(x.nmId) && x.nmId > 0);
-        });
-
-      const seen = new Set<number>();
-      let rank = 0;
-      let found: PositionProbeResult | null = null;
-      let dry = 0;
-      for (let i = 0; i < 120 && seen.size < depth && !found; i++) {
-        const batch = await collectBatch();
-        let added = 0;
-        for (const item of batch) {
-          if (seen.has(item.nmId)) continue;
-          seen.add(item.nmId);
-          rank++;
-          added++;
-          if (item.nmId === nmId) {
-            found = {
-              status: "found",
-              organicPosition: rank,
-              adPosition: null,
-              isAd: item.isAd,
-              page: Math.ceil(rank / 100),
-              scanned: rank,
-            };
-            break;
-          }
-        }
-        if (found || seen.size >= depth) break;
-        if (added === 0) {
-          if (++dry >= 5) break;
+      // Лента WB НАКАПЛИВАЕТ карточки в DOM (не рециклит), поэтому быстро доскролливаем
+      // до depth (или пока растёт), а порядок собираем ОДНИМ проходом в конце. Крупный шаг
+      // + короткая пауза → ~300 карточек за ~12с (без потери порядка, т.к. DOM накапливает).
+      let stable = 0;
+      while (count < depth && Date.now() - start < 75_000) {
+        await scrollBy(2800);
+        await page.waitForTimeout(500);
+        const next = await page.locator("[data-nm-id]").count().catch(() => count);
+        if (next <= count) {
+          if (++stable >= 5) break;
         } else {
-          dry = 0;
+          stable = 0;
         }
-        await page.evaluate(() => {
-          const g = globalThis as unknown as { scrollBy(x: number, y: number): void };
-          g.scrollBy(0, 1600);
-        });
-        await page.waitForTimeout(900);
+        count = next;
       }
 
-      this.scheduleIdleClose();
-      this.logger.log(
-        `probe «${query}» nm ${nmId}: собрано ${seen.size} за ${elapsed()}${
-          found ? `, место ${found.organicPosition}` : ""
-        }`,
-      );
+      const items = await page.evaluate(() => {
+        const g = globalThis as unknown as {
+          document: {
+            querySelectorAll(
+              sel: string,
+            ): ArrayLike<{ getAttribute(n: string): string | null; innerText: string }>;
+          };
+        };
+        return Array.from(g.document.querySelectorAll("[data-nm-id]"))
+          .map((el) => ({
+            nmId: Number(el.getAttribute("data-nm-id")),
+            isAd: /реклама/i.test(el.innerText ?? ""),
+          }))
+          .filter((x) => Number.isFinite(x.nmId) && x.nmId > 0);
+      });
 
-      return found ?? { ...NOT_FOUND, scanned: seen.size };
+      this.scheduleIdleClose();
+
+      // Считаем место только в пределах depth (топ-300): глубже — это «>300».
+      const limited = items.slice(0, depth);
+      this.logger.log(
+        `probe «${query}» nm ${nmId}: ${limited.length} карточек за ${elapsed()}`,
+      );
+      let rank = 0;
+      for (const item of limited) {
+        rank++;
+        if (item.nmId === nmId) {
+          return {
+            status: "found",
+            organicPosition: rank,
+            adPosition: null,
+            isAd: item.isAd,
+            page: Math.ceil(rank / 100),
+            scanned: rank,
+          };
+        }
+      }
+      return { ...NOT_FOUND, scanned: limited.length };
     } catch (error) {
       this.logger.warn(
         `probeQueryPosition «${query}» nm ${nmId}: ${(error as Error).message}`,
