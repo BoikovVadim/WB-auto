@@ -41,9 +41,12 @@ export interface PositionProbeResult {
 
 export interface PositionProbeOptions {
   dest?: string;
-  /** Сколько прокруток для дозагрузки карточек (глубина «не в топ-N»). */
-  scrolls?: number;
+  /** До скольких карточек догружать выдачу (глубина поиска места). */
+  depth?: number;
 }
+
+/** Глубина поиска места по умолчанию — топ-300 (не нашли → «>300»). */
+const DEFAULT_DEPTH = 300;
 
 interface ParsedProxy {
   host: string;
@@ -257,43 +260,63 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       return { ...NOT_FOUND, status: "blocked" };
     }
     const dest = options.dest ?? DEST_MOSCOW;
-    const scrolls = options.scrolls ?? 4;
+    const depth = options.depth ?? DEFAULT_DEPTH;
+    const t0 = Date.now();
+    const elapsed = () => `${Math.round((Date.now() - t0) / 1000)}s`;
+
+    let page!: Page;
+    const hasChallenge = () =>
+      page
+        .evaluate(() => {
+          const g = globalThis as unknown as {
+            document: { body: { innerText: string } | null };
+          };
+          return /Подозрительная|Почти готово|Что-то не так/.test(
+            g.document.body?.innerText ?? "",
+          );
+        })
+        .catch(() => false);
 
     try {
-      const page = await this.ensureReady(proxy);
+      page = await this.ensureReady(proxy);
       const url = `https://www.wildberries.ru/catalog/0/search.aspx?search=${encodeURIComponent(
         query,
       )}&dest=${dest}`;
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 });
 
-      // Первый заход проходит challenge (до ~70с); прогретый — карточки появляются быстро.
-      const deadline = Date.now() + (this.warmed ? 25_000 : 75_000);
+      // Ждём карточки до 75с (холодный заход / повторный challenge); если карточек нет
+      // и challenge тоже нет дольше 15с — пусто/блок.
+      const start = Date.now();
       let count = 0;
-      while (Date.now() < deadline) {
+      let challenge = false;
+      while (Date.now() - start < 75_000) {
         count = await page.locator("[data-nm-id]").count().catch(() => 0);
         if (count > 0) break;
+        challenge = await hasChallenge();
+        if (!challenge && Date.now() - start > 15_000) break;
         await page.waitForTimeout(2500);
       }
       if (count === 0) {
-        const challenge = await page
-          .evaluate(() => {
-            const g = globalThis as unknown as {
-              document: { body: { innerText: string } | null };
-            };
-            return /Подозрительная|Почти готово|Что-то не так/.test(
-              g.document.body?.innerText ?? "",
-            );
-          })
-          .catch(() => false);
         this.scheduleIdleClose();
+        this.logger.warn(
+          `probe «${query}» nm ${nmId}: ${challenge ? "challenge не пройден" : "пусто"} за ${elapsed()}`,
+        );
         return { ...NOT_FOUND, status: challenge ? "throttled" : "blocked" };
       }
       this.warmed = true;
 
-      // Дозагружаем карточки прокруткой (глубина «не в топ-N»).
-      for (let i = 0; i < scrolls; i++) {
-        await page.mouse.wheel(0, 6000);
-        await page.waitForTimeout(1200);
+      // Догружаем выдачу прокруткой до depth карточек (или пока перестаёт расти).
+      let stable = 0;
+      for (let i = 0; i < 30 && count < depth; i++) {
+        await page.mouse.wheel(0, 8000);
+        await page.waitForTimeout(1100);
+        const next = await page.locator("[data-nm-id]").count().catch(() => count);
+        if (next <= count) {
+          if (++stable >= 3) break;
+        } else {
+          stable = 0;
+        }
+        count = next;
       }
 
       const items = await page.evaluate(() => {
@@ -313,6 +336,9 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       });
 
       this.scheduleIdleClose();
+      this.logger.log(
+        `probe «${query}» nm ${nmId}: прочитано ${items.length} карточек за ${elapsed()}`,
+      );
 
       let rank = 0;
       for (const item of items) {

@@ -46,8 +46,11 @@ function renderValue(position: ClusterPositionLatest | undefined, probing: boole
   }
   if (position.status === "not_found") {
     return (
-      <span style={{ color: "var(--wb-text-muted, #888)", fontSize: "11px" }}>
-        не в топ-{position.scannedCount ?? "?"}
+      <span
+        style={{ color: "var(--wb-text-muted, #888)" }}
+        title={`Не в топ-300 (просмотрено ${position.scannedCount ?? "?"})`}
+      >
+        &gt;300
       </span>
     );
   }
