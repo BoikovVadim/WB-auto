@@ -1,27 +1,68 @@
-import type { Pool } from "pg";
+import type { Pool, QueryResult, QueryResultRow } from "pg";
 
+import { appEnv } from "../common/env";
 import type { ClusterSourceKind } from "./wb-clusters.types";
 import { WbClustersRepositoryAdvertisingSheetCoreQueryLoader } from "./wb-clusters.repository.advertising-sheet-core-query-loader";
 
+type SheetClusterQueryRow = {
+  advert_id: string;
+  cluster_name: string;
+  normalized_cluster_name: string;
+  query_text: string;
+  normalized_query_text: string;
+  source_kind: ClusterSourceKind;
+  is_active: boolean | null;
+  views: string | null;
+  clicks: string | null;
+  orders: string | null;
+  add_to_cart: string | null;
+  shks: string | null;
+  monthly_frequency: string | null;
+  updated_at: string | null;
+};
+
+type SheetCabinetClusterQueryRow = SheetClusterQueryRow & { captured_at: string };
+
+function emptyQueryResult<T extends QueryResultRow>(): QueryResult<T> {
+  return { command: "SELECT", rowCount: 0, oid: 0, rows: [], fields: [] };
+}
+
 export abstract class WbClustersRepositoryAdvertisingSheetQueryMapLoader extends WbClustersRepositoryAdvertisingSheetCoreQueryLoader {
-  protected async loadProductAdvertisingSheetQueryRows(pool: Pool, nmId: number) {
+  /** Дёшево (индекс по nm_id): сколько строк «вселенной запросов» у товара. */
+  protected async countCabinetQueryUniverse(pool: Pool, nmId: number): Promise<number> {
+    const result = await pool.query<{ cnt: string }>(
+      `SELECT COUNT(*)::text AS cnt FROM ${this.tableName("wb_cabinet_cluster_queries")} WHERE nm_id = $1`,
+      [nmId],
+    );
+    return Number(result.rows[0]?.cnt ?? 0) || 0;
+  }
+
+  protected async loadProductAdvertisingSheetQueryRows(
+    pool: Pool,
+    nmId: number,
+  ): Promise<{
+    clusterQueriesResult: QueryResult<SheetClusterQueryRow>;
+    cabinetClusterQueriesResult: QueryResult<SheetCabinetClusterQueryRow>;
+  }> {
+    // Гейт от heap OOM: у товара-монстра тяжёлую загрузку (вся wb_cabinet_cluster_queries
+    // в JS, до 216k строк) ПРОПУСКАЕМ — иначе одна сборка пробивает heap и роняет весь
+    // бэкенд. Лист строится с пустыми clusterQueries; первый экран фронта их не использует
+    // (кампании/таблица идут из /workspace + SQL-direct cluster-table). Порог —
+    // WB_SHEET_BUILD_MAX_QUERY_ROWS.
+    const cabinetCount = await this.countCabinetQueryUniverse(pool, nmId);
+    if (cabinetCount > appEnv.wbSheetBuildMaxQueryRows) {
+      this.logger.warn(
+        `Сборка рекламного листа nmId=${nmId}: query-universe ${cabinetCount} > ` +
+          `${appEnv.wbSheetBuildMaxQueryRows} — тяжёлая загрузка пропущена (защита от heap OOM), ` +
+          `clusterQueries будут пустыми.`,
+      );
+      return {
+        clusterQueriesResult: emptyQueryResult<SheetClusterQueryRow>(),
+        cabinetClusterQueriesResult: emptyQueryResult<SheetCabinetClusterQueryRow>(),
+      };
+    }
     const [clusterQueriesResult, cabinetClusterQueriesResult] = await Promise.all([
-      pool.query<{
-          advert_id: string;
-          cluster_name: string;
-          normalized_cluster_name: string;
-          query_text: string;
-          normalized_query_text: string;
-          source_kind: ClusterSourceKind;
-          is_active: boolean | null;
-          views: string | null;
-          clicks: string | null;
-          orders: string | null;
-          add_to_cart: string | null;
-          shks: string | null;
-          monthly_frequency: string | null;
-          updated_at: string | null;
-          }>(
+      pool.query<SheetClusterQueryRow>(
           `
           SELECT DISTINCT ON (cq.advert_id, cq.cluster_name, cq.query_text)
           cq.advert_id::text AS advert_id,
@@ -80,23 +121,7 @@ export abstract class WbClustersRepositoryAdvertisingSheetQueryMapLoader extends
           [nmId],
           )
       ,
-      pool.query<{
-          advert_id: string;
-          cluster_name: string;
-          normalized_cluster_name: string;
-          query_text: string;
-          normalized_query_text: string;
-          source_kind: ClusterSourceKind;
-          is_active: boolean | null;
-          views: string | null;
-          clicks: string | null;
-          orders: string | null;
-          add_to_cart: string | null;
-          shks: string | null;
-          monthly_frequency: string | null;
-          captured_at: string;
-          updated_at: string | null;
-          }>(
+      pool.query<SheetCabinetClusterQueryRow>(
           `
           SELECT DISTINCT ON (cq.advert_id, cq.cluster_name, cq.query_text)
           cq.advert_id::text AS advert_id,

@@ -284,6 +284,15 @@ export const appEnv = {
     "80000",
     1,
   ),
+  // Защита сборки рекламного листа от heap OOM: если строк query-universe товара
+  // больше порога, тяжёлая загрузка (216k строк в JS) ПРОПУСКАЕТСЯ — лист строится с
+  // пустыми clusterQueries (первый экран фронта их не использует: он идёт из лёгких
+  // /workspace + /workspace-cluster-table). Закрывает OOM и в precompute, и on-demand.
+  wbSheetBuildMaxQueryRows: parsePositiveIntegerEnv(
+    "WB_SHEET_BUILD_MAX_QUERY_ROWS",
+    "80000",
+    1,
+  ),
   wbPromotionSyncEnabled: parseBooleanEnv("WB_PROMOTION_SYNC_ENABLED", "true"),
   wbPromotionSyncCron:
     getOptionalEnv("WB_PROMOTION_SYNC_CRON", "*/10 * * * *").trim() ||
