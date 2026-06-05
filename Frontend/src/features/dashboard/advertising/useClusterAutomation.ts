@@ -112,8 +112,9 @@ export function useClusterAutomation(
       try {
         const next = await reviewClusterAutomation(nmId, advertId, input);
         if (isMountedRef.current && gen === requestGenRef.current) setStatus(next);
-      } catch {
+      } catch (e) {
         if (isMountedRef.current && gen === requestGenRef.current) setStatus(prev); // rollback
+        throw e; // пробрасываем: вызывающий (модалка) должен знать о провале и не стирать черновик
       } finally {
         if (isMountedRef.current) setIsBusy(false);
       }

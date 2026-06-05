@@ -14,6 +14,8 @@ import {
   writeClusterFilterDraft,
   type ClusterFilterRole as Role,
 } from "./clusterFilterDraftStorage";
+import { retryWithBackoff } from "../../../api/retryWithBackoff";
+import { isTransientHttpError } from "../../../api/syncClientHttp";
 
 type Props = {
   nmId: number;
@@ -113,9 +115,14 @@ export function ProductAdvertisingFilterSettingsModal({ nmId, advertId, onClose 
       if (role === "protected") protectedRows.push(row);
       else if (role === "blacklisted") blacklistedRows.push(row);
     }
-    void saveFilters({ protected: protectedRows, blacklisted: blacklistedRows })
+    // Ретраим на транзиентных ошибках (502 в окне рестарта бэка после деплоя), чтобы
+    // сохранение пережило деплой. Черновик чистим ТОЛЬКО при успехе — при ошибке выбор
+    // остаётся и переживает перезагрузку.
+    void retryWithBackoff(
+      () => saveFilters({ protected: protectedRows, blacklisted: blacklistedRows }),
+      { shouldRetry: isTransientHttpError },
+    )
       .then(() => {
-        // Применено на бэкенд — черновик больше не нужен.
         clearClusterFilterDraft(nmId, advertId);
         onClose();
       })

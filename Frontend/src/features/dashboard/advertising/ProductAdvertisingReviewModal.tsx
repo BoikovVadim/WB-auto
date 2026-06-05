@@ -9,10 +9,11 @@ import {
 } from "../../../api/syncClientClusterAutomation";
 import type { ReviewClusterInput } from "./useClusterAutomation";
 import {
-  clearClusterReviewDraft,
   readClusterReviewDraft,
   writeClusterReviewDraft,
 } from "./clusterReviewDraftStorage";
+import { retryWithBackoff } from "../../../api/retryWithBackoff";
+import { isTransientHttpError } from "../../../api/syncClientHttp";
 
 type Props = {
   nmId: number;
@@ -103,28 +104,41 @@ export function ProductAdvertisingReviewModal({ nmId, advertId, maxCpo, busy, on
     if (targets.length === 0) return;
     setSaving(true);
     setError(null);
-    // Оптимистично убираем выбранные строки; затем применяем ПОСЛЕДОВАТЕЛЬНО (reviewCluster
-    // возвращает полный снапшот статуса и защищён generation-guard — параллель гонялась бы).
-    setRows((prev) => prev.filter((r) => !selections.has(r.normalizedClusterName)));
     let anyFailed = false;
+    // Применяем ПОСЛЕДОВАТЕЛЬНО (reviewCluster возвращает полный снапшот статуса и защищён
+    // generation-guard — параллель гонялась бы). Каждый кластер ретраим на транзиентных
+    // ошибках (502 в окне рестарта бэка после деплоя), чтобы решение пережило деплой.
+    // Успешные сразу убираем из строк и черновика; упавшие ОСТАВЛЯЕМ выбранными — выбор
+    // персистится и переживёт перезагрузку, человек дожмёт «Сохранить», не начиная заново.
     for (const r of targets) {
       const action = selections.get(r.normalizedClusterName);
       if (!action) continue;
       try {
-        await onReview({
-          normalizedClusterName: r.normalizedClusterName,
-          clusterName: r.normalizedClusterName,
-          action,
+        await retryWithBackoff(
+          () =>
+            onReview({
+              normalizedClusterName: r.normalizedClusterName,
+              clusterName: r.normalizedClusterName,
+              action,
+            }),
+          { shouldRetry: isTransientHttpError },
+        );
+        setRows((prev) => prev.filter((x) => x.normalizedClusterName !== r.normalizedClusterName));
+        setSelections((prev) => {
+          const next = new Map(prev);
+          next.delete(r.normalizedClusterName);
+          writeClusterReviewDraft(nmId, advertId, Object.fromEntries(next));
+          return next;
         });
       } catch {
         anyFailed = true;
       }
     }
-    clearClusterReviewDraft(nmId, advertId);
     if (isMountedRef.current) {
-      setSelections(new Map());
       setSaving(false);
-      if (anyFailed) setError("Часть кластеров не удалось применить — список обновлён, повторите.");
+      if (anyFailed) {
+        setError("Часть кластеров не удалось применить — выбор сохранён, нажмите «Сохранить» ещё раз.");
+      }
       load();
     }
   }, [rows, selections, onReview, load, nmId, advertId]);

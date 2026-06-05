@@ -31,3 +31,15 @@ export function buildWbClustersWriteHeaders() {
     ...(wbClustersWriteApiKey ? { "X-WB-Write-Key": wbClustersWriteApiKey } : {}),
   };
 }
+
+/**
+ * Транзиентная (восстановимая) ошибка запроса — есть смысл ретраить: сеть/таймаут (нет
+ * ответа) или 5xx (типично 502/503/504 в окне рестарта бэка после деплоя). 4xx —
+ * НЕ ретраим (валидация/авторизация сами не починятся).
+ */
+export function isTransientHttpError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false;
+  const status = error.response?.status;
+  if (status === undefined) return true; // сеть/таймаут — ответа нет
+  return status >= 500;
+}
