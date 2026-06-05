@@ -18,6 +18,7 @@ import {
 } from "../../api/syncClient";
 import type { DashboardSection, ProductsMode } from "./persistence/dashboardViewState";
 import type { DashboardOpenExportOptions } from "./useDashboardWorkspaceActionTypes";
+import { retryWithBackoff } from "../../api/retryWithBackoff";
 import { startQueryFrequenciesPrefetch } from "./queryFrequenciesPrefetch";
 import { sortExportHistoryNewestFirst } from "./dashboardExportHistory";
 
@@ -108,7 +109,11 @@ export function useDashboardBootstrap(input: {
       fetchTokenSession(),
       fetchExportMethods(),
     ]);
-    const exportHistoryPromise = fetchExportHistory()
+    // История выгрузок ретраится с backoff (как и каталог): иначе транзиентный 502 в
+    // окне рестарта бэка после деплоя оставлял exportHistory пустым на всю сессию —
+    // latestProductExport === null → ложное «Для этого товара пока нет доступной
+    // выгрузки» при клике на товар, хотя на сервере выгрузки есть. Лечилось только F5.
+    const exportHistoryPromise = retryWithBackoff(fetchExportHistory)
       .then((historyResponse) =>
         sortExportHistoryNewestFirst(
           historyResponse.filter((item) => item.entityType === primaryEntityType),
