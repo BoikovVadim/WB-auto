@@ -338,12 +338,16 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
         return { ...NOT_FOUND, status: warm };
       }
 
-      // Внутренний product-endpoint, 100 товаров/страница. Early-exit: страницу 1 (топ-100,
-      // самый ценный случай) тянем первой и, если товар найден, отдаём ОДНИМ запросом.
-      // Глубже (2..N) добираем параллельно только когда в топ-100 не нашли.
+      // Внутренний product-endpoint, 100 товаров/страница. ВСЕ нужные страницы (1..N)
+      // стартуем СРАЗУ параллельно — мобильный прокси тянет их конкурентно, поэтому даже
+      // топ-300 (3 стр.) укладывается в латентность одной. Early-return: товар найден уже
+      // в стр.1 → отдаём не дожидаясь 2..N (они долетят в фоне, игнорируем).
       const maxPages = Math.max(1, Math.min(Math.ceil(depth / 100), 3));
       const tPage = Date.now();
-      const firstPage = await this.fetchProductPage(query, 1);
+      const pagePromises = Array.from({ length: maxPages }, (_, i) =>
+        this.fetchProductPage(query, i + 1),
+      );
+      const firstPage = await pagePromises[0]!;
       this.logger.log(
         `probe «${query}»: стр.1 = ${firstPage.length} карточек за ${Date.now() - tPage}ms`,
       );
@@ -351,14 +355,10 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       const results =
         foundInFirst || maxPages === 1
           ? [firstPage]
-          : [
-              firstPage,
-              ...(await Promise.all(
-                Array.from({ length: maxPages - 1 }, (_, i) =>
-                  this.fetchProductPage(query, i + 2),
-                ),
-              )),
-            ];
+          : [firstPage, ...(await Promise.all(pagePromises.slice(1)))];
+      this.logger.log(
+        `probe «${query}»: ${results.length} стр. готовы за ${Date.now() - tPage}ms`,
+      );
       this.scheduleIdleClose();
 
       const total = results.reduce((sum, list) => sum + list.length, 0);
