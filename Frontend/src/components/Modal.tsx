@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 type ModalProps = {
   title: string;
@@ -11,8 +12,14 @@ type ModalProps = {
 
 /**
  * Переиспользуемая центральная модалка: backdrop + карточка по центру.
- * Закрытие — Esc, клик по backdrop (вне карточки), крестик. Без портала —
- * рендерится в дереве вызывающего компонента (как панель истории изменений).
+ * Закрытие — Esc, клик по backdrop (вне карточки), крестик.
+ *
+ * Рендерится через ПОРТАЛ в document.body: иначе backdrop (даже с position:fixed
+ * z-index:1000) попадает в stacking-контекст вызывающего поддерева, а виртуализованные
+ * таблицы рядом используют transform:translate3d → создают свои контексты и перекрывают
+ * backdrop. Из-за этого клики по фону уходили в таблицу, а крестик мог быть недоступен
+ * (закрывала только кнопка внутри карточки). Портал выносит модалку из всех ancestor
+ * overflow/transform/stacking-контекстов.
  */
 export function Modal({ title, onClose, children, footer, width = 640 }: ModalProps) {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -34,7 +41,7 @@ export function Modal({ title, onClose, children, footer, width = 640 }: ModalPr
     return () => document.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
-  return (
+  return createPortal(
     <div
       className="wb-modal-backdrop"
       onClick={handleBackdropClick}
@@ -57,6 +64,7 @@ export function Modal({ title, onClose, children, footer, width = 640 }: ModalPr
         <div className="wb-modal-card__body">{children}</div>
         {footer ? <div className="wb-modal-card__footer">{footer}</div> : null}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
