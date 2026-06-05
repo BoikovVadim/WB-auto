@@ -6,11 +6,21 @@ import {
   type ClusterPositionLatest,
 } from "../../../api/syncClientPositions";
 
-/** Пауза между кластерами при глобальном обходе — щадящий темп для 1 IP. */
-const RUN_ALL_GAP_MS = 1500;
-/** Поллинг результата: холодный старт ~75с + ретрай со сменой IP может занять ~3 мин. */
-const POLL_INTERVAL_MS = 3000;
-const POLL_MAX_TRIES = 64;
+/**
+ * Пауза между кластерами при глобальном обходе — анти-бот троттл для 1 IP.
+ * Это единственный физический предел темпа: ниже ~0.7с/кластер один IP начинает
+ * ловить 429 от WB (см. память project-search-position-scraper). НЕ опускать в ноль.
+ */
+const RUN_ALL_GAP_MS = 700;
+/**
+ * Расписание поллинга результата БД. Тёплый зонд отдаёт ~1с — поэтому первые пробы
+ * частые (ловим результат за ~0.6с вместо прежних 3с). Если попали в холодный старт
+ * (~75с прогрев + ретрай со сменой IP, до ~3 мин) — бэкофф разрежает пробы до 3с.
+ */
+const POLL_DELAYS_MS = [600, 600, 800, 1200, 1800];
+const POLL_TAIL_MS = 3000;
+const POLL_MAX_TRIES = 70;
+const pollDelay = (tryIndex: number) => POLL_DELAYS_MS[tryIndex] ?? POLL_TAIL_MS;
 
 const keyOf = (clusterName: string) => clusterName.trim().toLowerCase();
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -90,7 +100,7 @@ export function useClusterPositions(nmId: number | null): UseClusterPositionsRes
         await triggerClusterProbe(nmId, clusterName);
         // Поллим позиции, пока по этому кластеру не появится свежий снапшот.
         for (let i = 0; i < POLL_MAX_TRIES; i++) {
-          await sleep(POLL_INTERVAL_MS);
+          await sleep(pollDelay(i));
           const items = await fetchPositions(nmId).catch(() => null);
           if (!items) continue;
           const snap = items.find((it) => keyOf(it.clusterName) === key);
