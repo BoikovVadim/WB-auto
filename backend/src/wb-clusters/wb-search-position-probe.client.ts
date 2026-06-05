@@ -63,6 +63,13 @@ interface FetchPageResult {
   httpStatus: number;
   products: WbSearchProduct[] | null;
   presetId: string | null;
+  /** Подписанный токен запроса из preset-метадаты: без него step2 чаще ловит 429. */
+  qv: string | null;
+}
+
+interface PresetContext {
+  presetId: string;
+  qv: string | null;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -71,7 +78,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export class WbSearchPositionProbeClient {
   private readonly logger = new Logger(WbSearchPositionProbeClient.name);
 
-  private buildUrl(query: string, page: number, dest: string, presetId: string | null) {
+  private buildUrl(
+    query: string,
+    page: number,
+    dest: string,
+    preset: PresetContext | null,
+  ) {
     const params = new URLSearchParams({
       ab_testing: "false",
       appType: "1",
@@ -86,7 +98,11 @@ export class WbSearchPositionProbeClient {
       suppressSpellcheck: "false",
       query,
     });
-    if (presetId) params.set("preset", presetId);
+    if (preset) {
+      params.set("preset", preset.presetId);
+      // qv из метадаты step1 заметно снижает 429 на step2 (проверено эмпирически).
+      if (preset.qv) params.set("qv", preset.qv);
+    }
     return `${SEARCH_BASE}?${params.toString()}`;
   }
 
@@ -94,13 +110,13 @@ export class WbSearchPositionProbeClient {
     query: string,
     page: number,
     dest: string,
-    presetId: string | null,
+    preset: PresetContext | null,
     timeoutMs: number,
   ): Promise<FetchPageResult> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(this.buildUrl(query, page, dest, presetId), {
+      const res = await fetch(this.buildUrl(query, page, dest, preset), {
         headers: {
           Accept: "*/*",
           "Accept-Encoding": "gzip, deflate, br",
@@ -112,7 +128,7 @@ export class WbSearchPositionProbeClient {
       });
       if (res.status === 429) {
         await res.text().catch(() => undefined);
-        return { httpStatus: 429, products: null, presetId: null };
+        return { httpStatus: 429, products: null, presetId: null, qv: null };
       }
       const raw = await res.text();
       // Товары приходят валидным JSON; metadata preset — с битым хвостом (не парсится).
@@ -120,13 +136,19 @@ export class WbSearchPositionProbeClient {
         const json = JSON.parse(raw) as { data?: { products?: WbSearchProduct[] } };
         const products = json.data?.products;
         if (Array.isArray(products)) {
-          return { httpStatus: res.status, products, presetId: null };
+          return { httpStatus: res.status, products, presetId: null, qv: null };
         }
       } catch {
-        // не JSON — ниже пробуем достать preset
+        // не JSON — ниже пробуем достать preset + qv
       }
-      const m = raw.match(/"catalog_value":"preset=(\d+)/);
-      return { httpStatus: res.status, products: null, presetId: m ? m[1]! : null };
+      const presetMatch = raw.match(/"catalog_value":"preset=(\d+)/);
+      const qvMatch = raw.match(/"qv":"([^"]+)"/);
+      return {
+        httpStatus: res.status,
+        products: null,
+        presetId: presetMatch ? presetMatch[1]! : null,
+        qv: qvMatch ? qvMatch[1]! : null,
+      };
     } finally {
       clearTimeout(timer);
     }
@@ -159,12 +181,13 @@ export class WbSearchPositionProbeClient {
       // Шаг 1 — определяем, inline-товары или preset.
       let first = await this.fetchPage(query, 1, dest, null, timeoutMs);
       if (first.httpStatus === 429) return { ...notFound, status: "throttled" };
-      let presetId: string | null = null;
+      let preset: PresetContext | null = null;
       if (!first.products) {
         if (!first.presetId) return { ...notFound, status: "blocked" };
-        presetId = first.presetId;
+        // Тащим preset + qv-токен из метадаты step1 в добор (qv снижает 429).
+        preset = { presetId: first.presetId, qv: first.qv };
         await sleep(pageDelayMs);
-        first = await this.fetchPage(query, 1, dest, presetId, timeoutMs);
+        first = await this.fetchPage(query, 1, dest, preset, timeoutMs);
         if (first.httpStatus === 429) return { ...notFound, status: "throttled" };
         if (!first.products) return { ...notFound, status: "blocked" };
       }
@@ -174,7 +197,7 @@ export class WbSearchPositionProbeClient {
         const pageResult =
           page === 1
             ? first
-            : await this.fetchPage(query, page, dest, presetId, timeoutMs);
+            : await this.fetchPage(query, page, dest, preset, timeoutMs);
         if (page > 1) {
           if (pageResult.httpStatus === 429)
             return { ...notFound, status: "throttled", scanned: rank };
