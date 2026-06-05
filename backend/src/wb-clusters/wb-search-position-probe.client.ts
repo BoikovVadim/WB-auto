@@ -1,7 +1,13 @@
 import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
 import net from "node:net";
 import http from "node:http";
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
+import {
+  chromium,
+  type Browser,
+  type BrowserContext,
+  type Page,
+  type Request,
+} from "playwright";
 
 /**
  * Зонд места товара в публичной выдаче WB через РЕАЛЬНЫЙ браузер (browser-render).
@@ -17,7 +23,6 @@ import { chromium, type Browser, type BrowserContext, type Page } from "playwrig
  * Chromium не умеет SOCKS-auth, поэтому поднимаем локальный http→socks5 релей.
  */
 
-const DEST_MOSCOW = "-1257786";
 const PROBE_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36";
 /** Браузер закрываем после простоя — освобождаем ~400МБ RAM. */
@@ -40,8 +45,7 @@ export interface PositionProbeResult {
 }
 
 export interface PositionProbeOptions {
-  dest?: string;
-  /** До скольких карточек догружать выдачу (глубина поиска места). */
+  /** До скольких мест искать (топ-N); глубже — «>N». */
   depth?: number;
 }
 
@@ -74,6 +78,9 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
   private relay: http.Server | null = null;
   private relayPort = 0;
   private warmed = false;
+  /** Шаблон внутреннего product-endpoint, пойманный при прогреве (params + spa-version). */
+  private searchBaseUrl: string | null = null;
+  private spaVersion = "";
   private idleTimer: NodeJS.Timeout | null = null;
   /** Мьютекс: замеры идут строго по одному (одна страница на всех). */
   private chain: Promise<unknown> = Promise.resolve();
@@ -228,6 +235,7 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
     this.context = null;
     this.page = null;
     this.warmed = false;
+    this.searchBaseUrl = null;
     if (browser) await browser.close().catch(() => undefined);
   }
 
@@ -278,6 +286,92 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
     return last;
   }
 
+  /**
+   * Прогрев: один раз навигируем на страницу выдачи, проходим JS-challenge и ловим
+   * внутренний product-endpoint (www.wildberries.ru/__internal/u-search/.../search),
+   * который страница дёргает при догрузке. Запоминаем его URL-шаблон + x-spa-version.
+   * Дальше замеры идут лёгкими API-вызовами к нему (без скролла и повторного challenge).
+   */
+  private async ensureWarm(
+    page: Page,
+    query: string,
+  ): Promise<"ok" | "throttled" | "blocked"> {
+    if (this.searchBaseUrl) return "ok";
+    const holder: { value: { url: string; spa: string } | null } = { value: null };
+    const onRequest = (req: Request) => {
+      const u = req.url();
+      if (u.includes("/__internal/u-search/") && !holder.value) {
+        holder.value = { url: u, spa: req.headers()["x-spa-version"] ?? "" };
+      }
+    };
+    page.on("request", onRequest);
+    try {
+      await page.goto(
+        `https://www.wildberries.ru/catalog/0/search.aspx?search=${encodeURIComponent(query)}`,
+        { waitUntil: "domcontentloaded", timeout: 45_000 },
+      );
+      const start = Date.now();
+      while (!holder.value && Date.now() - start < 75_000) {
+        await page
+          .evaluate(() => {
+            const g = globalThis as unknown as { scrollBy(x: number, y: number): void };
+            g.scrollBy(0, 2500);
+          })
+          .catch(() => undefined);
+        await page.waitForTimeout(1500);
+      }
+    } finally {
+      page.off("request", onRequest);
+    }
+    const captured = holder.value;
+    if (!captured) {
+      const challenge = await page
+        .evaluate(() => {
+          const g = globalThis as unknown as {
+            document: { body: { innerText: string } | null };
+          };
+          return /Подозрительная|Почти готово|Что-то не так/.test(
+            g.document.body?.innerText ?? "",
+          );
+        })
+        .catch(() => false);
+      return challenge ? "throttled" : "blocked";
+    }
+    this.searchBaseUrl = captured.url;
+    if (captured.spa) this.spaVersion = captured.spa;
+    this.warmed = true;
+    return "ok";
+  }
+
+  /** Одна страница (100 товаров) внутреннего product-endpoint в прогретом контексте. */
+  private async fetchProductPage(
+    query: string,
+    pageNumber: number,
+  ): Promise<Array<{ id: number; log?: unknown }>> {
+    if (!this.context || !this.searchBaseUrl) return [];
+    const url = new URL(this.searchBaseUrl);
+    url.searchParams.set("query", query);
+    url.searchParams.set("page", String(pageNumber));
+    const res = await this.context.request.get(url.toString(), {
+      headers: {
+        "x-requested-with": "XMLHttpRequest",
+        "x-spa-version": this.spaVersion,
+        "x-userid": "0",
+        "x-queryid": `qid${Date.now()}${Math.floor(Math.random() * 1_000_000)}`,
+      },
+      timeout: 20_000,
+    });
+    if (res.status() !== 200) return [];
+    try {
+      const json = JSON.parse(await res.text()) as {
+        products?: Array<{ id: number; log?: unknown }>;
+      };
+      return json.products ?? [];
+    } catch {
+      return [];
+    }
+  }
+
   private async attemptProbe(
     query: string,
     nmId: number,
@@ -288,116 +382,55 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       this.logger.warn("WB_SEARCH_PROBE_PROXY не задан — замер позиций невозможен.");
       return { ...NOT_FOUND, status: "blocked" };
     }
-    const dest = options.dest ?? DEST_MOSCOW;
     const depth = options.depth ?? DEFAULT_DEPTH;
     const t0 = Date.now();
     const elapsed = () => `${Math.round((Date.now() - t0) / 1000)}s`;
 
-    let page!: Page;
-    const hasChallenge = () =>
-      page
-        .evaluate(() => {
-          const g = globalThis as unknown as {
-            document: { body: { innerText: string } | null };
-          };
-          return /Подозрительная|Почти готово|Что-то не так/.test(
-            g.document.body?.innerText ?? "",
-          );
-        })
-        .catch(() => false);
-
     try {
-      page = await this.ensureReady(proxy);
-      const url = `https://www.wildberries.ru/catalog/0/search.aspx?search=${encodeURIComponent(
-        query,
-      )}&dest=${dest}`;
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 });
-
-      const scrollBy = (px: number) =>
-        page.evaluate((y) => {
-          const g = globalThis as unknown as { scrollBy(x: number, y: number): void };
-          g.scrollBy(0, y);
-        }, px);
-
-      // Ждём появления карточек до 75с (холодный заход / повторный challenge проходят
-      // за ~40с; прогретый — за секунды). Подталкиваем скроллом — это ускоряет рендер.
-      const start = Date.now();
-      let count = 0;
-      while (Date.now() - start < 75_000) {
-        count = await page.locator("[data-nm-id]").count().catch(() => 0);
-        if (count > 0) break;
-        await scrollBy(1200);
-        await page.waitForTimeout(2500);
-      }
-      if (count === 0) {
-        const challenge = await hasChallenge();
+      const page = await this.ensureReady(proxy);
+      const warm = await this.ensureWarm(page, query);
+      if (warm !== "ok") {
         this.scheduleIdleClose();
-        this.logger.warn(
-          `probe «${query}» nm ${nmId}: ${challenge ? "challenge не пройден" : "пусто"} за ${elapsed()}`,
-        );
-        return { ...NOT_FOUND, status: challenge ? "throttled" : "blocked" };
-      }
-      this.warmed = true;
-
-      // Лента WB НАКАПЛИВАЕТ карточки в DOM (не рециклит), поэтому быстро доскролливаем
-      // до depth (или пока растёт), а порядок собираем ОДНИМ проходом в конце. Крупный шаг
-      // + короткая пауза → ~300 карточек за ~12с (без потери порядка, т.к. DOM накапливает).
-      let stable = 0;
-      while (count < depth && Date.now() - start < 75_000) {
-        await scrollBy(2800);
-        await page.waitForTimeout(500);
-        const next = await page.locator("[data-nm-id]").count().catch(() => count);
-        if (next <= count) {
-          if (++stable >= 5) break;
-        } else {
-          stable = 0;
-        }
-        count = next;
+        this.logger.warn(`probe «${query}» nm ${nmId}: прогрев не прошёл (${warm}) за ${elapsed()}`);
+        return { ...NOT_FOUND, status: warm };
       }
 
-      const items = await page.evaluate(() => {
-        const g = globalThis as unknown as {
-          document: {
-            querySelectorAll(
-              sel: string,
-            ): ArrayLike<{ getAttribute(n: string): string | null; innerText: string }>;
-          };
-        };
-        return Array.from(g.document.querySelectorAll("[data-nm-id]"))
-          .map((el) => ({
-            nmId: Number(el.getAttribute("data-nm-id")),
-            isAd: /реклама/i.test(el.innerText ?? ""),
-          }))
-          .filter((x) => Number.isFinite(x.nmId) && x.nmId > 0);
-      });
-
+      // Внутренний product-endpoint: страницы 1..N по 100 товаров, ПАРАЛЛЕЛЬНО.
+      const pages = Math.max(1, Math.min(Math.ceil(depth / 100), 3));
+      const results = await Promise.all(
+        Array.from({ length: pages }, (_, i) => this.fetchProductPage(query, i + 1)),
+      );
       this.scheduleIdleClose();
 
-      // Считаем место только в пределах depth (топ-300): глубже — это «>300».
-      const limited = items.slice(0, depth);
-      this.logger.log(
-        `probe «${query}» nm ${nmId}: ${limited.length} карточек за ${elapsed()}`,
-      );
+      const total = results.reduce((sum, list) => sum + list.length, 0);
+      if (total === 0) {
+        this.logger.warn(`probe «${query}» nm ${nmId}: endpoint вернул 0 за ${elapsed()}`);
+        return { ...NOT_FOUND, status: "blocked" };
+      }
+
       let rank = 0;
-      for (const item of limited) {
-        rank++;
-        if (item.nmId === nmId) {
-          return {
-            status: "found",
-            organicPosition: rank,
-            adPosition: null,
-            isAd: item.isAd,
-            page: Math.ceil(rank / 100),
-            scanned: rank,
-          };
+      for (const products of results) {
+        for (const product of products) {
+          rank++;
+          if (rank > depth) break;
+          if (product.id === nmId) {
+            this.logger.log(`probe «${query}» nm ${nmId}: место ${rank} за ${elapsed()}`);
+            return {
+              status: "found",
+              organicPosition: rank,
+              adPosition: null,
+              isAd: !!product.log,
+              page: Math.ceil(rank / 100),
+              scanned: rank,
+            };
+          }
         }
       }
-      return { ...NOT_FOUND, scanned: limited.length };
+      const scanned = Math.min(rank, depth);
+      this.logger.log(`probe «${query}» nm ${nmId}: не в топ-${scanned} за ${elapsed()}`);
+      return { ...NOT_FOUND, scanned };
     } catch (error) {
-      this.logger.warn(
-        `probeQueryPosition «${query}» nm ${nmId}: ${(error as Error).message}`,
-      );
-      // Сбрасываем браузер — следующий замер поднимет свежий.
+      this.logger.warn(`probe «${query}» nm ${nmId}: ${(error as Error).message}`);
       await this.close();
       return { ...NOT_FOUND, status: "error" };
     }
