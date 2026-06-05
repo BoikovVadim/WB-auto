@@ -1,6 +1,4 @@
 import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
-import net from "node:net";
-import http from "node:http";
 import {
   chromium,
   type Browser,
@@ -8,6 +6,12 @@ import {
   type Page,
   type Request,
 } from "playwright";
+
+import {
+  parseProbeProxy,
+  Socks5HttpRelay,
+  type ParsedProxy,
+} from "./wb-search-position-probe.relay";
 
 /**
  * Зонд места товара в публичной выдаче WB через РЕАЛЬНЫЙ браузер (browser-render).
@@ -52,13 +56,6 @@ export interface PositionProbeOptions {
 /** Глубина поиска места по умолчанию — топ-300 (не нашли → «>300»). */
 const DEFAULT_DEPTH = 300;
 
-interface ParsedProxy {
-  host: string;
-  port: number;
-  user: string;
-  pass: string;
-}
-
 const NOT_FOUND: PositionProbeResult = {
   status: "not_found",
   organicPosition: null,
@@ -75,7 +72,7 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
-  private relay: http.Server | null = null;
+  private readonly relay = new Socks5HttpRelay();
   private relayPort = 0;
   private warmed = false;
   /** Шаблон внутреннего product-endpoint, пойманный при прогреве (params + spa-version). */
@@ -85,121 +82,9 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
   /** Мьютекс: замеры идут строго по одному (одна страница на всех). */
   private chain: Promise<unknown> = Promise.resolve();
 
-  private parseProxy(): ParsedProxy | null {
-    const raw = process.env.WB_SEARCH_PROBE_PROXY;
-    if (!raw) return null;
-    try {
-      const u = new URL(raw);
-      return {
-        host: u.hostname,
-        port: Number(u.port),
-        user: decodeURIComponent(u.username),
-        pass: decodeURIComponent(u.password),
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  // --- SOCKS5 (RFC1928 + RFC1929 auth) → локальный http CONNECT релей ---
-  private socks5Connect(
-    proxy: ParsedProxy,
-    host: string,
-    port: number,
-  ): Promise<{ sock: net.Socket; leftover: Buffer }> {
-    return new Promise((resolve, reject) => {
-      const s = net.connect(proxy.port, proxy.host);
-      let buf = Buffer.alloc(0);
-      let stage = 0;
-      const fail = (e: unknown) => {
-        s.destroy();
-        reject(e instanceof Error ? e : new Error(String(e)));
-      };
-      s.once("error", fail);
-      s.once("connect", () => s.write(Buffer.from([0x05, 0x01, 0x02])));
-      const onData = (d: Buffer) => {
-        buf = Buffer.concat([buf, d]);
-        if (stage === 0) {
-          if (buf.length < 2) return;
-          if (buf[0] !== 0x05 || buf[1] !== 0x02) return fail("no userpass auth");
-          buf = buf.subarray(2);
-          stage = 1;
-          const ub = Buffer.from(proxy.user);
-          const pb = Buffer.from(proxy.pass);
-          s.write(
-            Buffer.concat([Buffer.from([0x01, ub.length]), ub, Buffer.from([pb.length]), pb]),
-          );
-        }
-        if (stage === 1) {
-          if (buf.length < 2) return;
-          if (buf[1] !== 0x00) return fail("auth rejected");
-          buf = buf.subarray(2);
-          stage = 2;
-          const hb = Buffer.from(host);
-          s.write(
-            Buffer.concat([
-              Buffer.from([0x05, 0x01, 0x00, 0x03, hb.length]),
-              hb,
-              Buffer.from([port >> 8, port & 0xff]),
-            ]),
-          );
-        }
-        if (stage === 2) {
-          if (buf.length < 5) return;
-          if (buf[1] !== 0x00) return fail("connect failed " + buf[1]);
-          const atyp = buf[3];
-          const need = atyp === 0x01 ? 10 : atyp === 0x04 ? 22 : 4 + 1 + buf[4]! + 2;
-          if (buf.length < need) return;
-          const leftover = buf.subarray(need);
-          s.removeListener("data", onData);
-          s.removeListener("error", fail);
-          resolve({ sock: s, leftover });
-        }
-      };
-      s.on("data", onData);
-    });
-  }
-
-  private startRelay(proxy: ParsedProxy): Promise<number> {
-    return new Promise((resolve, reject) => {
-      const server = http.createServer();
-      server.on("connect", (req, clientSocket, head) => {
-        const [host, portStr] = (req.url ?? "").split(":");
-        void this.socks5Connect(proxy, host!, Number(portStr || 443))
-          .then(({ sock, leftover }) => {
-            clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
-            if (leftover.length) clientSocket.write(leftover);
-            if (head.length) sock.write(head);
-            sock.pipe(clientSocket);
-            clientSocket.pipe(sock);
-            const kill = () => {
-              sock.destroy();
-              clientSocket.destroy();
-            };
-            sock.on("error", kill);
-            clientSocket.on("error", kill);
-          })
-          .catch(() => {
-            try {
-              clientSocket.write("HTTP/1.1 502 Bad Gateway\r\n\r\n");
-            } catch {
-              /* noop */
-            }
-            clientSocket.destroy();
-          });
-      });
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => {
-        const addr = server.address();
-        this.relay = server;
-        resolve(typeof addr === "object" && addr ? addr.port : 0);
-      });
-    });
-  }
-
   private async ensureReady(proxy: ParsedProxy): Promise<Page> {
     if (this.page && this.browser?.isConnected()) return this.page;
-    if (!this.relay) this.relayPort = await this.startRelay(proxy);
+    if (!this.relayPort) this.relayPort = await this.relay.start(proxy);
 
     this.browser = await chromium.launch({ headless: true });
     this.context = await this.browser.newContext({
@@ -222,7 +107,26 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
     return this.page;
   }
 
+  /**
+   * Keep-warm включён по умолчанию, если задан прокси (отключить — WB_POSITION_KEEP_WARM=0).
+   * В этом режиме грелка (PositionProbeWarmerService) держит сессию постоянно, а idle-close
+   * становится no-op — браузер не умирает по простою, клик всегда отдаёт тёплый результат.
+   */
+  private keepWarmEnabled(): boolean {
+    return (
+      process.env.WB_POSITION_KEEP_WARM !== "0" && !!process.env.WB_SEARCH_PROBE_PROXY
+    );
+  }
+
+  /** Тёплая ли сессия прямо сейчас (для грелки/диагностики). */
+  isWarm(): boolean {
+    return (
+      this.warmed && !!this.searchBaseUrl && !!this.page && !!this.browser?.isConnected()
+    );
+  }
+
   private scheduleIdleClose() {
+    if (this.keepWarmEnabled()) return; // грелка держит сессию постоянно
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => void this.close(), IDLE_CLOSE_MS);
   }
@@ -241,7 +145,7 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
 
   async onModuleDestroy() {
     await this.close();
-    this.relay?.close();
+    this.relay.close();
   }
 
   async probeQueryPosition(
@@ -255,6 +159,42 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
     );
     this.chain = run.catch(() => undefined);
     return run;
+  }
+
+  /**
+   * Поддержать тёплую сессию (зовёт грелка). Холодно → полный прогрев (~75с, фоном);
+   * тепло → лёгкий запрос страницы 1, чтобы освежить cookie/сессию мобильного прокси.
+   * Сериализуется с замерами тем же мьютексом. Возвращает false, если сессия мертва
+   * (сбросили шаблон — следующий прогрев навигирует заново). */
+  async heartbeat(query: string): Promise<boolean> {
+    const run = this.chain.then(
+      () => this.doHeartbeat(query),
+      () => this.doHeartbeat(query),
+    );
+    this.chain = run.catch(() => false);
+    return run;
+  }
+
+  private async doHeartbeat(query: string): Promise<boolean> {
+    const proxy = parseProbeProxy();
+    if (!proxy) return false;
+    try {
+      const page = await this.ensureReady(proxy);
+      const warm = await this.ensureWarm(page, query);
+      if (warm !== "ok") return false;
+      const first = await this.fetchProductPage(query, 1);
+      this.scheduleIdleClose();
+      if (first.length === 0) {
+        this.searchBaseUrl = null;
+        this.warmed = false;
+        return false;
+      }
+      return true;
+    } catch (error) {
+      this.logger.warn(`heartbeat «${query}»: ${(error as Error).message}`);
+      await this.close();
+      return false;
+    }
   }
 
   /** Сменить мобильный IP (changeip-ссылка) и закрыть браузер — следующая попытка
@@ -377,12 +317,15 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
     nmId: number,
     options: PositionProbeOptions,
   ): Promise<PositionProbeResult> {
-    const proxy = this.parseProxy();
+    const proxy = parseProbeProxy();
     if (!proxy) {
       this.logger.warn("WB_SEARCH_PROBE_PROXY не задан — замер позиций невозможен.");
       return { ...NOT_FOUND, status: "blocked" };
     }
-    const depth = options.depth ?? DEFAULT_DEPTH;
+    const envDepth = Number(process.env.WB_POSITION_DEPTH);
+    const depth =
+      options.depth ??
+      (Number.isFinite(envDepth) && envDepth > 0 ? envDepth : DEFAULT_DEPTH);
     const t0 = Date.now();
     const elapsed = () => `${Math.round((Date.now() - t0) / 1000)}s`;
 
@@ -395,11 +338,27 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
         return { ...NOT_FOUND, status: warm };
       }
 
-      // Внутренний product-endpoint: страницы 1..N по 100 товаров, ПАРАЛЛЕЛЬНО.
-      const pages = Math.max(1, Math.min(Math.ceil(depth / 100), 3));
-      const results = await Promise.all(
-        Array.from({ length: pages }, (_, i) => this.fetchProductPage(query, i + 1)),
+      // Внутренний product-endpoint, 100 товаров/страница. Early-exit: страницу 1 (топ-100,
+      // самый ценный случай) тянем первой и, если товар найден, отдаём ОДНИМ запросом.
+      // Глубже (2..N) добираем параллельно только когда в топ-100 не нашли.
+      const maxPages = Math.max(1, Math.min(Math.ceil(depth / 100), 3));
+      const tPage = Date.now();
+      const firstPage = await this.fetchProductPage(query, 1);
+      this.logger.log(
+        `probe «${query}»: стр.1 = ${firstPage.length} карточек за ${Date.now() - tPage}ms`,
       );
+      const foundInFirst = firstPage.some((p) => p.id === nmId);
+      const results =
+        foundInFirst || maxPages === 1
+          ? [firstPage]
+          : [
+              firstPage,
+              ...(await Promise.all(
+                Array.from({ length: maxPages - 1 }, (_, i) =>
+                  this.fetchProductPage(query, i + 2),
+                ),
+              )),
+            ];
       this.scheduleIdleClose();
 
       const total = results.reduce((sum, list) => sum + list.length, 0);

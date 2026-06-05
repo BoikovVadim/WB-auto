@@ -16,6 +16,7 @@ import { ProductCpoService } from "./product-cpo.service";
 import { ProductPositionController } from "./product-position.controller";
 import { ProductPositionService } from "./product-position.service";
 import { WbSearchPositionProbeClient } from "./wb-search-position-probe.client";
+import { PositionProbeWarmerService } from "./position-probe-warmer.service";
 import { ProductClusterAutomationController } from "./product-cluster-automation.controller";
 import { ProductClusterAutomationService } from "./product-cluster-automation.service";
 import { WbClustersActionQueueService } from "./wb-clusters-action-queue.service";
@@ -64,6 +65,7 @@ import { WbPromotionApiClient } from "./wb-promotion-api.client";
     ProductCpoService,
     ProductPositionService,
     WbSearchPositionProbeClient,
+    PositionProbeWarmerService,
     ProductClusterAutomationService,
     AcquiringSyncService,
     ProductAdvertisingReadRepository,

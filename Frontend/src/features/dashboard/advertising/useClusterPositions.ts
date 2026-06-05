@@ -7,11 +7,14 @@ import {
 } from "../../../api/syncClientPositions";
 
 /**
- * Пауза между кластерами при глобальном обходе — анти-бот троттл для 1 IP.
- * Это единственный физический предел темпа: ниже ~0.7с/кластер один IP начинает
- * ловить 429 от WB (см. память project-search-position-scraper). НЕ опускать в ноль.
+ * Базовая пауза между кластерами при глобальном обходе. Держим быстрый темп (тёплая
+ * легитимная браузер-сессия выглядит как живой пользователь), но НЕ слепо: если WB вернул
+ * throttled/blocked — gap самозащитно растёт до MAX (см. адаптацию в runAll), а на чистых
+ * ответах возвращается к базовому. Так проверяем «WB не блокирует» без риска уйти в бан.
  */
-const RUN_ALL_GAP_MS = 700;
+const RUN_ALL_GAP_MS = 400;
+/** Потолок самозащитного замедления при троттле WB. */
+const RUN_ALL_MAX_GAP_MS = 4000;
 /**
  * Расписание поллинга результата БД. Тёплый зонд отдаёт ~1с — поэтому первые пробы
  * частые (ловим результат за ~0.6с вместо прежних 3с). Если попали в холодный старт
@@ -91,8 +94,8 @@ export function useClusterPositions(nmId: number | null): UseClusterPositionsRes
   }, [nmId]);
 
   const probeOneAsync = useCallback(
-    async (clusterName: string) => {
-      if (nmId === null) return;
+    async (clusterName: string): Promise<string | null> => {
+      if (nmId === null) return null;
       const key = keyOf(clusterName);
       const before = positionsRef.current.get(key)?.capturedAt ?? null;
       setProbing((prev) => new Set(prev).add(key));
@@ -106,7 +109,7 @@ export function useClusterPositions(nmId: number | null): UseClusterPositionsRes
           const snap = items.find((it) => keyOf(it.clusterName) === key);
           if (snap && snap.capturedAt !== before) {
             setPositions(buildMap(items));
-            return;
+            return snap.status;
           }
         }
       } catch {
@@ -118,6 +121,7 @@ export function useClusterPositions(nmId: number | null): UseClusterPositionsRes
           return next;
         });
       }
+      return null;
     },
     [nmId],
   );
@@ -138,12 +142,18 @@ export function useClusterPositions(nmId: number | null): UseClusterPositionsRes
       setRunningAll(true);
       setProgress({ done: 0, total: orderedClusterNames.length });
       void (async () => {
+        let gap = RUN_ALL_GAP_MS;
         for (let i = 0; i < orderedClusterNames.length; i++) {
           if (cancelRef.current) break;
-          await probeOneAsync(orderedClusterNames[i]!);
+          const status = await probeOneAsync(orderedClusterNames[i]!);
           setProgress({ done: i + 1, total: orderedClusterNames.length });
+          // Самозащита: WB затроттлил → замедляемся (до потолка), иначе держим быстрый темп.
+          gap =
+            status === "throttled" || status === "blocked"
+              ? Math.min(gap * 2, RUN_ALL_MAX_GAP_MS)
+              : RUN_ALL_GAP_MS;
           if (i < orderedClusterNames.length - 1 && !cancelRef.current) {
-            await new Promise((resolve) => setTimeout(resolve, RUN_ALL_GAP_MS));
+            await sleep(gap);
           }
         }
         setRunningAll(false);
