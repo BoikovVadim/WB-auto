@@ -270,16 +270,10 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
     }
 
     const holder: { value: { url: string; spa: string } | null } = { value: null };
-    // ВРЕМЕННАЯ диагностика: ищем рекламный фид среди запросов страницы выдачи.
-    const seen = new Set<string>();
     const onRequest = (req: Request) => {
       const u = req.url();
       if (u.includes("/__internal/u-search/") && !holder.value) {
         holder.value = { url: u, spa: req.headers()["x-spa-version"] ?? "" };
-      }
-      const rt = req.resourceType();
-      if (rt === "xhr" || rt === "fetch") {
-        seen.add(u.split("?")[0]!);
       }
     };
     page.on("request", onRequest);
@@ -298,18 +292,6 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
           .catch(() => undefined);
         await page.waitForTimeout(1500);
       }
-      // После захвата u-search скроллим ещё ~5с — даём рекламным запросам подгрузиться.
-      const extra = Date.now();
-      while (Date.now() - extra < 5_000) {
-        await page
-          .evaluate(() => {
-            const g = globalThis as unknown as { scrollBy(x: number, y: number): void };
-            g.scrollBy(0, 2500);
-          })
-          .catch(() => undefined);
-        await page.waitForTimeout(1000);
-      }
-      this.logger.log(`DIAG endpoints:\n${[...seen].join("\n")}`);
     } finally {
       page.off("request", onRequest);
     }
@@ -362,46 +344,9 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       const json = JSON.parse(await res.text()) as {
         products?: Array<{ id: number; logs?: unknown[] }>;
       };
-      if (pageNumber === 1) await this.diagPublicSearch(url, query);
       return json.products ?? [];
     } catch {
       return [];
-    }
-  }
-
-  /** ВРЕМЕННО: пробуем публичный search.wb.ru (исторически отдаёт рекламу в log) из тёплого
-   *  контекста — вдруг с нашими cookie проходит и содержит рекламные карточки. */
-  private async diagPublicSearch(internalUrl: URL, query: string): Promise<void> {
-    if (!this.context) return;
-    const pub = internalUrl
-      .toString()
-      .replace("www.wildberries.ru/__internal/u-search/", "search.wb.ru/");
-    try {
-      const r = await this.context.request.get(pub, {
-        headers: { "x-queryid": `qid${Date.now()}`, accept: "*/*" },
-        timeout: 15_000,
-      });
-      const txt = await r.text();
-      let n = 0;
-      let withAd = 0;
-      let keys = "-";
-      try {
-        const j = JSON.parse(txt) as {
-          products?: Array<Record<string, unknown>>;
-          data?: { products?: Array<Record<string, unknown>> };
-        };
-        const ps = j.products ?? j.data?.products ?? [];
-        n = ps.length;
-        withAd = ps.filter((p) => p.log || (Array.isArray(p.logs) && p.logs.length)).length;
-        keys = ps[0] ? Object.keys(ps[0]).join(",") : "-";
-      } catch {
-        /* not json */
-      }
-      this.logger.log(
-        `DIAGPUB «${query}» status=${r.status()} products=${n} withAd=${withAd} keys=${keys.slice(0, 200)}`,
-      );
-    } catch (e) {
-      this.logger.log(`DIAGPUB «${query}» ERR ${(e as Error).message}`);
     }
   }
 
