@@ -2034,45 +2034,6 @@ input {
   font-weight: 600;
 }
 
-.wb-review-row__actions {
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.wb-review-btn {
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  border: 1px solid var(--wb-border, #ddd);
-  white-space: nowrap;
-}
-
-.wb-review-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.wb-review-btn--approve {
-  background: #1f8a4c;
-  color: #fff;
-  border-color: #1f8a4c;
-}
-
-.wb-review-btn--reject {
-  background: #fff;
-  color: #c62828;
-  border-color: #e0a3a3;
-}
-
-.wb-review-btn--protect {
-  background: #fff;
-  color: #1565c0;
-  border-color: #a3c2e0;
-}
-
 .wb-cluster-skeleton-wrap {
   padding: 8px 16px;
   display: flex;
@@ -3216,6 +3177,10 @@ input {
 .wb-filter-role__btn:last-child {
   border-top-right-radius: 6px;
   border-bottom-right-radius: 6px;
+}
+.wb-filter-role__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 .wb-filter-role__btn.is-active {
   background: var(--wb-text-main);

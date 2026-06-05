@@ -19,10 +19,14 @@ type Props = {
   onClose: () => void;
 };
 
+// Сегментированный контрол «Авто · Белый · Чёрный» — та же тройка и тот же вид, что в
+// «Настройке фильтров» (классы wb-filter-role). Маппинг на исходы модерации:
+//   Авто = approve (в работу — дальше управляет CPO-правило),
+//   Белый = protect (всегда активен), Чёрный = reject (всегда выключен).
 const ACTIONS: { action: ClusterReviewAction; label: string; cls: string; title: string }[] = [
-  { action: "approve", label: "В работу", cls: "wb-review-btn--approve", title: "Передать кластер автоматике — дальше им управляет CPO-правило" },
-  { action: "reject", label: "В чёрный список", cls: "wb-review-btn--reject", title: "Нерелевантен: автоматика всегда держит выключенным" },
-  { action: "protect", label: "Защитить", cls: "wb-review-btn--protect", title: "Всегда активен: автоматика не выключает даже при высоком CPO" },
+  { action: "approve", label: "Авто", cls: "", title: "В работу — кластером управляет автоматика по CPO" },
+  { action: "protect", label: "Белый", cls: "wb-filter-role__btn--white", title: "Защитить — всегда активен, автоматика не выключает даже при высоком CPO" },
+  { action: "reject", label: "Чёрный", cls: "wb-filter-role__btn--black", title: "В чёрный список — всегда выключен, автоматика не включает" },
 ];
 
 function formatCount(n: number | null): string {
@@ -104,12 +108,12 @@ export function ProductAdvertisingReviewModal({ nmId, advertId, maxCpo, busy, on
                     </span>
                   </span>
                 </div>
-                <div className="wb-review-row__actions">
+                <span className="wb-filter-role" role="group" aria-label="Решение по кластеру">
                   {ACTIONS.map(({ action, label, cls, title }) => (
                     <button
                       key={action}
                       type="button"
-                      className={`wb-review-btn ${cls}`}
+                      className={`wb-filter-role__btn${cls ? ` ${cls}` : ""}`}
                       disabled={busy}
                       title={title}
                       onClick={() =>
@@ -123,7 +127,7 @@ export function ProductAdvertisingReviewModal({ nmId, advertId, maxCpo, busy, on
                       {label}
                     </button>
                   ))}
-                </div>
+                </span>
               </div>
             );
           })}
