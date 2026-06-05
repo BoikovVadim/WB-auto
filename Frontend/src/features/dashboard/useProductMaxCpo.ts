@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { fetchProductCpo } from "../../api/syncClientCpo";
+import { retryWithBackoff } from "../../api/retryWithBackoff";
 
 // Выручка/заказы синкаются каждые 10 мин; планка CPO меняется не чаще.
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
@@ -24,8 +25,11 @@ export function useProductMaxCpo(nmId: number | null): UseProductMaxCpoResult {
       setMaxCpo(null);
       return;
     }
+    // Ретраим с backoff: иначе транзиентный сбой (502 в окне рестарта бэка после
+    // деплоя) глушил планку до следующего 10-мин тика — и только при видимой вкладке.
+    // При неудаче держим прежнее значение.
     const load = () => {
-      fetchProductCpo(nmId)
+      retryWithBackoff(() => fetchProductCpo(nmId))
         .then((res) => {
           if (isMountedRef.current) setMaxCpo(res.maxCpo);
         })
