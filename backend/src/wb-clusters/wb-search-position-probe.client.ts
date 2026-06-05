@@ -249,7 +249,36 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
     return run;
   }
 
+  /** Сменить мобильный IP (changeip-ссылка) и закрыть браузер — следующая попытка
+   *  поднимет свежую сессию на новом адресе. */
+  private async rotateAndReset() {
+    const changeUrl = process.env.WB_PROXY_CHANGEIP;
+    if (changeUrl) {
+      await fetch(changeUrl).catch(() => undefined);
+      await new Promise((r) => setTimeout(r, 10_000));
+    }
+    await this.close();
+  }
+
+  /**
+   * Замер с ретраем: headless + один мобильный IP пробивает анти-бот через раз. На
+   * blocked/throttled/error меняем IP, пересоздаём сессию и пробуем ещё раз (до 2 попыток).
+   */
   private async doProbe(
+    query: string,
+    nmId: number,
+    options: PositionProbeOptions,
+  ): Promise<PositionProbeResult> {
+    let last: PositionProbeResult = { ...NOT_FOUND, status: "blocked" };
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      last = await this.attemptProbe(query, nmId, options);
+      if (last.status === "found" || last.status === "not_found") return last;
+      if (attempt < 2) await this.rotateAndReset();
+    }
+    return last;
+  }
+
+  private async attemptProbe(
     query: string,
     nmId: number,
     options: PositionProbeOptions,

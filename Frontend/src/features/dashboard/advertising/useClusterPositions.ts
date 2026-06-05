@@ -8,9 +8,9 @@ import {
 
 /** Пауза между кластерами при глобальном обходе — щадящий темп для 1 IP. */
 const RUN_ALL_GAP_MS = 1500;
-/** Поллинг результата замера: холодный старт браузера ~75с. */
+/** Поллинг результата: холодный старт ~75с + ретрай со сменой IP может занять ~3 мин. */
 const POLL_INTERVAL_MS = 3000;
-const POLL_MAX_TRIES = 32;
+const POLL_MAX_TRIES = 64;
 
 const keyOf = (clusterName: string) => clusterName.trim().toLowerCase();
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
