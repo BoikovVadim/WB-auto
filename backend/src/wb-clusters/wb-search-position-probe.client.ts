@@ -270,10 +270,15 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
     }
 
     const holder: { value: { url: string; spa: string } | null } = { value: null };
+    // ВРЕМЕННАЯ диагностика: ищем рекламный фид среди запросов страницы выдачи.
+    const seen = new Set<string>();
     const onRequest = (req: Request) => {
       const u = req.url();
       if (u.includes("/__internal/u-search/") && !holder.value) {
         holder.value = { url: u, spa: req.headers()["x-spa-version"] ?? "" };
+      }
+      if (/ads|advert|promo|catalog-ads|search\.wb\.ru|u-search|cards\/v|nm-2-card/i.test(u)) {
+        seen.add(u.split("?")[0]!);
       }
     };
     page.on("request", onRequest);
@@ -292,6 +297,18 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
           .catch(() => undefined);
         await page.waitForTimeout(1500);
       }
+      // После захвата u-search скроллим ещё ~5с — даём рекламным запросам подгрузиться.
+      const extra = Date.now();
+      while (Date.now() - extra < 5_000) {
+        await page
+          .evaluate(() => {
+            const g = globalThis as unknown as { scrollBy(x: number, y: number): void };
+            g.scrollBy(0, 2500);
+          })
+          .catch(() => undefined);
+        await page.waitForTimeout(1000);
+      }
+      this.logger.log(`DIAG endpoints:\n${[...seen].join("\n")}`);
     } finally {
       page.off("request", onRequest);
     }
