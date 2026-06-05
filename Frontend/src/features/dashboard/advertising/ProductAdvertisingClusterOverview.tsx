@@ -9,7 +9,6 @@ import { ProductAdvertisingDateFilter } from "./ProductAdvertisingDateFilter";
 import { ProductAdvertisingChangeLogPanel } from "./ProductAdvertisingChangeLogPanel";
 import { ProductAdvertisingFilterSettingsModal } from "./ProductAdvertisingFilterSettingsModal";
 import { ProductAdvertisingReviewModal } from "./ProductAdvertisingReviewModal";
-import { ClusterPositionRunButton } from "./ClusterPositionRunButton";
 import type { ProductAdvertisingClusterTableSectionProps } from "./ProductAdvertisingClusterTableSection";
 import {
   getAdvertisingCampaignLabel,
@@ -347,7 +346,6 @@ export function ProductAdvertisingClusterOverview(
             >
               История изменений
             </button>
-            <ClusterPositionRunButton />
           </div>
         ) : (
           <div />

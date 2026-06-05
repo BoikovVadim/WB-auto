@@ -9,6 +9,7 @@ import {
   getAdvertisingStickyStyle,
 } from "./advertisingClusterTableLayout";
 import { renderAdvertisingTotalsCell } from "./advertisingClusterTableCells";
+import { ClusterPositionRunButton } from "./ClusterPositionRunButton";
 import { AdvertisingClusterTableColgroup } from "./AdvertisingClusterTableColgroup";
 import type { ProductAdvertisingClusterDataTableProps } from "./productAdvertisingClusterDataTableTypes";
 
@@ -245,7 +246,13 @@ export const ProductAdvertisingClusterTableHeader = forwardRef<
                 })}
                 style={getAdvertisingStickyStyle(stickyOffsets, key)}
               >
-                {filterKind === "search" ? (
+                {key === "productPosition" ? (
+                  <div
+                    style={{ display: "flex", justifyContent: "center", alignItems: "center" }}
+                  >
+                    <ClusterPositionRunButton />
+                  </div>
+                ) : filterKind === "search" ? (
                   <div className="wb-data-table__column-filter-dual-search">
                     <input
                       className="wb-data-table__column-filter"

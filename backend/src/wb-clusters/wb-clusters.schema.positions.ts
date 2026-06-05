@@ -7,8 +7,9 @@ import type { WbClustersSchemaContext } from "./wb-clusters.schema.types";
  * Источник: публичная выдача search.wb.ru. Зонд (wb-search-position-probe.client)
  * по репрезентативному (самому частотному) запросу кластера листает выдачу, находит
  * наш nm_id и фиксирует его позицию. Различаем:
- *   organic_position — порядковый номер карточки в выдаче (что реально видит покупатель),
- *   ad_position      — рекламный слот (если карточка стоит как буст, поле log в ответе WB).
+ *   organic_position — органика БЕЗ рекламы (нумерация только по органическим карточкам),
+ *   display_position — органика С рекламой (порядковый номер в выдаче, реклама в счёте — что видит покупатель),
+ *   ad_position      — рекламный слот (карточка-буст, поле log в ответе WB).
  *
  * Это ИСТОРИЯ (одна строка на каждый замер, captured_at), а не последнее значение —
  * чтобы видеть динамику места во времени. status фиксирует исход замера, в т.ч.
@@ -29,12 +30,17 @@ export function getClusterPositionSnapshotCreateStatements({
         dest                    TEXT        NOT NULL,
         status                  TEXT        NOT NULL,
         organic_position        INTEGER,
+        display_position        INTEGER,
         ad_position             INTEGER,
         is_ad                   BOOLEAN     NOT NULL DEFAULT FALSE,
         page                    INTEGER,
         scanned_count           INTEGER,
         captured_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
+    `,
+    `
+      ALTER TABLE ${tableName("wb_cluster_position_snapshots")}
+        ADD COLUMN IF NOT EXISTS display_position INTEGER
     `,
     `
       CREATE INDEX IF NOT EXISTS wb_cluster_position_snapshots_latest_idx

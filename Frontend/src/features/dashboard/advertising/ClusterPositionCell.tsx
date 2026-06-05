@@ -22,23 +22,44 @@ function RefreshIcon() {
   );
 }
 
+/** Тултип-расшифровка трёх метрик позиции. */
+function positionTitle(p: ClusterPositionLatest): string {
+  return [
+    `Органика без рекламы: ${p.organicPosition ?? "—"}`,
+    `Органика с рекламой: ${p.displayPosition ?? "—"}`,
+    `Рекламный слот: ${p.adPosition ?? "—"}`,
+    `Просмотрено: ${p.scannedCount ?? "?"}`,
+  ].join("\n");
+}
+
 function renderValue(position: ClusterPositionLatest | undefined, probing: boolean) {
   if (probing) return <span style={{ color: "var(--wb-text-muted, #888)" }}>…</span>;
   if (!position) return <span style={{ color: "var(--wb-text-muted, #888)" }}>—</span>;
-  if (position.status === "found" && position.organicPosition !== null) {
+  if (
+    position.status === "found" &&
+    (position.organicPosition !== null || position.adPosition !== null)
+  ) {
+    const { organicPosition: org, displayPosition: disp, adPosition: ad } = position;
     return (
-      <span style={{ fontWeight: 600 }}>
-        {position.organicPosition}
-        {position.isAd && (
+      <span style={{ fontWeight: 600 }} title={positionTitle(position)}>
+        {/* Основное — органика без рекламы; в скобках мутно — с рекламой, если отличается. */}
+        {org !== null ? (
+          <>
+            {org}
+            {disp !== null && disp !== org && (
+              <span style={{ marginLeft: "3px", fontWeight: 400, color: "var(--wb-text-muted, #888)" }}>
+                ({disp})
+              </span>
+            )}
+          </>
+        ) : (
+          <span style={{ color: "var(--wb-text-muted, #888)" }}>—</span>
+        )}
+        {ad !== null && (
           <span
-            title={
-              position.adPosition !== null
-                ? `Рекламный слот, позиция ${position.adPosition}`
-                : "Рекламный слот (буст)"
-            }
-            style={{ marginLeft: "3px", fontSize: "10px", fontWeight: 600, color: "#a86a00" }}
+            style={{ marginLeft: "4px", fontSize: "10px", fontWeight: 600, color: "#a86a00" }}
           >
-            рек
+            рек {ad}
           </span>
         )}
       </span>

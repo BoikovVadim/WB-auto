@@ -17,7 +17,11 @@ export type ClusterPositionLatest = {
   clusterName: string;
   probeQuery: string;
   status: ClusterPositionStatus;
+  /** Метрика 1 — органика без рекламы. */
   organicPosition: number | null;
+  /** Метрика 2 — органика с рекламой (что видит покупатель). */
+  displayPosition: number | null;
+  /** Метрика 3 — рекламный слот. */
   adPosition: number | null;
   isAd: boolean;
   page: number | null;

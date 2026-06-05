@@ -8,7 +8,11 @@ export interface ClusterPositionSnapshotInput {
   probeFrequency: number | null;
   dest: string;
   status: string;
+  /** Метрика 1 — органика без рекламы. */
   organicPosition: number | null;
+  /** Метрика 2 — органика с рекламой (что видит покупатель). */
+  displayPosition: number | null;
+  /** Метрика 3 — рекламный слот. */
   adPosition: number | null;
   isAd: boolean;
   page: number | null;
@@ -21,6 +25,7 @@ export interface ClusterPositionLatest {
   probeQuery: string;
   status: string;
   organicPosition: number | null;
+  displayPosition: number | null;
   adPosition: number | null;
   isAd: boolean;
   page: number | null;
@@ -41,8 +46,8 @@ export abstract class WbClustersRepositoryPositions extends WbClustersRepository
       `
       INSERT INTO ${this.tableName("wb_cluster_position_snapshots")}
         (nm_id, normalized_cluster_name, cluster_name, probe_query, probe_frequency,
-         dest, status, organic_position, ad_position, is_ad, page, scanned_count)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         dest, status, organic_position, display_position, ad_position, is_ad, page, scanned_count)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       `,
       [
         input.nmId,
@@ -53,6 +58,7 @@ export abstract class WbClustersRepositoryPositions extends WbClustersRepository
         input.dest,
         input.status,
         input.organicPosition,
+        input.displayPosition,
         input.adPosition,
         input.isAd,
         input.page,
@@ -70,6 +76,7 @@ export abstract class WbClustersRepositoryPositions extends WbClustersRepository
       probe_query: string;
       status: string;
       organic_position: number | null;
+      display_position: number | null;
       ad_position: number | null;
       is_ad: boolean;
       page: number | null;
@@ -79,7 +86,7 @@ export abstract class WbClustersRepositoryPositions extends WbClustersRepository
       `
       SELECT DISTINCT ON (normalized_cluster_name)
         normalized_cluster_name, cluster_name, probe_query, status,
-        organic_position, ad_position, is_ad, page, scanned_count,
+        organic_position, display_position, ad_position, is_ad, page, scanned_count,
         captured_at::text AS captured_at
       FROM ${this.tableName("wb_cluster_position_snapshots")}
       WHERE nm_id = $1
@@ -93,6 +100,7 @@ export abstract class WbClustersRepositoryPositions extends WbClustersRepository
       probeQuery: r.probe_query,
       status: r.status,
       organicPosition: r.organic_position,
+      displayPosition: r.display_position,
       adPosition: r.ad_position,
       isAd: r.is_ad,
       page: r.page,

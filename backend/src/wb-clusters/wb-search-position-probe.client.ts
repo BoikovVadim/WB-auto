@@ -42,7 +42,11 @@ export type PositionProbeStatus =
 
 export interface PositionProbeResult {
   status: PositionProbeStatus;
+  /** Метрика 1 — органическая позиция БЕЗ рекламы (нумерация только по орган. карточкам). */
   organicPosition: number | null;
+  /** Метрика 2 — органическая позиция С рекламой (порядковый номер в выдаче, реклама в счёте). */
+  displayPosition: number | null;
+  /** Метрика 3 — рекламная позиция (слот, где товар стоит как буст; карточка с полем log). */
   adPosition: number | null;
   isAd: boolean;
   page: number | null;
@@ -60,6 +64,7 @@ const DEFAULT_DEPTH = 300;
 const NOT_FOUND: PositionProbeResult = {
   status: "not_found",
   organicPosition: null,
+  displayPosition: null,
   adPosition: null,
   isAd: false,
   page: null,
@@ -372,23 +377,14 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       }
 
       // Внутренний product-endpoint, 100 товаров/страница. ВСЕ нужные страницы (1..N)
-      // стартуем СРАЗУ параллельно — мобильный прокси тянет их конкурентно, поэтому даже
-      // топ-300 (3 стр.) укладывается в латентность одной. Early-return: товар найден уже
-      // в стр.1 → отдаём не дожидаясь 2..N (они долетят в фоне, игнорируем).
+      // стартуем СРАЗУ параллельно — мобильный прокси тянет их конкурентно, топ-300 (3 стр.)
+      // укладывается в латентность одной. Сканируем ПОЛНОСТЬЮ (не early-exit): рекламная и
+      // органическая карточки товара могут лежать на разной глубине, нужны обе.
       const maxPages = Math.max(1, Math.min(Math.ceil(depth / 100), 3));
       const tPage = Date.now();
-      const pagePromises = Array.from({ length: maxPages }, (_, i) =>
-        this.fetchProductPage(query, i + 1),
+      const results = await Promise.all(
+        Array.from({ length: maxPages }, (_, i) => this.fetchProductPage(query, i + 1)),
       );
-      const firstPage = await pagePromises[0]!;
-      this.logger.log(
-        `probe «${query}»: стр.1 = ${firstPage.length} карточек за ${Date.now() - tPage}ms`,
-      );
-      const foundInFirst = firstPage.some((p) => p.id === nmId);
-      const results =
-        foundInFirst || maxPages === 1
-          ? [firstPage]
-          : [firstPage, ...(await Promise.all(pagePromises.slice(1)))];
       this.logger.log(
         `probe «${query}»: ${results.length} стр. готовы за ${Date.now() - tPage}ms`,
       );
@@ -400,25 +396,51 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
         return { ...NOT_FOUND, status: "blocked" };
       }
 
-      let rank = 0;
-      for (const products of results) {
+      // Два счётчика: raw (все карточки) и organic (только не-рекламные). Рекламная карточка
+      // = есть поле log. Находим рекламное и органическое появление нашего nm_id.
+      let raw = 0;
+      let organic = 0;
+      let adCards = 0;
+      let adPosition: number | null = null; // метрика 3: rawIndex рекл. карточки
+      let displayPosition: number | null = null; // метрика 2: rawIndex орган. карточки
+      let organicPosition: number | null = null; // метрика 1: organicIndex орган. карточки
+      outer: for (const products of results) {
         for (const product of products) {
-          rank++;
-          if (rank > depth) break;
+          raw++;
+          if (raw > depth) break outer;
+          const isAdCard = !!product.log;
+          if (isAdCard) adCards++;
+          else organic++;
           if (product.id === nmId) {
-            this.logger.log(`probe «${query}» nm ${nmId}: место ${rank} за ${elapsed()}`);
-            return {
-              status: "found",
-              organicPosition: rank,
-              adPosition: null,
-              isAd: !!product.log,
-              page: Math.ceil(rank / 100),
-              scanned: rank,
-            };
+            if (isAdCard) {
+              if (adPosition === null) adPosition = raw;
+            } else if (displayPosition === null) {
+              displayPosition = raw;
+              organicPosition = organic;
+            }
           }
         }
       }
-      const scanned = Math.min(rank, depth);
+      const scanned = Math.min(raw, depth);
+      this.logger.log(
+        `probe «${query}»: cards=${raw} organic=${organic} ads=${adCards}`,
+      );
+
+      if (adPosition !== null || displayPosition !== null) {
+        this.logger.log(
+          `probe «${query}» nm ${nmId}: орг ${organicPosition ?? "—"} / показ ${displayPosition ?? "—"} / рек ${adPosition ?? "—"} за ${elapsed()}`,
+        );
+        const refPos = displayPosition ?? adPosition!;
+        return {
+          status: "found",
+          organicPosition,
+          displayPosition,
+          adPosition,
+          isAd: adPosition !== null,
+          page: Math.ceil(refPos / 100),
+          scanned,
+        };
+      }
       this.logger.log(`probe «${query}» nm ${nmId}: не в топ-${scanned} за ${elapsed()}`);
       return { ...NOT_FOUND, scanned };
     } catch (error) {
