@@ -8,14 +8,18 @@ import type {
   ClusterFilterRow,
 } from "../../../api/syncClientClusterAutomation";
 import { useClusterAutomationFilters } from "./useClusterAutomationFilters";
+import {
+  clearClusterFilterDraft,
+  readClusterFilterDraft,
+  writeClusterFilterDraft,
+  type ClusterFilterRole as Role,
+} from "./clusterFilterDraftStorage";
 
 type Props = {
   nmId: number;
   advertId: number;
   onClose: () => void;
 };
-
-type Role = "auto" | "protected" | "blacklisted";
 
 const ROW_HEIGHT = 38;
 
@@ -47,8 +51,12 @@ export function ProductAdvertisingFilterSettingsModal({ nmId, advertId, onClose 
     advertId,
   );
   const [search, setSearch] = useState("");
-  // Локальные изменения ролей поверх пришедшего конфига (key → role).
-  const [overrides, setOverrides] = useState<Map<string, Role>>(new Map());
+  // Локальные изменения ролей поверх пришедшего конфига (key → role). Черновик
+  // несохранённого выбора персистится в localStorage, поэтому переживает F5/переоткрытие
+  // и подставляется обратно при монтировании (по паре nmId+advertId).
+  const [overrides, setOverrides] = useState<Map<string, Role>>(
+    () => new Map(Object.entries(readClusterFilterDraft(nmId, advertId))),
+  );
   const listRef = useRef<HTMLDivElement>(null);
 
   const roleOf = (row: ClusterFilterRow): Role =>
@@ -57,7 +65,13 @@ export function ProductAdvertisingFilterSettingsModal({ nmId, advertId, onClose 
   const setRole = (row: ClusterFilterRow, role: Role) => {
     setOverrides((prev) => {
       const next = new Map(prev);
-      next.set(row.normalizedClusterName, role);
+      // Возврат к исходной (серверной) роли — не отличие, убираем из черновика.
+      if (role === initialRole(row)) {
+        next.delete(row.normalizedClusterName);
+      } else {
+        next.set(row.normalizedClusterName, role);
+      }
+      writeClusterFilterDraft(nmId, advertId, Object.fromEntries(next));
       return next;
     });
   };
@@ -100,7 +114,11 @@ export function ProductAdvertisingFilterSettingsModal({ nmId, advertId, onClose 
       else if (role === "blacklisted") blacklistedRows.push(row);
     }
     void saveFilters({ protected: protectedRows, blacklisted: blacklistedRows })
-      .then(() => onClose())
+      .then(() => {
+        // Применено на бэкенд — черновик больше не нужен.
+        clearClusterFilterDraft(nmId, advertId);
+        onClose();
+      })
       .catch(() => {
         /* ошибка показана в error */
       });
