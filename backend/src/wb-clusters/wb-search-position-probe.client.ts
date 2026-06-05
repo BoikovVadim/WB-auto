@@ -351,57 +351,33 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
     }
   }
 
-  /** ВРЕМЕННО: ищем источник рекламных позиций — пробуем search.wb.ru разных версий и
-   *  внутренний эндпоинт с ОЧИЩЕННЫМИ параметрами (без hide_vflags/hide_dtype). Дамп log/logs. */
+  /** ВРЕМЕННО: пробуем рекламный хост catalog-ads.wildberries.ru напрямую (канон. источник
+   *  рекламных слотов поиска) + дамп сырого ответа, чтобы увидеть структуру. */
   private async diagAdSources(internalUrl: URL, query: string): Promise<void> {
     if (!this.context) return;
-    const params = new URLSearchParams(internalUrl.search);
-    params.delete("hide_vflags");
-    params.delete("hide_dtype");
-    params.delete("inheritFilters");
-    params.set("query", query);
-    params.set("page", "1");
-    const qs = params.toString();
+    const p = new URLSearchParams(internalUrl.search);
+    const dest = p.get("dest") ?? "";
+    const eq = encodeURIComponent(query);
+    const adsQs = `appType=1&curr=rub&dest=${dest}&locale=ru&lang=ru&keyword=${eq}`;
     const candidates: Array<[string, string]> = [
-      ["pub-v18", `https://search.wb.ru/exactmatch/ru/common/v18/search?${qs}`],
-      ["pub-v13", `https://search.wb.ru/exactmatch/ru/common/v13/search?${qs}`],
-      ["pub-v9", `https://search.wb.ru/exactmatch/ru/common/v9/search?${qs}`],
-      ["int-nohide", `${internalUrl.origin}${internalUrl.pathname}?${qs}`],
+      ["ads-v8", `https://catalog-ads.wildberries.ru/api/v8/search?${adsQs}`],
+      ["ads-v6", `https://catalog-ads.wildberries.ru/api/v6/search?${adsQs}`],
+      ["ads-v5", `https://catalog-ads.wildberries.ru/api/v5/search?${adsQs}`],
+      ["ads-v7", `https://catalog-ads.wildberries.ru/api/v7/search?${adsQs}`],
     ];
     for (const [label, u] of candidates) {
       try {
         const r = await this.context.request.get(u, {
           headers: {
             accept: "*/*",
-            "x-requested-with": "XMLHttpRequest",
-            "x-spa-version": this.spaVersion,
-            "x-userid": "0",
             "x-queryid": `qid${Date.now()}`,
             origin: "https://www.wildberries.ru",
+            referer: "https://www.wildberries.ru/",
           },
           timeout: 15_000,
         });
-        let n = 0;
-        let wLog = 0;
-        let wLogs = 0;
-        let sample = "-";
-        try {
-          const j = JSON.parse(await r.text()) as {
-            products?: Array<{ log?: unknown; logs?: unknown[] }>;
-            data?: { products?: Array<{ log?: unknown; logs?: unknown[] }> };
-          };
-          const ps = j.products ?? j.data?.products ?? [];
-          n = ps.length;
-          for (const p of ps) {
-            if (p.log) wLog++;
-            if (Array.isArray(p.logs) && p.logs.length) wLogs++;
-          }
-          const adp = ps.find((p) => p.log || (Array.isArray(p.logs) && p.logs.length));
-          if (adp) sample = JSON.stringify(adp.log ?? adp.logs)?.slice(0, 250) ?? "-";
-        } catch {
-          /* not json */
-        }
-        this.logger.log(`DIAGAD ${label} st=${r.status()} n=${n} wLog=${wLog} wLogs=${wLogs} s=${sample}`);
+        const body = (await r.text()).replace(/\s+/g, " ").slice(0, 350);
+        this.logger.log(`DIAGAD ${label} st=${r.status()} body=${body}`);
       } catch (e) {
         this.logger.log(`DIAGAD ${label} ERR ${(e as Error).message}`);
       }
