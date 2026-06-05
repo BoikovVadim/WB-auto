@@ -50,25 +50,22 @@ export class ProductPositionService {
 
   /**
    * Замерить место товара по одному кластеру и вернуть свежий снапшот.
-   * Репрезентативный запрос = самый частотный запрос кластера; если такого нет
-   * (нет частотности) — пробуем по самому имени кластера как запросу.
+   * Ищем по САМОМУ ИМЕНИ кластера (канонический запрос) — «самый частотный запрос
+   * кластера» из кабинета засорён мусором с высокой глобальной частотой (в кластер
+   * «клетка для кролика» попадают «рваные джинсы женские» и т.п.), он даёт неверную выдачу.
    */
   async probeCluster(
     nmId: number,
     clusterName: string,
   ): Promise<ClusterPositionLatest> {
-    const representative =
-      await this.repository.getRepresentativeClusterQueryForCluster(nmId, clusterName);
-    const probeQuery = representative?.topQuery ?? clusterName;
-    const normalizedClusterName =
-      representative?.normalizedClusterName ?? clusterName.trim().toLowerCase();
-    const resolvedClusterName = representative?.clusterName ?? clusterName;
+    const probeQuery = clusterName.trim();
+    const normalizedClusterName = probeQuery.toLowerCase();
 
     const result = await this.probe.probeQueryPosition(probeQuery, nmId);
 
     const snapshot: ClusterPositionLatest = {
       normalizedClusterName,
-      clusterName: resolvedClusterName,
+      clusterName: probeQuery,
       probeQuery,
       status: result.status,
       organicPosition: result.organicPosition,
@@ -82,9 +79,9 @@ export class ProductPositionService {
     await this.repository.insertClusterPositionSnapshot({
       nmId,
       normalizedClusterName,
-      clusterName: resolvedClusterName,
+      clusterName: probeQuery,
       probeQuery,
-      probeFrequency: representative?.monthlyFrequency ?? null,
+      probeFrequency: null,
       dest: DEST_MOSCOW,
       status: result.status,
       organicPosition: result.organicPosition,

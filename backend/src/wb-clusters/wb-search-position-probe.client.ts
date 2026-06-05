@@ -284,19 +284,17 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       )}&dest=${dest}`;
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 });
 
-      // Ждём карточки до 75с (холодный заход / повторный challenge); если карточек нет
-      // и challenge тоже нет дольше 15с — пусто/блок.
+      // Ждём появления карточек до 75с (холодный заход / повторный challenge проходят
+      // за ~40с; прогретый — за секунды). Не обрываем рано: пустой результат тоже подождёт.
       const start = Date.now();
       let count = 0;
-      let challenge = false;
       while (Date.now() - start < 75_000) {
         count = await page.locator("[data-nm-id]").count().catch(() => 0);
         if (count > 0) break;
-        challenge = await hasChallenge();
-        if (!challenge && Date.now() - start > 15_000) break;
         await page.waitForTimeout(2500);
       }
       if (count === 0) {
+        const challenge = await hasChallenge();
         this.scheduleIdleClose();
         this.logger.warn(
           `probe «${query}» nm ${nmId}: ${challenge ? "challenge не пройден" : "пусто"} за ${elapsed()}`,
