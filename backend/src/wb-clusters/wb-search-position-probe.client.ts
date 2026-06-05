@@ -332,63 +332,71 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       }
       this.warmed = true;
 
-      // Догружаем выдачу до depth карточек: скроллим в самый низ (триггер бесконечной
-      // ленты WB) с паузой на подгрузку; стоп, когда дошли до depth или счёт перестал расти.
-      let stable = 0;
-      for (let i = 0; i < 40 && count < depth; i++) {
-        await page.evaluate(() => {
+      // WB виртуализирует ленту (рециклит карточки в DOM), поэтому собираем nm_id ПО ХОДУ
+      // прокрутки, накапливая порядок с дедупом, до depth или пока перестают появляться
+      // новые. Скроллим инкрементально (не прыжком в низ) — чтобы не проскочить карточки.
+      const collectBatch = () =>
+        page.evaluate(() => {
           const g = globalThis as unknown as {
-            scrollTo(x: number, y: number): void;
-            document: { body: { scrollHeight: number } };
+            document: {
+              querySelectorAll(
+                sel: string,
+              ): ArrayLike<{ getAttribute(n: string): string | null; innerText: string }>;
+            };
           };
-          g.scrollTo(0, g.document.body.scrollHeight);
+          return Array.from(g.document.querySelectorAll("[data-nm-id]"))
+            .map((el) => ({
+              nmId: Number(el.getAttribute("data-nm-id")),
+              isAd: /реклама/i.test(el.innerText ?? ""),
+            }))
+            .filter((x) => Number.isFinite(x.nmId) && x.nmId > 0);
         });
-        await page.waitForTimeout(1500);
-        const next = await page.locator("[data-nm-id]").count().catch(() => count);
-        if (next <= count) {
-          if (++stable >= 4) break;
-        } else {
-          stable = 0;
-        }
-        count = next;
-      }
 
-      const items = await page.evaluate(() => {
-        const g = globalThis as unknown as {
-          document: {
-            querySelectorAll(
-              sel: string,
-            ): ArrayLike<{ getAttribute(n: string): string | null; innerText: string }>;
-          };
-        };
-        return Array.from(g.document.querySelectorAll("[data-nm-id]"))
-          .map((el) => ({
-            nmId: Number(el.getAttribute("data-nm-id")),
-            isAd: /реклама/i.test(el.innerText ?? ""),
-          }))
-          .filter((x) => Number.isFinite(x.nmId) && x.nmId > 0);
-      });
+      const seen = new Set<number>();
+      let rank = 0;
+      let found: PositionProbeResult | null = null;
+      let dry = 0;
+      for (let i = 0; i < 120 && seen.size < depth && !found; i++) {
+        const batch = await collectBatch();
+        let added = 0;
+        for (const item of batch) {
+          if (seen.has(item.nmId)) continue;
+          seen.add(item.nmId);
+          rank++;
+          added++;
+          if (item.nmId === nmId) {
+            found = {
+              status: "found",
+              organicPosition: rank,
+              adPosition: null,
+              isAd: item.isAd,
+              page: Math.ceil(rank / 100),
+              scanned: rank,
+            };
+            break;
+          }
+        }
+        if (found || seen.size >= depth) break;
+        if (added === 0) {
+          if (++dry >= 5) break;
+        } else {
+          dry = 0;
+        }
+        await page.evaluate(() => {
+          const g = globalThis as unknown as { scrollBy(x: number, y: number): void };
+          g.scrollBy(0, 1600);
+        });
+        await page.waitForTimeout(900);
+      }
 
       this.scheduleIdleClose();
       this.logger.log(
-        `probe «${query}» nm ${nmId}: прочитано ${items.length} карточек за ${elapsed()}`,
+        `probe «${query}» nm ${nmId}: собрано ${seen.size} за ${elapsed()}${
+          found ? `, место ${found.organicPosition}` : ""
+        }`,
       );
 
-      let rank = 0;
-      for (const item of items) {
-        rank++;
-        if (item.nmId === nmId) {
-          return {
-            status: "found",
-            organicPosition: rank,
-            adPosition: null,
-            isAd: item.isAd,
-            page: Math.ceil(rank / 100),
-            scanned: items.length,
-          };
-        }
-      }
-      return { ...NOT_FOUND, scanned: items.length };
+      return found ?? { ...NOT_FOUND, scanned: seen.size };
     } catch (error) {
       this.logger.warn(
         `probeQueryPosition «${query}» nm ${nmId}: ${(error as Error).message}`,
