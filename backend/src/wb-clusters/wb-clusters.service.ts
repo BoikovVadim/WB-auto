@@ -45,6 +45,10 @@ import * as wb_clusters_command_flow from "./wb-clusters-command-flow";
 import * as wb_clusters_read_flow from "./wb-clusters-read-flow";
 import * as wb_clusters_sync_flow from "./wb-clusters-sync-flow";
 import { WbPromotionApiClient } from "./wb-promotion-api.client";
+import {
+  runPrecomputeNextDayPeriod,
+  type PrecomputeNextDayContext,
+} from "./precompute-monster-gate";
 import type {
   WbClustersMaterializeContext,
   WbClustersSnapshotReadContext,
@@ -1504,32 +1508,11 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
    * пробивали heap-лимит и роняли бэкенд FATAL OOM.
    */
   async precomputeNextDayPeriod() {
-    if (!this.wbClustersRepository.isConfigured()) {
-      return;
-    }
-    try {
-      const nmIds = await this.wbClustersRepository.getKnownCatalogNmIds();
-      if (nmIds.length === 0) {
-        return;
-      }
-      const now = new Date();
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const tomorrowStr = this.formatAdvertisingSheetDate(
-        this.parseAdvertisingSheetDayValue(this.formatAdvertisingSheetDate(tomorrow))!,
-      );
-      const weekStart = this.formatAdvertisingSheetDate(
-        this.addAdvertisingSheetDays(this.parseAdvertisingSheetDayValue(tomorrowStr)!, -6),
-      );
-      const nextWeekPeriod = { start: weekStart, end: tomorrowStr };
-      this.logger.log(
-        `Нночной пре-компьютинг: материализация ${nextWeekPeriod.start}..${nextWeekPeriod.end} для ${nmIds.length} товаров.`,
-      );
-      this.scheduleProductAdvertisingSheetWarmup(nmIds, "precompute-next-day", nextWeekPeriod, "precompute");
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`Ночной пре-компьютинг не удался: ${msg}`);
-    }
+    // Логика (включая гейт по размеру против heap OOM) — в precompute-monster-gate.
+    await runPrecomputeNextDayPeriod(
+      this as unknown as PrecomputeNextDayContext,
+      appEnv.wbPrecomputeMaxQueryRows,
+    );
   }
 
   /**

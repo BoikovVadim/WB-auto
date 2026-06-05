@@ -275,6 +275,15 @@ export const appEnv = {
     "30",
     1,
   ),
+  // Ночной precompute пропускает товары, у которых строк query-universe
+  // (wb_cabinet_cluster_queries) больше порога: сборка такого «монстра» тянет все
+  // строки в JS и пробивает heap-лимит → FATAL OOM роняет весь бэкенд. Такие товары
+  // материализуются on-demand (по одному) при открытии. Тюнится без передеплоя кода.
+  wbPrecomputeMaxQueryRows: parsePositiveIntegerEnv(
+    "WB_PRECOMPUTE_MAX_QUERY_ROWS",
+    "80000",
+    1,
+  ),
   wbPromotionSyncEnabled: parseBooleanEnv("WB_PROMOTION_SYNC_ENABLED", "true"),
   wbPromotionSyncCron:
     getOptionalEnv("WB_PROMOTION_SYNC_CRON", "*/10 * * * *").trim() ||

@@ -229,6 +229,37 @@ export abstract class WbClustersRepositoryCatalogStorage extends WbClustersRepos
     return result.rows.map((r) => Number(r.nm_id)).filter(Number.isFinite);
   }
 
+  /**
+   * Сколько строк «вселенной запросов» (wb_cabinet_cluster_queries) у каждого товара.
+   * Сборка листа товара тянет ВСЕ эти строки в JS-память, поэтому ночной precompute
+   * по счётчику пропускает товары-монстры (иначе одна сборка пробивает heap → FATAL OOM
+   * и падает весь бэкенд). Дёшево: покрыто индексом по nm_id. Возвращает Map nmId→count.
+   */
+  async getCabinetClusterQueryCountsByNmId(nmIds: number[]): Promise<Map<number, number>> {
+    const counts = new Map<number, number>();
+    const ids = Array.from(new Set(nmIds.filter((v) => Number.isInteger(v) && v > 0)));
+    if (ids.length === 0) {
+      return counts;
+    }
+    await this.ensureSchemaOrThrow();
+    const pool = this.getPool();
+    const result = await pool.query<{ nm_id: string; cnt: string }>(
+      `SELECT nm_id::text AS nm_id, COUNT(*)::text AS cnt
+         FROM ${this.tableName("wb_cabinet_cluster_queries")}
+        WHERE nm_id = ANY($1::bigint[])
+        GROUP BY nm_id`,
+      [ids],
+    );
+    for (const row of result.rows) {
+      const nmId = Number(row.nm_id);
+      const cnt = Number(row.cnt);
+      if (Number.isFinite(nmId) && Number.isFinite(cnt)) {
+        counts.set(nmId, cnt);
+      }
+    }
+    return counts;
+  }
+
   async getMissingCatalogNmIds(): Promise<number[]> {
     await this.ensureSchemaOrThrow();
     const pool = this.getPool();
