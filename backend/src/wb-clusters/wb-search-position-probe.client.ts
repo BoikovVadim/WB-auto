@@ -92,16 +92,18 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
   /** Шаблон эндпоинта, восстановленный с диска и ждущий проверки лёгким запросом. */
   private pendingRestore: { url: string; spa: string } | null = null;
 
-  private async ensureReady(proxy: ParsedProxy): Promise<Page> {
+  private async ensureReady(proxy: ParsedProxy | null): Promise<Page> {
     if (this.page && this.browser?.isConnected()) return this.page;
-    if (!this.relayPort) this.relayPort = await this.relay.start(proxy);
+    // Прокси опционален: тёплый браузер сам проходит JS-челлендж WB, поэтому серверный IP
+    // работает напрямую. Если задан WB_SEARCH_PROBE_PROXY — поднимаем релей и ходим через него.
+    if (proxy && !this.relayPort) this.relayPort = await this.relay.start(proxy);
 
     // Восстанавливаем сохранённые cookies WB — после рестарта это позволяет пропустить
     // 75с challenge (проверим сессию лёгким запросом в ensureWarm).
     const hasState = this.store.hasStorageState();
     this.browser = await chromium.launch({ headless: true });
     this.context = await this.browser.newContext({
-      proxy: { server: `http://127.0.0.1:${this.relayPort}` },
+      ...(proxy ? { proxy: { server: `http://127.0.0.1:${this.relayPort}` } } : {}),
       locale: "ru-RU",
       userAgent: PROBE_UA,
       viewport: { width: 1366, height: 900 },
@@ -128,9 +130,7 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
    * становится no-op — браузер не умирает по простою, клик всегда отдаёт тёплый результат.
    */
   private keepWarmEnabled(): boolean {
-    return (
-      process.env.WB_POSITION_KEEP_WARM !== "0" && !!process.env.WB_SEARCH_PROBE_PROXY
-    );
+    return process.env.WB_POSITION_KEEP_WARM !== "0";
   }
 
   /** Тёплая ли сессия прямо сейчас (для грелки/диагностики). */
@@ -191,8 +191,7 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
   }
 
   private async doHeartbeat(query: string): Promise<boolean> {
-    const proxy = parseProbeProxy();
-    if (!proxy) return false;
+    const proxy = parseProbeProxy(); // null = ходим напрямую с IP сервера
     try {
       const page = await this.ensureReady(proxy);
       const warm = await this.ensureWarm(page, query);
@@ -292,28 +291,6 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
           .catch(() => undefined);
         await page.waitForTimeout(1500);
       }
-      // ВРЕМЕННО: показывает ли НАША страница рекламу? Считаем метки «Реклама» в DOM
-      // и карточки с рекламным маркером (data-link/класс/aria), дампим пример.
-      const dom = await page
-        .evaluate(() => {
-          const g = globalThis as unknown as {
-            document: {
-              body: { innerText: string } | null;
-              querySelectorAll: (s: string) => ArrayLike<unknown>;
-            };
-          };
-          const txt = g.document.body?.innerText ?? "";
-          const reklama = (txt.match(/Реклама/g) ?? []).length;
-          const cards = g.document.querySelectorAll("[data-nm-id], article.product-card, .product-card").length;
-          const adCards = g.document.querySelectorAll(
-            ".product-card--adv, [class*='adv'], [class*='promo'], [data-popup*='adv']",
-          ).length;
-          return { reklama, cards, adCards };
-        })
-        .catch(() => ({ reklama: -1, cards: -1, adCards: -1 }));
-      this.logger.log(
-        `DIAGDOM Реклама=${dom.reklama} cards=${dom.cards} adCards=${dom.adCards}`,
-      );
     } finally {
       page.off("request", onRequest);
     }
@@ -366,43 +343,9 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       const json = JSON.parse(await res.text()) as {
         products?: Array<{ id: number; logs?: unknown[] }>;
       };
-      if (pageNumber === 1) await this.diagAdSources(url, query);
       return json.products ?? [];
     } catch {
       return [];
-    }
-  }
-
-  /** ВРЕМЕННО: пробуем рекламный хост catalog-ads.wildberries.ru напрямую (канон. источник
-   *  рекламных слотов поиска) + дамп сырого ответа, чтобы увидеть структуру. */
-  private async diagAdSources(internalUrl: URL, query: string): Promise<void> {
-    if (!this.context) return;
-    const p = new URLSearchParams(internalUrl.search);
-    const dest = p.get("dest") ?? "";
-    const eq = encodeURIComponent(query);
-    const adsQs = `appType=1&curr=rub&dest=${dest}&locale=ru&lang=ru&keyword=${eq}`;
-    const candidates: Array<[string, string]> = [
-      ["ads-v8", `https://catalog-ads.wildberries.ru/api/v8/search?${adsQs}`],
-      ["ads-v6", `https://catalog-ads.wildberries.ru/api/v6/search?${adsQs}`],
-      ["ads-v5", `https://catalog-ads.wildberries.ru/api/v5/search?${adsQs}`],
-      ["ads-v7", `https://catalog-ads.wildberries.ru/api/v7/search?${adsQs}`],
-    ];
-    for (const [label, u] of candidates) {
-      try {
-        const r = await this.context.request.get(u, {
-          headers: {
-            accept: "*/*",
-            "x-queryid": `qid${Date.now()}`,
-            origin: "https://www.wildberries.ru",
-            referer: "https://www.wildberries.ru/",
-          },
-          timeout: 15_000,
-        });
-        const body = (await r.text()).replace(/\s+/g, " ").slice(0, 350);
-        this.logger.log(`DIAGAD ${label} st=${r.status()} body=${body}`);
-      } catch (e) {
-        this.logger.log(`DIAGAD ${label} ERR ${(e as Error).message}`);
-      }
     }
   }
 
@@ -411,11 +354,9 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
     nmId: number,
     options: PositionProbeOptions,
   ): Promise<PositionProbeResult> {
+    // Прокси опционален — без него ходим напрямую с IP сервера (тёплый браузер проходит
+    // челлендж сам). parseProbeProxy() вернёт null, если WB_SEARCH_PROBE_PROXY не задан.
     const proxy = parseProbeProxy();
-    if (!proxy) {
-      this.logger.warn("WB_SEARCH_PROBE_PROXY не задан — замер позиций невозможен.");
-      return { ...NOT_FOUND, status: "blocked" };
-    }
     const envDepth = Number(process.env.WB_POSITION_DEPTH);
     const depth =
       options.depth ??

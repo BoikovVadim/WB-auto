@@ -26,11 +26,8 @@ export class PositionProbeWarmerService implements OnModuleInit, OnModuleDestroy
   constructor(private readonly probe: WbSearchPositionProbeClient) {}
 
   onModuleInit(): void {
+    // Прокси не требуется: тёплый браузер проходит челлендж с прямого IP сервера.
     if (process.env.WB_POSITION_KEEP_WARM === "0") return;
-    if (!process.env.WB_SEARCH_PROBE_PROXY) {
-      this.logger.warn("keep-warm: WB_SEARCH_PROBE_PROXY не задан — грелка не запущена.");
-      return;
-    }
     this.logger.log("keep-warm: прогрев сессии зонда фоном + heartbeat каждые 4 мин.");
     void this.tick();
     this.timer = setInterval(() => void this.tick(), PositionProbeWarmerService.TICK_MS);
