@@ -123,6 +123,11 @@ export class ProductClusterAutomationService {
         isBlacklisted: false,
       });
     }
+    // Обучение мусор-фильтра от решения менеджера (по товару): слова кластера → pos/neg.
+    // approve/protect — релевантно, reject — в чёрный. Дальше движок сам авто-бракует
+    // новые кластеры с выученными «чёрными» словами (случай «для шиншилл»).
+    await this.relevanceService.learnFromReview(nmId, clusterName, action);
+
     // Во всех исходах кластер выходит из карантина (approved) — дальше им управляет
     // CPO-правило / чёрный / белый список по обычной логике движка.
     await this.repository.setClusterReviewStatus(advertId, nmId, normalizedClusterName, "approved");
@@ -386,10 +391,29 @@ export class ProductClusterAutomationService {
         reviewStatus: d.reviewStatus,
         suggestedReviewAction:
           d.reviewStatus === "pending"
-            ? suggestions.get(d.normalizedClusterName) ?? null
+            ? suggestions.get(d.normalizedClusterName)?.suggestion ?? null
             : null,
       })),
     );
+
+    // Авто-в-чёрный: pending-кластер содержит слово, выученное менеджером как чёрное по этому
+    // товару → в чёрный список без модерации (обучение от действий). Случай «для шиншилл»:
+    // менеджер один раз бракнул — новые такие кластеры больше не всплывают. Применяем ПОСЛЕ
+    // upsert (перетираем review_status на approved + ставим blacklist-override; следующий
+    // прогон увидит роль blacklisted и выключит на WB в live).
+    const clusterNameByNcn = new Map(inputs.map((i) => [i.normalizedClusterName, i.clusterName]));
+    for (const [ncn, res] of suggestions) {
+      if (!res.autoBlacklist) continue;
+      await this.repository.setSingleClusterOverride(
+        advertId,
+        nmId,
+        ncn,
+        clusterNameByNcn.get(ncn) ?? ncn,
+        { isProtected: false, isBlacklisted: true },
+      );
+      await this.repository.setClusterReviewStatus(advertId, nmId, ncn, "approved");
+      this.logger.log(`Авто-чёрный (выучено) ${advertId}/${nmId}: ${ncn}`);
+    }
 
     // Грандфазер завершён: фиксируем baseline, чтобы СЛЕДУЮЩИЕ новые кластеры шли на ревью.
     if (!isBaselined) {

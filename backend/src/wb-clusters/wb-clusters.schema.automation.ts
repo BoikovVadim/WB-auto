@@ -106,5 +106,20 @@ export function getClusterAutomationCreateStatements({
         SET baselined_at = NOW()
         WHERE mode <> 'off' AND baselined_at IS NULL
     `,
+    // wb_cluster_relevance_term — ОБУЧЕНИЕ мусор-фильтра от действий менеджера (по товару).
+    // Каждое решение в модалке модерации обновляет счётчики слов: approve/protect → pos_count,
+    // reject (чёрный) → neg_count. Слово с перевесом neg, которого нет в базовом релевантном
+    // наборе, → выученный «негатив»: новые кластеры с ним авто-уходят в чёрный (случай «шиншилл»).
+    // Уровень — товар (nm_id). См. product-cluster-relevance.ts / .service.ts.
+    `
+      CREATE TABLE IF NOT EXISTS ${tableName("wb_cluster_relevance_term")} (
+        nm_id      BIGINT      NOT NULL,
+        token      TEXT        NOT NULL,
+        pos_count  INTEGER     NOT NULL DEFAULT 0,
+        neg_count  INTEGER     NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (nm_id, token)
+      )
+    `,
   ];
 }

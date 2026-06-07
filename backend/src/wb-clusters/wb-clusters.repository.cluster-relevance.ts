@@ -63,4 +63,46 @@ export abstract class WbClustersRepositoryClusterRelevance extends WbClustersRep
       })),
     };
   }
+
+  /**
+   * Обучение мусор-фильтра: прибавляет счётчики словам из решения менеджера по товару.
+   * polarity 'positive' (approve/protect) → pos_count++, 'negative' (reject) → neg_count++.
+   */
+  async learnRelevanceTerms(
+    nmId: number,
+    tokens: string[],
+    polarity: "positive" | "negative",
+  ): Promise<void> {
+    const unique = [...new Set(tokens)].filter((t) => t.length > 0);
+    if (unique.length === 0) return;
+    await this.ensureSchemaOrThrow();
+    const pos = polarity === "positive" ? 1 : 0;
+    const neg = polarity === "negative" ? 1 : 0;
+    const placeholders = unique.map((_, i) => `($1, $${i + 4}, $2, $3)`).join(", ");
+    await this.getPool().query(
+      `INSERT INTO ${this.tableName("wb_cluster_relevance_term")} (nm_id, token, pos_count, neg_count)
+       VALUES ${placeholders}
+       ON CONFLICT (nm_id, token) DO UPDATE SET
+         pos_count = ${this.tableName("wb_cluster_relevance_term")}.pos_count + EXCLUDED.pos_count,
+         neg_count = ${this.tableName("wb_cluster_relevance_term")}.neg_count + EXCLUDED.neg_count,
+         updated_at = NOW()`,
+      [nmId, pos, neg, ...unique],
+    );
+  }
+
+  /** Выученные слова товара: token → {pos, neg}. Для мусор-фильтра (negative-перевес). */
+  async getRelevanceTerms(nmId: number): Promise<Map<string, { pos: number; neg: number }>> {
+    await this.ensureSchemaOrThrow();
+    const result = await this.getPool().query<{
+      token: string;
+      pos_count: number;
+      neg_count: number;
+    }>(
+      `SELECT token, pos_count, neg_count
+       FROM ${this.tableName("wb_cluster_relevance_term")}
+       WHERE nm_id = $1`,
+      [nmId],
+    );
+    return new Map(result.rows.map((r) => [r.token, { pos: r.pos_count, neg: r.neg_count }]));
+  }
 }
