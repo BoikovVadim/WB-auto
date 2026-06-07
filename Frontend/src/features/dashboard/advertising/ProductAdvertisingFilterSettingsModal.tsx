@@ -34,8 +34,12 @@ function stateLabel(state: ClusterAutomationState | null): string {
     case "active":
     case "manual_protected":
       return "активен";
+    case "learning":
+      return "обучение";
     case "excluded_high":
       return "искл. по CPO";
+    case "excluded_drr":
+      return "придержан по ДРР";
     default:
       return "";
   }

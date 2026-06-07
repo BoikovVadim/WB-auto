@@ -195,10 +195,17 @@ export class ProductClusterAutomationService {
           name: c.name,
           mode: status.mode,
           active: status.clusters.filter(
-            (x) => x.state === "active" || x.state === "manual_protected" || x.state === "protected",
+            (x) =>
+              x.state === "active" ||
+              x.state === "manual_protected" ||
+              x.state === "protected" ||
+              x.state === "learning", // фаза набора данных — кластер работает, копит
           ).length,
           blacklisted: status.clusters.filter((x) => x.state === "blacklisted").length,
-          high: status.clusters.filter((x) => x.state === "excluded_high").length,
+          // «исключён» = по CPO (дорогой) ИЛИ придержан регулятором ДРР (рентабельный, временно).
+          high: status.clusters.filter(
+            (x) => x.state === "excluded_high" || x.state === "excluded_drr",
+          ).length,
         };
       }),
     );

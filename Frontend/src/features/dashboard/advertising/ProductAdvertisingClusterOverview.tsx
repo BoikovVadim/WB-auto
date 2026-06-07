@@ -118,9 +118,16 @@ export function ProductAdvertisingClusterOverview(
   } = useClusterAutomation(props.nmId, automationAdvertId);
   const autoCounts = {
     active: automation.clusters.filter(
-      (c) => c.state === "active" || c.state === "manual_protected" || c.state === "protected",
+      (c) =>
+        c.state === "active" ||
+        c.state === "manual_protected" ||
+        c.state === "protected" ||
+        c.state === "learning", // фаза набора данных — работает, копит
     ).length,
-    high: automation.clusters.filter((c) => c.state === "excluded_high").length,
+    // «исключён» = по CPO (дорогой) ИЛИ придержан регулятором ДРР (рентабельный, временно).
+    high: automation.clusters.filter(
+      (c) => c.state === "excluded_high" || c.state === "excluded_drr",
+    ).length,
     dropped: automation.clusters.filter((c) => c.state === "dropped").length,
     protected: automation.clusters.filter((c) => c.state === "protected").length,
     blacklisted: automation.clusters.filter((c) => c.state === "blacklisted").length,
