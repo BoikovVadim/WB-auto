@@ -1,4 +1,4 @@
-import { WbClustersRepositoryAutomation } from "./wb-clusters.repository.automation";
+import { WbClustersRepositoryAccrual } from "./wb-clusters.repository.accrual";
 
 export interface ClusterPositionSnapshotInput {
   nmId: number;
@@ -37,7 +37,7 @@ export interface ClusterPositionLatest {
  * Звено цепочки репозитория для фичи «место товара в выдаче по кластеру»:
  * запись/чтение истории замеров позиций (wb_cluster_position_snapshots).
  */
-export abstract class WbClustersRepositoryPositions extends WbClustersRepositoryAutomation {
+export abstract class WbClustersRepositoryPositions extends WbClustersRepositoryAccrual {
   async insertClusterPositionSnapshot(
     input: ClusterPositionSnapshotInput,
   ): Promise<void> {

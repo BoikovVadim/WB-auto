@@ -44,6 +44,7 @@ import {
   getUnitEconomicsSettingsCreateStatements,
 } from "./wb-clusters.schema.unit-economics";
 import { getClusterAutomationCreateStatements } from "./wb-clusters.schema.automation";
+import { getClusterAccrualCreateStatements } from "./wb-clusters.schema.accrual";
 import type { WbClustersSchemaContext } from "./wb-clusters.schema.types";
 
 // Версия схемы. ОБЯЗАТЕЛЬНО увеличивай на +1 при ЛЮБОМ изменении набора
@@ -58,7 +59,8 @@ import type { WbClustersSchemaContext } from "./wb-clusters.schema.types";
 //   3 — модерация новых кластеров: review_status в state + baselined_at в campaign_automation.
 //   4 — wb_cluster_position_snapshots: место товара в выдаче по кластеру на момент замера.
 //   5 — wb_cluster_position_snapshots.display_position: органика С рекламой (3 метрики позиции).
-const CURRENT_SCHEMA_VERSION = 5;
+//   6 — wb_cluster_accrual: накопительные счётчики кластера по ценовым корзинам (фаза LEARNING + регулятор ДРР).
+const CURRENT_SCHEMA_VERSION = 6;
 
 const SCHEMA_META_TABLE = "wb_clusters_schema_meta";
 
@@ -151,6 +153,7 @@ export async function initializeWbClustersSchema(input: {
   await executeSchemaStatements(context, getUnitEconomicsSettingsCreateStatements(context));
   await executeSchemaStatements(context, getUnitEconomicsMarginSnapshotCreateStatements(context));
   await executeSchemaStatements(context, getClusterAutomationCreateStatements(context));
+  await executeSchemaStatements(context, getClusterAccrualCreateStatements(context));
 
   // Фиксируем применённую версию — следующий старт пройдёт version-gate мгновенно.
   await writeInstalledSchemaVersion(context, CURRENT_SCHEMA_VERSION);

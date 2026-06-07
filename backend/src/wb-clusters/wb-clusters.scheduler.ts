@@ -73,6 +73,16 @@ export class WbClustersScheduler implements OnModuleInit {
     });
   }
 
+  // Накопительные счётчики кластеров (этап 1A новой логики) — раз в сутки в 05:45 МСК
+  // (cron "0 45 5" в TZ Europe/Moscow), после финализации заказов/расхода/JAM за вчера.
+  // Прибавляет вчерашний день в ценовые корзины. Идемпотентно (guard last_accrued_date).
+  @Cron("0 45 5 * * *")
+  async handleClusterAccrual() {
+    await this.productClusterAutomationService.accrueYesterdayForAll().catch((err: Error) => {
+      this.logger.warn(`handleClusterAccrual error: ${err.message}`);
+    });
+  }
+
   // Prune expired in-memory cache entries every 5 minutes to prevent
   // unbounded Map growth during long-running server sessions.
   @Cron("0 */5 * * * *")

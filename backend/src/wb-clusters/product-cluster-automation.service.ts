@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 
 import { ProductCpoService } from "./product-cpo.service";
+import { priceBucket } from "./wb-clusters.accrual.bucket";
 import { decideForCluster, type ClusterDecision } from "./product-cluster-decision";
 import type {
   AutomationMode,
@@ -267,6 +268,38 @@ export class ProductClusterAutomationService {
         this.logger.warn(`Automation pass failed for ${a.advertId}/${a.nmId}: ${String(e)}`);
       });
     }
+  }
+
+  /**
+   * Ежедневный аккумулятор накопительных счётчиков (этап 1A новой логики). Для каждой кампании
+   * с включённой автоматикой прибавляет ВЧЕРАШНИЙ день (расход/заказы РК из дневной статистики
+   * + подневные JAM-заказы) в ценовую корзину товара (priceBucket по цене со скидкой за тот день).
+   * Идемпотентен: повторный прогон не задвоит день (guard last_accrued_date). Пока ТОЛЬКО копит
+   * данные — решения по ним (фаза LEARNING / регулятор ДРР) подключатся отдельными этапами за флагом.
+   */
+  async accrueYesterdayForAll(): Promise<void> {
+    const date = await this.repository.getMskYesterday();
+    const enabled = await this.repository.listEnabledAutomations();
+    let ok = 0;
+    for (const a of enabled) {
+      try {
+        const deltas = await this.repository.getDailyClusterDeltas(a.advertId, a.nmId, date);
+        if (deltas.length === 0) continue;
+        const price = await this.repository.getProductEffectivePriceForDate(a.nmId, date);
+        await this.repository.accrueDailyDeltas({
+          advertId: a.advertId,
+          nmId: a.nmId,
+          priceBucket: priceBucket(price),
+          basePrice: price,
+          date,
+          deltas,
+        });
+        ok++;
+      } catch (err) {
+        this.logger.warn(`accrue ${a.advertId}/${a.nmId}: ${(err as Error).message}`);
+      }
+    }
+    this.logger.log(`accrue ${date}: ${ok}/${enabled.length} кампаний прибавлено`);
   }
 
   /**
