@@ -14,6 +14,12 @@ module.exports = {
         // поднимаем с запасом; max_memory_restart держим выше heap, чтобы pm2
         // мягко рестартил по RSS раньше, чем V8 упрётся в жёсткий heap-лимит.
         NODE_OPTIONS: "--max-old-space-size=1536",
+        // Движок кластеров v2 (накопители по ценовой корзине + фаза LEARNING).
+        // V2=1 без V2_LIVE — ОБКАТКА: товары в режиме preview считаются по v2 (WB не
+        // трогается), товары в live остаются на v1. Для боевого эффекта на live-товары
+        // добавить WB_CLUSTER_DECISION_V2_LIVE: "1" (и WB_CLUSTER_DRR_REGULATOR: "1" —
+        // регулятор дневного ДРР). См. product-cluster-decision.v2.ts.
+        WB_CLUSTER_DECISION_V2: "1",
       },
       instances: 1,
       exec_mode: "fork",
