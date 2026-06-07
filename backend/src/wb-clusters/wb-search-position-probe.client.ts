@@ -13,12 +13,6 @@ import {
   type ParsedProxy,
 } from "./wb-search-position-probe.relay";
 import { ProbeSessionStore } from "./wb-search-position-probe.state";
-import {
-  ensureOrganicOrigin,
-  fetchDisplayPage,
-  fetchOrganicPage,
-  rankOf,
-} from "./wb-search-position-probe.feeds";
 
 /**
  * Зонд места товара в публичной выдаче WB через РЕАЛЬНЫЙ браузер (browser-render).
@@ -208,13 +202,7 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       const page = await this.ensureReady(proxy);
       const warm = await this.ensureWarm(page, query);
       if (warm !== "ok") return false;
-      const first = await fetchDisplayPage(
-        this.context,
-        this.searchBaseUrl,
-        this.spaVersion,
-        query,
-        1,
-      );
+      const first = await this.fetchProductPage(query, 1);
       this.scheduleIdleClose();
       if (first.length === 0) {
         this.searchBaseUrl = null;
@@ -277,13 +265,7 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       this.pendingRestore = null;
       this.searchBaseUrl = restore.url;
       this.spaVersion = restore.spa;
-      const check = await fetchDisplayPage(
-        this.context,
-        this.searchBaseUrl,
-        this.spaVersion,
-        query,
-        1,
-      ).catch(() => []);
+      const check = await this.fetchProductPage(query, 1).catch(() => []);
       if (check.length > 0) {
         this.warmed = true;
         this.logger.log("probe: тёплое восстановление из сохранённой сессии (без прогрева)");
@@ -344,6 +326,80 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
     return "ok";
   }
 
+  /**
+   * Одна страница (100 товаров) ВНУТРЕННЕГО product-endpoint (www.wildberries.ru/__internal/
+   * u-search) в прогретом контексте. Это выдача, которую SSR-ит сам сайт = С РЕКЛАМНЫМ
+   * БУСТОМ (порядок включает забустенные рекламой карточки) → даёт displayPosition. Рекламная
+   * метка (поле log/logs) WB здесь анониму не отдаёт, поэтому отличить рекламу внутри этого
+   * фида нельзя — чистую органику берём из ВТОРОГО фида (fetchOrganicPage / search.wb.ru).
+   */
+  private async fetchProductPage(
+    query: string,
+    pageNumber: number,
+  ): Promise<Array<{ id: number }>> {
+    if (!this.context || !this.searchBaseUrl) return [];
+    const url = new URL(this.searchBaseUrl);
+    url.searchParams.set("query", query);
+    url.searchParams.set("page", String(pageNumber));
+    const res = await this.context.request.get(url.toString(), {
+      headers: {
+        "x-requested-with": "XMLHttpRequest",
+        "x-spa-version": this.spaVersion,
+        "x-userid": "0",
+        "x-queryid": `qid${Date.now()}${Math.floor(Math.random() * 1_000_000)}`,
+      },
+      timeout: 20_000,
+    });
+    if (res.status() !== 200) return [];
+    try {
+      const json = JSON.parse(await res.text()) as {
+        products?: Array<{ id: number }>;
+      };
+      return json.products ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Одна страница ЧИСТОЙ ОРГАНИКИ из ВНЕШНЕГО публичного search.wb.ru/exactmatch — этот фид
+   * НЕ подмешивает рекламный буст (A/B подтверждён: забустенные на сайте карточки в нём стоят
+   * на десятки позиций ниже / вообще вне топа). Даёт organicPosition «где товар был бы без
+   * рекламы». ВАЖНО: тянем браузерным fetch ВНУТРИ тёплой страницы www.wildberries.ru —
+   * APIRequestContext к search.wb.ru режется 429, а fetch из браузерного контекста (с cookie
+   * и fingerprint) проходит анти-бот и отдаёт 200. dest/hide_* берём из пойманного u-search
+   * шаблона, чтобы регион выдачи совпадал с displayPosition.
+   */
+  private async fetchOrganicPage(
+    query: string,
+    pageNumber: number,
+  ): Promise<number[]> {
+    if (!this.page || !this.searchBaseUrl) return [];
+    const tpl = new URL(this.searchBaseUrl);
+    const dest = tpl.searchParams.get("dest") ?? "";
+    const hideDtype = tpl.searchParams.get("hide_dtype") ?? "15";
+    const hideVflags = tpl.searchParams.get("hide_vflags") ?? "4294967296";
+    const organicUrl =
+      `https://search.wb.ru/exactmatch/ru/common/v18/search?appType=1&curr=rub` +
+      `&dest=${encodeURIComponent(dest)}&hide_dtype=${encodeURIComponent(hideDtype)}` +
+      `&hide_vflags=${encodeURIComponent(hideVflags)}&lang=ru&page=${pageNumber}` +
+      `&query=${encodeURIComponent(query)}&resultset=catalog&sort=popular&spp=30&suppressSpellcheck=false`;
+    try {
+      const ids = await this.page.evaluate(async (u: string): Promise<number[] | null> => {
+        const r = await fetch(u, { headers: { Accept: "*/*" } });
+        if (r.status !== 200) return null;
+        const body = (await r.json().catch(() => null)) as {
+          products?: Array<{ id: number }>;
+        } | null;
+        if (!body || !Array.isArray(body.products)) return null;
+        return body.products.map((p) => p.id);
+      }, organicUrl);
+      return Array.isArray(ids) ? ids : [];
+    } catch {
+      return [];
+    }
+  }
+
   private async attemptProbe(
     query: string,
     nmId: number,
@@ -375,18 +431,12 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
       // фидах лежит на разной глубине.
       const maxPages = Math.max(1, Math.min(Math.ceil(depth / 100), 3));
       const tPage = Date.now();
-      // organic-фид (search.wb.ru) тянем браузерным fetch — нужен origin www.wildberries.ru.
-      await ensureOrganicOrigin(this.page);
       const [displayPages, organicPages] = await Promise.all([
         Promise.all(
-          Array.from({ length: maxPages }, (_, i) =>
-            fetchDisplayPage(this.context, this.searchBaseUrl, this.spaVersion, query, i + 1),
-          ),
+          Array.from({ length: maxPages }, (_, i) => this.fetchProductPage(query, i + 1)),
         ),
         Promise.all(
-          Array.from({ length: maxPages }, (_, i) =>
-            fetchOrganicPage(this.page, this.searchBaseUrl, query, i + 1),
-          ),
+          Array.from({ length: maxPages }, (_, i) => this.fetchOrganicPage(query, i + 1)),
         ),
       ]);
       this.logger.log(
@@ -402,13 +452,20 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
         return { ...NOT_FOUND, status: "blocked" };
       }
 
+      const rankOf = (lists: Array<Array<{ id: number }>>): number | null => {
+        let rank = 0;
+        for (const list of lists) {
+          for (const item of list) {
+            rank++;
+            if (rank > depth) return null;
+            if (item.id === nmId) return rank;
+          }
+        }
+        return null;
+      };
       // displayPosition — порядок в выдаче сайта (с рекламой); organicPosition — в чистой органике.
-      const displayPosition = rankOf(displayPages, nmId, depth);
-      const organicPosition = rankOf(
-        organicPages.map((ids) => ids.map((id) => ({ id }))),
-        nmId,
-        depth,
-      );
+      const displayPosition = rankOf(displayPages);
+      const organicPosition = rankOf(organicPages.map((ids) => ids.map((id) => ({ id }))));
       const scanned = Math.min(Math.max(displayScanned, organicScanned), depth);
 
       if (displayPosition !== null || organicPosition !== null) {
