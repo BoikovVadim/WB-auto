@@ -1,3 +1,6 @@
+import { spawn } from "node:child_process";
+import path from "node:path";
+
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 
@@ -71,6 +74,32 @@ export class WbClustersScheduler implements OnModuleInit {
     await this.productClusterAutomationService.runAll().catch((err: Error) => {
       this.logger.warn(`handleClusterAutomation error: ${err.message}`);
     });
+  }
+
+  // Ежедневный JAM-синк по ВСЕМ товарам в разрезе «заказы», батчами по 50 nmId (быстро:
+  // ~18 мин на все товары вместо ~74 мин по-товарной финализации). Полное подневное покрытие
+  // для накопительных счётчиков. Раз в сутки в 03:00 МСК (после ночного JAM-синка 01:00).
+  // Переиспользует протестированный батчевый скрипт (dist/.../fill-jam-daily-backfill.js) за
+  // ВЧЕРА — resume-safe, не дублирует логику парсинга/throttle. Не трогает старый ночной синк.
+  @Cron("0 0 3 * * *")
+  handleDailyJamAllProducts() {
+    const d = new Date(); // сервер в TZ Europe/Moscow → компоненты = МСК
+    d.setDate(d.getDate() - 1);
+    const yday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    this.runJamAllProductsForRange(yday, yday);
+  }
+
+  /** Запускает батчевый JAM-бэкфилл-скрипт за диапазон дат отдельным процессом (тяжёлый job). */
+  private runJamAllProductsForRange(fromDate: string, toDate: string): void {
+    const script = path.join(__dirname, "fill-jam-daily-backfill.js");
+    const child = spawn(process.execPath, [script], {
+      env: { ...process.env, WB_JAM_BACKFILL_FROM: fromDate, WB_JAM_BACKFILL_TO: toDate },
+      stdio: ["ignore", "ignore", "inherit"],
+    });
+    child.on("error", (err) => this.logger.warn(`jam-daily spawn error: ${err.message}`));
+    child.on("exit", (code) =>
+      this.logger.log(`jam-daily ${fromDate}..${toDate} завершён, код ${code}`),
+    );
   }
 
   // Накопительные счётчики кластеров (этап 1A новой логики) — раз в сутки в 05:45 МСК
