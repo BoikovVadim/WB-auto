@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Put, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, UseGuards } from "@nestjs/common";
 
 import { WbClustersWriteGuard } from "../common/guards/wb-clusters-write.guard";
 import { ProductClusterAutomationService } from "./product-cluster-automation.service";
+import { ProductDrrRegulatorService } from "./product-drr-regulator.service";
 import { SetAutomationModeDto } from "./dto/set-automation-mode.dto";
 import { SetClusterFiltersDto } from "./dto/set-cluster-filters.dto";
 import { ReviewClusterDto } from "./dto/review-cluster.dto";
@@ -13,7 +14,18 @@ import { ReviewClusterDto } from "./dto/review-cluster.dto";
  */
 @Controller("wb-clusters/products")
 export class ProductClusterAutomationController {
-  constructor(private readonly service: ProductClusterAutomationService) {}
+  constructor(
+    private readonly service: ProductClusterAutomationService,
+    private readonly drrRegulator: ProductDrrRegulatorService,
+  ) {}
+
+  /** Ручной прогон регулятора дневного ДРР (обычно идёт кроном 06:30 МСК). Под write-guard. */
+  @Post("automation/drr-regulator/run")
+  @UseGuards(WbClustersWriteGuard)
+  async runDrrRegulator() {
+    await this.drrRegulator.runDailyForAll();
+    return { ok: true };
+  }
 
   /** Сводный статус автоматизации по всем товарам — для колонки в таблице товаров. */
   @Get("automation-status")
