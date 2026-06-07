@@ -108,53 +108,66 @@ export async function initializeWbClustersSchema(input: {
 
   await ensureWbClustersSchema(context);
 
-  // Version-gate: при уже актуальной версии схемы пропускаем весь DDL + backfill.
-  // Раньше каждый старт прогонял ~90с DDL/IF-NOT-EXISTS-проверок и seq-сканов
-  // больших таблиц (backfill `WHERE col IS NULL` по 2,5М+ строк), а все read-пути
-  // ждут ensureSchema() → дашборд был пуст ~2 минуты после каждого рестарта/деплоя.
-  // Все стейтменты ниже идемпотентны, а backfill'ы — одноразовые миграции legacy-строк
-  // (текущий write-путь заполняет колонки при вставке), поэтому пропуск при совпадении
-  // версии безопасен. После любого изменения схемы — бамп CURRENT_SCHEMA_VERSION.
+  // Все наборы DDL/миграций в порядке применения (CREATE до ALTER до backfill/INDEX).
+  const allStatements = [
+    ...getCoreCreateStatements(context),
+    ...getSyncRunAlterStatements(context),
+    ...getCatalogAlterStatements(context),
+    ...getCampaignAlterStatements(context),
+    ...getCampaignProductAlterStatements(context),
+    ...getClusterCoreCreateStatements(context),
+    ...getClusterKeyMigrationStatements(context),
+    ...getClusterStatsAlterStatements(context),
+    ...getClusterQueueCreateStatements(context),
+    ...getClusterWriteAlterStatements(context),
+    ...getClusterWriteBackfillStatements(context),
+    ...getReadModelCreateStatements(context),
+    ...getMonthlyFrequencyAlterStatements(context),
+    ...getSnapshotAlterStatements(context),
+    ...getArchiveCreateStatements(context),
+    ...getIndexStatements(context),
+    ...getCabinetQueryMapDeduplicationStatements(context),
+    ...getChangeLogCreateStatements(context),
+    ...getCostPriceCreateStatements(context),
+    ...getSystemChangeLogCreateStatements(context),
+    ...getProductDailyOrdersCreateStatements(context),
+    ...getProductDailyReturnsCreateStatements(context),
+    ...getProductBuyoutDailySnapshotCreateStatements(context),
+    ...getProductBuyoutDailySnapshotAlterStatements(context),
+    ...getProductCostSumDailySnapshotCreateStatements(context),
+    ...getProductSppDailyCreateStatements(context),
+    ...getProductDailyStocksCreateStatements(context),
+    ...getProductDailyPricesCreateStatements(context),
+    ...getProductPriceChangesCreateStatements(context),
+    ...getProductAcquiringWeeklyCreateStatements(context),
+    ...getClusterPositionSnapshotCreateStatements(context),
+    ...getUnitEconomicsSettingsCreateStatements(context),
+    ...getUnitEconomicsMarginSnapshotCreateStatements(context),
+    ...getClusterAutomationCreateStatements(context),
+    ...getClusterAccrualCreateStatements(context),
+  ];
+
+  // Быстрые DDL (CREATE TABLE / ADD COLUMN) — ВСЕГДА, вне version-gate. Они идемпотентны
+  // (IF NOT EXISTS) и мгновенны на уже существующих объектах, но критичны: новый код
+  // ссылается на новую колонку СРАЗУ. Раньше при совпадении версии весь DDL пропускался —
+  // и если забыли бампнуть CURRENT_SCHEMA_VERSION, колонка не создавалась → рантайм
+  // «column does not exist» на каждом запросе. Теперь структура гарантирована независимо
+  // от версии; version-gate остаётся только для ТЯЖЁЛОГО (backfill/INDEX по большим таблицам).
+  const isFastDdl = (statement: string): boolean => {
+    const s = statement.trimStart().toUpperCase();
+    return s.startsWith("CREATE TABLE") || (s.startsWith("ALTER TABLE") && s.includes("ADD COLUMN"));
+  };
+  await executeSchemaStatements(context, allStatements.filter(isFastDdl));
+
+  // Version-gate: тяжёлые миграции (backfill `WHERE col IS NULL` по млн строк, CREATE INDEX)
+  // прогоняем только при смене версии — иначе каждый старт давал ~90с seq-сканов, а read-пути
+  // ждут ensureSchema(). Backfill'ы одноразовые (write-путь заполняет колонки при вставке),
+  // пропуск при совпадении версии безопасен. После изменения ТЯЖЁЛОЙ схемы — бамп версии.
   const installedVersion = await readInstalledSchemaVersion(context);
   if (installedVersion === CURRENT_SCHEMA_VERSION) {
     return;
   }
-
-  await executeSchemaStatements(context, getCoreCreateStatements(context));
-  await executeSchemaStatements(context, getSyncRunAlterStatements(context));
-  await executeSchemaStatements(context, getCatalogAlterStatements(context));
-  await executeSchemaStatements(context, getCampaignAlterStatements(context));
-  await executeSchemaStatements(context, getCampaignProductAlterStatements(context));
-  await executeSchemaStatements(context, getClusterCoreCreateStatements(context));
-  await executeSchemaStatements(context, getClusterKeyMigrationStatements(context));
-  await executeSchemaStatements(context, getClusterStatsAlterStatements(context));
-  await executeSchemaStatements(context, getClusterQueueCreateStatements(context));
-  await executeSchemaStatements(context, getClusterWriteAlterStatements(context));
-  await executeSchemaStatements(context, getClusterWriteBackfillStatements(context));
-  await executeSchemaStatements(context, getReadModelCreateStatements(context));
-  await executeSchemaStatements(context, getMonthlyFrequencyAlterStatements(context));
-  await executeSchemaStatements(context, getSnapshotAlterStatements(context));
-  await executeSchemaStatements(context, getArchiveCreateStatements(context));
-  await executeSchemaStatements(context, getIndexStatements(context));
-  await executeSchemaStatements(context, getCabinetQueryMapDeduplicationStatements(context));
-  await executeSchemaStatements(context, getChangeLogCreateStatements(context));
-  await executeSchemaStatements(context, getCostPriceCreateStatements(context));
-  await executeSchemaStatements(context, getSystemChangeLogCreateStatements(context));
-  await executeSchemaStatements(context, getProductDailyOrdersCreateStatements(context));
-  await executeSchemaStatements(context, getProductDailyReturnsCreateStatements(context));
-  await executeSchemaStatements(context, getProductBuyoutDailySnapshotCreateStatements(context));
-  await executeSchemaStatements(context, getProductBuyoutDailySnapshotAlterStatements(context));
-  await executeSchemaStatements(context, getProductCostSumDailySnapshotCreateStatements(context));
-  await executeSchemaStatements(context, getProductSppDailyCreateStatements(context));
-  await executeSchemaStatements(context, getProductDailyStocksCreateStatements(context));
-  await executeSchemaStatements(context, getProductDailyPricesCreateStatements(context));
-  await executeSchemaStatements(context, getProductPriceChangesCreateStatements(context));
-  await executeSchemaStatements(context, getProductAcquiringWeeklyCreateStatements(context));
-  await executeSchemaStatements(context, getClusterPositionSnapshotCreateStatements(context));
-  await executeSchemaStatements(context, getUnitEconomicsSettingsCreateStatements(context));
-  await executeSchemaStatements(context, getUnitEconomicsMarginSnapshotCreateStatements(context));
-  await executeSchemaStatements(context, getClusterAutomationCreateStatements(context));
-  await executeSchemaStatements(context, getClusterAccrualCreateStatements(context));
+  await executeSchemaStatements(context, allStatements.filter((s) => !isFastDdl(s)));
 
   // Фиксируем применённую версию — следующий старт пройдёт version-gate мгновенно.
   await writeInstalledSchemaVersion(context, CURRENT_SCHEMA_VERSION);
