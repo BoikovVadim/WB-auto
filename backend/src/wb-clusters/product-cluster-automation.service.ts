@@ -387,7 +387,7 @@ export class ProductClusterAutomationService {
           maxCpo,
           prev,
           mode,
-          rolesForCluster,
+          { ...rolesForCluster, drrHeld: prev?.drrHeld ?? false },
         );
       }
       return decideForCluster(input, maxCpo, prev, mode, rolesForCluster);

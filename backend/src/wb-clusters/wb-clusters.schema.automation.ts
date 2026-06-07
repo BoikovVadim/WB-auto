@@ -77,6 +77,14 @@ export function getClusterAutomationCreateStatements({
       ALTER TABLE ${tableName("wb_cluster_automation_state")}
         ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'approved'
     `,
+    // drr_held — кластер придержан РЕГУЛЯТОРОМ ДНЕВНОГО ДРР (рентабельный, но временно отключён
+    // ради удержания дневного ДРР товара у плана). Ставит/снимает дневной регулятор; правило v2
+    // (10-мин крон) ЧИТАЕТ флаг и при true принудительно держит excluded_drr — иначе затёр бы
+    // решение регулятора. Снимется регулятором при недотрате ДРР (вернётся по возрастанию расхода).
+    `
+      ALTER TABLE ${tableName("wb_cluster_automation_state")}
+        ADD COLUMN IF NOT EXISTS drr_held BOOLEAN NOT NULL DEFAULT FALSE
+    `,
     // baselined_at — момент, когда зафиксирован «исходный» набор кластеров кампании.
     // Кластер без строки state, появившийся ПОСЛЕ baseline → новый → на проверку (pending).
     `

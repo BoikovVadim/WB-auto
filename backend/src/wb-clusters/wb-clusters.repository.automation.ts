@@ -40,6 +40,8 @@ export interface ClusterAutomationStateRow {
   lastCpo: number | null;
   lastDecision: string | null;
   reviewStatus: ClusterReviewStatus;
+  /** Придержан регулятором дневного ДРР (excluded_drr); правило v2 уважает этот флаг. */
+  drrHeld: boolean;
 }
 
 /**
@@ -320,8 +322,9 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       last_cpo: string | null;
       last_decision: string | null;
       review_status: ClusterReviewStatus;
+      drr_held: boolean;
     }>(
-      `SELECT normalized_cluster_name, state, manual_protected, last_cpo::text, last_decision, review_status
+      `SELECT normalized_cluster_name, state, manual_protected, last_cpo::text, last_decision, review_status, drr_held
        FROM ${this.tableName("wb_cluster_automation_state")}
        WHERE advert_id = $1 AND nm_id = $2`,
       [advertId, nmId],
@@ -333,6 +336,7 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       lastCpo: r.last_cpo != null ? Number(r.last_cpo) : null,
       lastDecision: r.last_decision,
       reviewStatus: r.review_status,
+      drrHeld: r.drr_held,
     }));
   }
 
@@ -354,8 +358,9 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       last_cpo: string | null;
       last_decision: string | null;
       review_status: ClusterReviewStatus;
+      drr_held: boolean;
     }>(
-      `SELECT s.normalized_cluster_name, s.state, s.manual_protected, s.last_cpo::text, s.last_decision, s.review_status
+      `SELECT s.normalized_cluster_name, s.state, s.manual_protected, s.last_cpo::text, s.last_decision, s.review_status, s.drr_held
        FROM ${this.tableName("wb_cluster_automation_state")} s
        WHERE s.advert_id = $1 AND s.nm_id = $2
          AND EXISTS (
@@ -381,6 +386,7 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       lastCpo: r.last_cpo != null ? Number(r.last_cpo) : null,
       lastDecision: r.last_decision,
       reviewStatus: r.review_status,
+      drrHeld: r.drr_held,
     }));
   }
 

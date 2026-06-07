@@ -44,6 +44,28 @@ export class ProductDrrService {
   }
 
   /**
+   * Данные за ПОСЛЕДНИЙ закрытый день (по сути «вчера») для регулятора дневного ДРР: по товару
+   * фактический расход, выручка и ДРР. Берём свежайшую колонку матрицы (dates[0], окно выручки).
+   * Переиспользует getDrrMatrixCompact — один источник истины с дашбордом. revenue=null означает
+   * расход без выручки (ДРР=100%) → регулятор применит fallback-кэп по целевому CPO.
+   */
+  async getLatestDayDrrInputs(): Promise<{
+    date: string | null;
+    items: { nmId: number; spend: number; revenue: number | null; drr: number }[];
+  }> {
+    const m = await this.getDrrMatrixCompact();
+    if (m.dates.length === 0) return { date: null, items: [] };
+    const items: { nmId: number; spend: number; revenue: number | null; drr: number }[] = [];
+    for (const p of m.products) {
+      const spend = p.spend[0];
+      const drr = p.drr[0];
+      if (spend == null || drr == null) continue;
+      items.push({ nmId: p.nmId, spend, revenue: p.revenue[0] ?? null, drr });
+    }
+    return { date: m.dates[0]!, items };
+  }
+
+  /**
    * Compact-матрица «товары × даты» ДРР. На товар — `drr` (%) для ячейки + `spend`/`revenue`
    * (₽). Колонки = дни ОКНА ВЫРУЧКИ (где выручка есть хоть у кого-то); более старые дни
    * расхода без выручки отбрасываются, чтобы не было колонок сплошных 100%. Внутри окна

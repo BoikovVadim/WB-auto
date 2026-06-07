@@ -42,7 +42,13 @@ export function decideForClusterV2(
     | { state: ClusterAutomationStateValue; manualProtected: boolean; lastDecision: string | null }
     | undefined,
   mode: AutomationMode,
-  roles: { isProtected: boolean; isBlacklisted: boolean; reviewStatus: ClusterReviewStatus },
+  roles: {
+    isProtected: boolean;
+    isBlacklisted: boolean;
+    reviewStatus: ClusterReviewStatus;
+    /** Придержан регулятором дневного ДРР — держим excluded_drr, пока регулятор не снимет. */
+    drrHeld: boolean;
+  },
 ): ClusterDecision {
   const isExcludedNow = input.currentSourceKind === "excluded";
   const ordered = Math.max(input.accruedOrdersRk, input.accruedOrdersJam);
@@ -87,6 +93,19 @@ export function decideForClusterV2(
       state: "protected",
       manualProtected: false,
       decision: isExcludedNow ? "include" : "noop",
+      reviewStatus: roles.reviewStatus,
+    };
+  }
+
+  // Удержание регулятором дневного ДРР: кластер рентабельный, но временно отключён ради
+  // удержания ДРР у плана. Держим excluded_drr, пока регулятор не снимет drr_held (при недотрате
+  // ДРР). Приоритет ниже ручных списков (человек важнее), но выше базового CPO-правила.
+  if (roles.drrHeld) {
+    return {
+      ...base,
+      state: "excluded_drr",
+      manualProtected: false,
+      decision: isExcludedNow ? "noop" : "exclude",
       reviewStatus: roles.reviewStatus,
     };
   }

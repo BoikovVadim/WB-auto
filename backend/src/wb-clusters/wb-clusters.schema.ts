@@ -60,7 +60,8 @@ import type { WbClustersSchemaContext } from "./wb-clusters.schema.types";
 //   4 — wb_cluster_position_snapshots: место товара в выдаче по кластеру на момент замера.
 //   5 — wb_cluster_position_snapshots.display_position: органика С рекламой (3 метрики позиции).
 //   6 — wb_cluster_accrual: накопительные счётчики кластера по ценовым корзинам (фаза LEARNING + регулятор ДРР).
-const CURRENT_SCHEMA_VERSION = 6;
+//   7 — wb_cluster_automation_state.drr_held: флаг «придержан регулятором дневного ДРР» (excluded_drr).
+const CURRENT_SCHEMA_VERSION = 7;
 
 const SCHEMA_META_TABLE = "wb_clusters_schema_meta";
 

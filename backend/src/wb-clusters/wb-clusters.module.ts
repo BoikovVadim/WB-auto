@@ -11,6 +11,7 @@ import { WbClustersController } from "./wb-clusters.controller";
 import { UnitEconomicsController } from "./unit-economics.controller";
 import { ProductDrrController } from "./product-drr.controller";
 import { ProductDrrService } from "./product-drr.service";
+import { ProductDrrRegulatorService } from "./product-drr-regulator.service";
 import { ProductCpoController } from "./product-cpo.controller";
 import { ProductCpoService } from "./product-cpo.service";
 import { ProductPositionController } from "./product-position.controller";
@@ -62,6 +63,7 @@ import { WbPromotionApiClient } from "./wb-promotion-api.client";
     WbClustersSyncOrchestratorService,
     WbClustersService,
     ProductDrrService,
+    ProductDrrRegulatorService,
     ProductCpoService,
     ProductPositionService,
     WbSearchPositionProbeClient,

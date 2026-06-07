@@ -170,6 +170,32 @@ export abstract class WbClustersRepositoryAccrual extends WbClustersRepositoryAu
     );
   }
 
+  /** Проставить/снять флаг drr_held (придержан регулятором ДРР) батчем по кластерам кампании. */
+  async setClusterDrrHeld(
+    advertId: number,
+    nmId: number,
+    items: { normalizedClusterName: string; held: boolean }[],
+  ): Promise<void> {
+    if (items.length === 0) return;
+    await this.ensureSchemaOrThrow();
+    const values: string[] = [];
+    const params: unknown[] = [advertId, nmId];
+    let i = 3;
+    for (const it of items) {
+      values.push(`($${i++}, $${i++}::boolean)`);
+      params.push(it.normalizedClusterName, it.held);
+    }
+    await this.getPool().query(
+      `
+      UPDATE ${this.tableName("wb_cluster_automation_state")} s
+      SET drr_held = v.held, decided_at = NOW()
+      FROM (VALUES ${values.join(", ")}) AS v(ncn, held)
+      WHERE s.advert_id = $1 AND s.nm_id = $2 AND s.normalized_cluster_name = v.ncn
+      `,
+      params,
+    );
+  }
+
   /** Накопленные корзины кластеров кампании (все ценовые уровни). */
   async getAccrualBuckets(
     advertId: number,

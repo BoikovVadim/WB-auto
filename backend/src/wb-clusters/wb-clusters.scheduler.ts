@@ -8,6 +8,7 @@ import { appEnv } from "../common/env";
 import { AcquiringSyncService } from "./acquiring-sync.service";
 import { ProductCatalogService } from "./product-catalog.service";
 import { ProductClusterAutomationService } from "./product-cluster-automation.service";
+import { ProductDrrRegulatorService } from "./product-drr-regulator.service";
 import { UnitEconomicsService } from "./unit-economics.service";
 import { WbClustersService } from "./wb-clusters.service";
 
@@ -21,6 +22,7 @@ export class WbClustersScheduler implements OnModuleInit {
     private readonly acquiringSyncService: AcquiringSyncService,
     private readonly unitEconomicsService: UnitEconomicsService,
     private readonly productClusterAutomationService: ProductClusterAutomationService,
+    private readonly productDrrRegulatorService: ProductDrrRegulatorService,
   ) {}
 
   async onModuleInit() {
@@ -100,6 +102,17 @@ export class WbClustersScheduler implements OnModuleInit {
     child.on("exit", (code) =>
       this.logger.log(`jam-daily ${fromDate}..${toDate} завершён, код ${code}`),
     );
+  }
+
+  // Регулятор дневного ДРР (этап 1E) — раз в сутки в 06:30 МСК (после аккумулятора 05:45,
+  // когда накопители и вчерашние ДРР/выручка готовы). Держит ДРР товара у плана, двигая
+  // линию отсечки (ставит/снимает drr_held). Работает только при флагах v2 + DRR_REGULATOR;
+  // применение на WB — через следующий v2-крон. cron "0 30 6" в TZ Europe/Moscow.
+  @Cron("0 30 6 * * *")
+  async handleDrrRegulator() {
+    await this.productDrrRegulatorService.runDailyForAll().catch((err: Error) => {
+      this.logger.warn(`handleDrrRegulator error: ${err.message}`);
+    });
   }
 
   // Накопительные счётчики кластеров (этап 1A новой логики) — раз в сутки в 05:45 МСК
