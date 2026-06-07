@@ -17,13 +17,12 @@ export type ClusterPositionLatest = {
   clusterName: string;
   probeQuery: string;
   status: ClusterPositionStatus;
-  /** Метрика 1 — ЧИСТАЯ органика без рекламы (внешний search.wb.ru). */
+  /** Метрика 1 — органика без рекламы. */
   organicPosition: number | null;
-  /** Метрика 2 — позиция в выдаче с рекламным бустом (что видит покупатель, u-search). */
+  /** Метрика 2 — органика с рекламой (что видит покупатель). */
   displayPosition: number | null;
-  /** Метрика 3 — рекламный слот; недоступен (WB не отдаёт метку анониму) → всегда null. */
+  /** Метрика 3 — рекламный слот. */
   adPosition: number | null;
-  /** Реклама заметно бустит товар (display выше органики на ≥5 позиций). */
   isAd: boolean;
   page: number | null;
   scannedCount: number | null;
