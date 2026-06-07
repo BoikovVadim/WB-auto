@@ -230,6 +230,15 @@ export abstract class WbClustersRepositoryAdvertisingQueryMatching extends WbClu
       .map((token) => this.stemAdvertisingToken(token));
   }
 
+  /**
+   * Публичная токенизация рекламного текста (нормализация + стем-токены без стоп-слов).
+   * Переиспользует ту же логику, что и матчинг запросов, — чтобы релевантность-фильтр
+   * (мусор-фильтр кластеров) считал токены ровно так же. Не дублировать токенизацию.
+   */
+  tokenizeAdvertisingStems(value: string): string[] {
+    return this.extractTokenStems(this.normalizeAdvertisingIdentity(value));
+  }
+
   protected isAdvertisingStopword(token: string) {
     return (
       token === "для" ||

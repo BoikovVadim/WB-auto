@@ -20,6 +20,8 @@ import { WbSearchPositionProbeClient } from "./wb-search-position-probe.client";
 import { PositionProbeWarmerService } from "./position-probe-warmer.service";
 import { ProductClusterAutomationController } from "./product-cluster-automation.controller";
 import { ProductClusterAutomationService } from "./product-cluster-automation.service";
+import { ProductClusterAccrualService } from "./product-cluster-accrual.service";
+import { ProductClusterRelevanceService } from "./product-cluster-relevance.service";
 import { WbClustersActionQueueService } from "./wb-clusters-action-queue.service";
 import { WbClustersBidQueueService } from "./wb-clusters-bid-queue.service";
 import { WbClustersRepository } from "./wb-clusters.repository";
@@ -69,6 +71,8 @@ import { WbPromotionApiClient } from "./wb-promotion-api.client";
     WbSearchPositionProbeClient,
     PositionProbeWarmerService,
     ProductClusterAutomationService,
+    ProductClusterAccrualService,
+    ProductClusterRelevanceService,
     AcquiringSyncService,
     ProductAdvertisingReadRepository,
     PromotionSyncRepository,

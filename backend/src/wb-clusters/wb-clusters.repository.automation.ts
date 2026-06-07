@@ -148,13 +148,20 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
   async getPendingClusters(
     advertId: number,
     nmId: number,
-  ): Promise<{ normalizedClusterName: string; lastCpo: number | null; frequency: number | null; jamOrders: number | null }[]> {
+  ): Promise<{
+    normalizedClusterName: string;
+    lastCpo: number | null;
+    frequency: number | null;
+    jamOrders: number | null;
+    suggestedReviewAction: "approve" | "blacklist" | null;
+  }[]> {
     await this.ensureSchemaOrThrow();
     const result = await this.getPool().query<{
       normalized_cluster_name: string;
       last_cpo: string | null;
       frequency: string | null;
       orders_jam: string | null;
+      suggested_review_action: "approve" | "blacklist" | null;
     }>(
       `
       WITH jam AS (
@@ -177,9 +184,10 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
         GROUP BY normalized_cluster_name
       )
       SELECT st.normalized_cluster_name,
-             st.last_cpo::text       AS last_cpo,
-             freq.frequency::text    AS frequency,
-             jam.orders_jam::text    AS orders_jam
+             st.last_cpo::text         AS last_cpo,
+             freq.frequency::text      AS frequency,
+             jam.orders_jam::text      AS orders_jam,
+             st.suggested_review_action AS suggested_review_action
       FROM ${this.tableName("wb_cluster_automation_state")} st
       LEFT JOIN freq ON freq.normalized_cluster_name = st.normalized_cluster_name
       LEFT JOIN jam  ON jam.ncn = st.normalized_cluster_name
@@ -193,6 +201,7 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       lastCpo: r.last_cpo != null ? Number(r.last_cpo) : null,
       frequency: r.frequency != null ? Number(r.frequency) : null,
       jamOrders: r.orders_jam != null ? Number(r.orders_jam) : null,
+      suggestedReviewAction: r.suggested_review_action,
     }));
   }
 
@@ -407,15 +416,17 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       lastSpend: number | null;
       lastDecision: string | null;
       reviewStatus: ClusterReviewStatus;
+      /** ADVISORY-рекомендация мусор-фильтра для pending; NULL для не-pending. */
+      suggestedReviewAction: "approve" | "blacklist" | null;
     }[],
   ): Promise<void> {
     if (rows.length === 0) return;
     await this.ensureSchemaOrThrow();
-    const cols = 9;
+    const cols = 10;
     const placeholders = rows
       .map(
         (_, i) =>
-          `($${i * cols + 1}, $${i * cols + 2}, $${i * cols + 3}, $${i * cols + 4}, $${i * cols + 5}, $${i * cols + 6}, $${i * cols + 7}, $${i * cols + 8}, $${i * cols + 9}, NOW())`,
+          `($${i * cols + 1}, $${i * cols + 2}, $${i * cols + 3}, $${i * cols + 4}, $${i * cols + 5}, $${i * cols + 6}, $${i * cols + 7}, $${i * cols + 8}, $${i * cols + 9}, $${i * cols + 10}, NOW())`,
       )
       .join(", ");
     const values = rows.flatMap((r) => [
@@ -428,10 +439,11 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       r.lastSpend,
       r.lastDecision,
       r.reviewStatus,
+      r.suggestedReviewAction,
     ]);
     await this.getPool().query(
       `INSERT INTO ${this.tableName("wb_cluster_automation_state")}
-         (advert_id, nm_id, normalized_cluster_name, state, manual_protected, last_cpo, last_spend, last_decision, review_status, decided_at)
+         (advert_id, nm_id, normalized_cluster_name, state, manual_protected, last_cpo, last_spend, last_decision, review_status, suggested_review_action, decided_at)
        VALUES ${placeholders}
        ON CONFLICT (advert_id, nm_id, normalized_cluster_name) DO UPDATE SET
          state = EXCLUDED.state,
@@ -440,6 +452,7 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
          last_spend = EXCLUDED.last_spend,
          last_decision = EXCLUDED.last_decision,
          review_status = EXCLUDED.review_status,
+         suggested_review_action = EXCLUDED.suggested_review_action,
          decided_at = NOW()`,
       values,
     );

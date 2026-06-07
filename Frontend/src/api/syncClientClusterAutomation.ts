@@ -88,6 +88,8 @@ export type PendingClusterRow = {
   frequency: number | null;
   /** JAM-заказы (органические/общие за 30 дней). */
   jamOrders: number | null;
+  /** ADVISORY-рекомендация мусор-фильтра релевантности: 'approve' (в работу) | 'blacklist'. */
+  suggestedReviewAction: "approve" | "blacklist" | null;
 };
 
 /** Кластеры на проверке кампании (имя + предв. CPO + частота + JAM) — для модалки ревью. */

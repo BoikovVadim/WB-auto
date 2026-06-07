@@ -1,7 +1,8 @@
 import { Injectable, Logger } from "@nestjs/common";
 
 import { ProductCpoService } from "./product-cpo.service";
-import { priceBucket } from "./wb-clusters.accrual.bucket";
+import { ProductClusterAccrualService } from "./product-cluster-accrual.service";
+import { ProductClusterRelevanceService } from "./product-cluster-relevance.service";
 import { decideForCluster, type ClusterDecision } from "./product-cluster-decision";
 import { decideForClusterV2 } from "./product-cluster-decision.v2";
 import type {
@@ -60,6 +61,8 @@ export class ProductClusterAutomationService {
     private readonly repository: WbClustersRepository,
     private readonly wbClustersService: WbClustersService,
     private readonly productCpoService: ProductCpoService,
+    private readonly relevanceService: ProductClusterRelevanceService,
+    private readonly accrualService: ProductClusterAccrualService,
   ) {}
 
   /**
@@ -278,63 +281,6 @@ export class ProductClusterAutomationService {
   }
 
   /**
-   * Ежедневный аккумулятор накопительных счётчиков (этап 1A новой логики). Для каждой кампании
-   * с включённой автоматикой прибавляет ВЧЕРАШНИЙ день (расход/заказы РК из дневной статистики
-   * + подневные JAM-заказы) в ценовую корзину товара (priceBucket по цене со скидкой за тот день).
-   * Идемпотентен: повторный прогон не задвоит день (guard last_accrued_date). Пока ТОЛЬКО копит
-   * данные — решения по ним (фаза LEARNING / регулятор ДРР) подключатся отдельными этапами за флагом.
-   */
-  async accrueYesterdayForAll(): Promise<void> {
-    const date = await this.repository.getMskYesterday();
-    const enabled = await this.repository.listEnabledAutomations();
-    let ok = 0;
-    for (const a of enabled) {
-      try {
-        const deltas = await this.repository.getDailyClusterDeltas(a.advertId, a.nmId, date);
-        if (deltas.length === 0) continue;
-        const price = await this.repository.getProductEffectivePriceForDate(a.nmId, date);
-        await this.repository.accrueDailyDeltas({
-          advertId: a.advertId,
-          nmId: a.nmId,
-          priceBucket: priceBucket(price),
-          basePrice: price,
-          date,
-          deltas,
-        });
-        ok++;
-      } catch (err) {
-        this.logger.warn(`accrue ${a.advertId}/${a.nmId}: ${(err as Error).message}`);
-      }
-    }
-    this.logger.log(`accrue ${date}: ${ok}/${enabled.length} кампаний прибавлено`);
-  }
-
-  /**
-   * Накопления кластеров из ТЕКУЩЕЙ ценовой корзины (по цене последнего накопленного дня).
-   * Возвращает Map по нормализованному имени кластера для правила v2. Корзина определяется
-   * ценой за вчера — тем же priceBucket, по которому раскладывал аккумулятор.
-   */
-  private async loadCurrentBucketAccrual(
-    advertId: number,
-    nmId: number,
-  ): Promise<Map<string, { accruedSpend: number; accruedOrdersRk: number; accruedOrdersJam: number }>> {
-    const date = await this.repository.getMskYesterday();
-    const price = await this.repository.getProductEffectivePriceForDate(nmId, date);
-    const bucket = priceBucket(price);
-    const rows = await this.repository.getAccrualBuckets(advertId, nmId);
-    const map = new Map<string, { accruedSpend: number; accruedOrdersRk: number; accruedOrdersJam: number }>();
-    for (const r of rows) {
-      if (r.priceBucket !== bucket) continue;
-      map.set(r.normalizedClusterName, {
-        accruedSpend: r.accruedSpend,
-        accruedOrdersRk: r.accruedOrdersRk,
-        accruedOrdersJam: r.accruedOrdersJam,
-      });
-    }
-    return map;
-  }
-
-  /**
    * Считает решения по всем кластерам кампании; в live — применяет к WB. Возвращает решения
    * И maxCpo, чтобы вызывающий (setMode/reviewCluster) собрал статус БЕЗ повторного тяжёлого
    * чтения (getManagedClusterAutomationStates) — это и делает первый показ цифр моментальным.
@@ -367,7 +313,7 @@ export class ProductClusterAutomationService {
       process.env.WB_CLUSTER_DECISION_V2 === "1" &&
       (mode === "preview" || process.env.WB_CLUSTER_DECISION_V2_LIVE === "1");
     const accrualByCluster = useV2
-      ? await this.loadCurrentBucketAccrual(advertId, nmId)
+      ? await this.accrualService.loadCurrentBucketAccrual(advertId, nmId)
       : new Map();
 
     const decisions = inputs.map((input) => {
@@ -399,6 +345,25 @@ export class ProductClusterAutomationService {
       return decideForCluster(input, maxCpo, prev, mode, rolesForCluster);
     });
 
+    // ADVISORY-рекомендация мусор-фильтра релевантности для pending-кластеров: движок только
+    // подписывает «в работу / в чёрный список», решение принимает человек. Pending берём из
+    // decisions (у нового кластера строки state ещё нет). См. product-cluster-relevance.ts.
+    const pendingNames = new Set(
+      decisions.filter((d) => d.reviewStatus === "pending").map((d) => d.normalizedClusterName),
+    );
+    const ordersByCluster = new Map(
+      inputs.map((i) => [
+        i.normalizedClusterName,
+        { ordersRk: i.shks ?? i.ordersRk, ordersJam: i.ordersJam },
+      ]),
+    );
+    const suggestions = await this.relevanceService.computeForPending(
+      advertId,
+      nmId,
+      pendingNames,
+      ordersByCluster,
+    );
+
     // Применяем к WB только в live и только при отличии от текущего состояния.
     // pending-кластеры имеют decision='noop' → applyDecisions их не трогает.
     if (mode === "live") {
@@ -419,6 +384,10 @@ export class ProductClusterAutomationService {
         lastSpend: d.spend,
         lastDecision: d.decision,
         reviewStatus: d.reviewStatus,
+        suggestedReviewAction:
+          d.reviewStatus === "pending"
+            ? suggestions.get(d.normalizedClusterName) ?? null
+            : null,
       })),
     );
 

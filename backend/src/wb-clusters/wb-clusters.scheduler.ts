@@ -7,6 +7,7 @@ import { Cron } from "@nestjs/schedule";
 import { appEnv } from "../common/env";
 import { AcquiringSyncService } from "./acquiring-sync.service";
 import { ProductCatalogService } from "./product-catalog.service";
+import { ProductClusterAccrualService } from "./product-cluster-accrual.service";
 import { ProductClusterAutomationService } from "./product-cluster-automation.service";
 import { ProductDrrRegulatorService } from "./product-drr-regulator.service";
 import { UnitEconomicsService } from "./unit-economics.service";
@@ -22,6 +23,7 @@ export class WbClustersScheduler implements OnModuleInit {
     private readonly acquiringSyncService: AcquiringSyncService,
     private readonly unitEconomicsService: UnitEconomicsService,
     private readonly productClusterAutomationService: ProductClusterAutomationService,
+    private readonly productClusterAccrualService: ProductClusterAccrualService,
     private readonly productDrrRegulatorService: ProductDrrRegulatorService,
   ) {}
 
@@ -120,7 +122,7 @@ export class WbClustersScheduler implements OnModuleInit {
   // Прибавляет вчерашний день в ценовые корзины. Идемпотентно (guard last_accrued_date).
   @Cron("0 45 5 * * *")
   async handleClusterAccrual() {
-    await this.productClusterAutomationService.accrueYesterdayForAll().catch((err: Error) => {
+    await this.productClusterAccrualService.accrueYesterdayForAll().catch((err: Error) => {
       this.logger.warn(`handleClusterAccrual error: ${err.message}`);
     });
   }

@@ -85,6 +85,13 @@ export function getClusterAutomationCreateStatements({
       ALTER TABLE ${tableName("wb_cluster_automation_state")}
         ADD COLUMN IF NOT EXISTS drr_held BOOLEAN NOT NULL DEFAULT FALSE
     `,
+    // suggested_review_action — ADVISORY-рекомендация мусор-фильтра релевантности для
+    // pending-кластеров: 'approve' (в работу) | 'blacklist' (в чёрный список). Движок только
+    // подписывает, решение принимает человек. NULL для не-pending. См. product-cluster-relevance.ts.
+    `
+      ALTER TABLE ${tableName("wb_cluster_automation_state")}
+        ADD COLUMN IF NOT EXISTS suggested_review_action TEXT NULL
+    `,
     // baselined_at — момент, когда зафиксирован «исходный» набор кластеров кампании.
     // Кластер без строки state, появившийся ПОСЛЕ baseline → новый → на проверку (pending).
     `

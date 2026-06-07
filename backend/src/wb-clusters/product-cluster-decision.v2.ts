@@ -64,15 +64,16 @@ export function decideForClusterV2(
     spend: input.accruedSpend,
   };
 
-  // Модерация — наивысший приоритет. Правило v2 (решение пользователя #5): новый кластер
-  // (ВБ добавил после baseline) СРАЗУ ОТКЛЮЧАЕТСЯ — не крутится и не жжёт бюджет, пока человек
-  // не примет решение (в работу/чёрный/белый). Включится после approve. (В v1 было noop.)
+  // Модерация — наивысший приоритет. Новый кластер (ВБ добавил после baseline) движок НЕ
+  // трогает (decision=noop, остаётся как есть на WB) — решение принимает человек руками.
+  // Движок лишь ПОДПИСЫВАЕТ рекомендацию (suggestedReviewAction, считается отдельно мусор-
+  // фильтром релевантности и сохраняется в state) — см. product-cluster-relevance.ts.
   if (roles.reviewStatus === "pending") {
     return {
       ...base,
       state: "pending_review",
       manualProtected: false,
-      decision: isExcludedNow ? "noop" : "exclude",
+      decision: "noop",
       reviewStatus: "pending",
     };
   }

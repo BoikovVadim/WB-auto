@@ -158,17 +158,17 @@ describe("decideForClusterV2", () => {
   });
 
   describe("приоритеты ролей (сверху вниз)", () => {
-    it("pending — наивысший приоритет: новый кластер сразу exclude", () => {
+    it("pending — наивысший приоритет: движок НЕ трогает (noop), решает человек", () => {
       const d = decide(
         makeInput({ accruedSpend: 10, accruedOrdersRk: 5 }), // рентабельный, но pending
         makeRoles({ reviewStatus: "pending" }),
       );
       expect(d.state).toBe("pending_review");
-      expect(d.decision).toBe("exclude");
+      expect(d.decision).toBe("noop");
       expect(d.reviewStatus).toBe("pending");
     });
 
-    it("pending уже excluded → noop (не трогаем)", () => {
+    it("pending уже excluded → тоже noop (не трогаем)", () => {
       const d = decide(
         makeInput({ currentSourceKind: "excluded" }),
         makeRoles({ reviewStatus: "pending" }),

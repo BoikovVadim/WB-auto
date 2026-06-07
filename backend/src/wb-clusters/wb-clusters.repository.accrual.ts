@@ -1,4 +1,4 @@
-import { WbClustersRepositoryAutomation } from "./wb-clusters.repository.automation";
+import { WbClustersRepositoryClusterRelevance } from "./wb-clusters.repository.cluster-relevance";
 
 /** Дневная дельта расхода/заказов одного кластера за конкретный день (для аккумулятора). */
 export interface DailyClusterDelta {
@@ -28,7 +28,7 @@ export interface ClusterAccrualBucket {
  * Питает новую логику автоматизации (фаза LEARNING + регулятор ДРР) — см. схему
  * wb-clusters.schema.accrual.ts и память project-cluster-ad-strategy.
  */
-export abstract class WbClustersRepositoryAccrual extends WbClustersRepositoryAutomation {
+export abstract class WbClustersRepositoryAccrual extends WbClustersRepositoryClusterRelevance {
   /** Вчерашняя дата по Москве (YYYY-MM-DD) — единый источник «вчера» для аккумулятора. */
   async getMskYesterday(): Promise<string> {
     await this.ensureSchemaOrThrow();

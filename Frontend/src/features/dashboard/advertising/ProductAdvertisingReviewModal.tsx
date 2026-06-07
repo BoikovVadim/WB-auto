@@ -200,6 +200,20 @@ export function ProductAdvertisingReviewModal({ nmId, advertId, maxCpo, busy, on
                         </span>
                       )}
                     </span>
+                    {c.suggestedReviewAction !== null && (
+                      <span
+                        className={
+                          c.suggestedReviewAction === "approve"
+                            ? "wb-review-row__within"
+                            : "wb-review-row__over"
+                        }
+                        title="Рекомендация мусор-фильтра релевантности (решение принимаете вы)"
+                      >
+                        {c.suggestedReviewAction === "approve"
+                          ? "рекомендация: в работу"
+                          : "рекомендация: в чёрный"}
+                      </span>
+                    )}
                   </span>
                 </div>
                 <span className="wb-filter-role" role="group" aria-label="Решение по кластеру">
