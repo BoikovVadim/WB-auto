@@ -121,14 +121,14 @@ export type ProductAutomationDetail = {
   mode: AutomationMode;
   campaigns: { advertId: number; name: string | null; mode: AutomationMode }[];
   /** Агрегированные счётчики кластеров по всем кампаниям товара. */
-  counts: { active: number; blacklisted: number; high: number };
+  counts: { active: number; blacklisted: number; high: number; drrHeld: number };
 };
 
 const EMPTY_PRODUCT_DETAIL: ProductAutomationDetail = {
   nmId: 0,
   mode: "off",
   campaigns: [],
-  counts: { active: 0, blacklisted: 0, high: 0 },
+  counts: { active: 0, blacklisted: 0, high: 0, drrHeld: 0 },
 };
 
 /** Детализация автоматизации по одному товару (режим + кампании + счётчики). */

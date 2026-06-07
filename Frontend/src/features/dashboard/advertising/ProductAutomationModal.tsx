@@ -13,7 +13,7 @@ const EMPTY_DETAIL: ProductAutomationDetail = {
   nmId: 0,
   mode: "off",
   campaigns: [],
-  counts: { active: 0, blacklisted: 0, high: 0 },
+  counts: { active: 0, blacklisted: 0, high: 0, drrHeld: 0 },
 };
 
 /**

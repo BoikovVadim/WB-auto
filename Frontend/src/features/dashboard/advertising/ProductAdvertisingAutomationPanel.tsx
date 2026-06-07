@@ -6,6 +6,8 @@ export interface AutomationPanelCounts {
   active: number;
   blacklisted: number;
   high: number;
+  /** Придержаны регулятором дневного ДРР (excluded_drr) — рентабельные, временно выключены. */
+  drrHeld: number;
 }
 
 /**
@@ -78,21 +80,27 @@ export function ProductAdvertisingAutomationPanel(props: {
           <span title="Исключены: реальный расход и CPO выше макс">
             искл. по CPO {num(props.counts.high)}
           </span>
+          <span title="Придержаны регулятором дневного ДРР: рентабельные кластеры, временно выключены ради удержания дневного ДРР товара у плана — вернутся сами, когда ДРР опустится">
+            придержано {num(props.counts.drrHeld)}
+          </span>
         </div>
       )}
 
-      {isOn && (props.pendingCount ?? 0) > 0 && (
-        <button
-          type="button"
-          className="wb-automation-panel__pending"
-          onClick={props.onReview}
-          title="Новые кластеры, которые ВБ добавил в РК — ждут вашей проверки, автоматика их не трогает"
-        >
-          🆕 на проверке {props.pendingCount}
-        </button>
+      {isOn && ((props.pendingCount ?? 0) > 0 || props.actions) && (
+        <div className="wb-automation-panel__bottom-row">
+          {(props.pendingCount ?? 0) > 0 && (
+            <button
+              type="button"
+              className="wb-automation-panel__pending"
+              onClick={props.onReview}
+              title="Новые кластеры, которые ВБ добавил в РК — ждут вашей проверки, автоматика их не трогает"
+            >
+              🆕 на проверке {props.pendingCount}
+            </button>
+          )}
+          {props.actions}
+        </div>
       )}
-
-      {isOn && props.actions ? <div className="wb-automation-panel__actions">{props.actions}</div> : null}
     </div>
   );
 }

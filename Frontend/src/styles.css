@@ -1968,8 +1968,19 @@ input {
   gap: 8px;
 }
 
+/* «На проверке» + кнопка действия в один ряд — экономит вертикаль, чтобы кнопка не
+   обрезалась в невысокой шапке РК и стояла на уровне счётчика на проверке. */
+.wb-automation-panel__bottom-row {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .wb-automation-panel__pending {
-  margin-top: 2px;
   padding: 2px 8px;
   border: 1px solid #d8a200;
   border-radius: 999px;

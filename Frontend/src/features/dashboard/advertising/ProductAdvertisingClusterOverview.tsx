@@ -124,10 +124,8 @@ export function ProductAdvertisingClusterOverview(
         c.state === "protected" ||
         c.state === "learning", // фаза набора данных — работает, копит
     ).length,
-    // «исключён» = по CPO (дорогой) ИЛИ придержан регулятором ДРР (рентабельный, временно).
-    high: automation.clusters.filter(
-      (c) => c.state === "excluded_high" || c.state === "excluded_drr",
-    ).length,
+    high: automation.clusters.filter((c) => c.state === "excluded_high").length,
+    drrHeld: automation.clusters.filter((c) => c.state === "excluded_drr").length,
     dropped: automation.clusters.filter((c) => c.state === "dropped").length,
     protected: automation.clusters.filter((c) => c.state === "protected").length,
     blacklisted: automation.clusters.filter((c) => c.state === "blacklisted").length,

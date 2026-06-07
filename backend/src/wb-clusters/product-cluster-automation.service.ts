@@ -184,7 +184,7 @@ export class ProductClusterAutomationService {
     nmId: number;
     mode: AutomationMode;
     campaigns: { advertId: number; name: string | null; mode: AutomationMode }[];
-    counts: { active: number; blacklisted: number; high: number };
+    counts: { active: number; blacklisted: number; high: number; drrHeld: number };
   }> {
     const campaignList = await this.repository.getProductCampaignAdvertIds(nmId);
     const perCampaign = await Promise.all(
@@ -202,10 +202,8 @@ export class ProductClusterAutomationService {
               x.state === "learning", // фаза набора данных — кластер работает, копит
           ).length,
           blacklisted: status.clusters.filter((x) => x.state === "blacklisted").length,
-          // «исключён» = по CPO (дорогой) ИЛИ придержан регулятором ДРР (рентабельный, временно).
-          high: status.clusters.filter(
-            (x) => x.state === "excluded_high" || x.state === "excluded_drr",
-          ).length,
+          high: status.clusters.filter((x) => x.state === "excluded_high").length,
+          drrHeld: status.clusters.filter((x) => x.state === "excluded_drr").length,
         };
       }),
     );
@@ -219,8 +217,9 @@ export class ProductClusterAutomationService {
         active: acc.active + c.active,
         blacklisted: acc.blacklisted + c.blacklisted,
         high: acc.high + c.high,
+        drrHeld: acc.drrHeld + c.drrHeld,
       }),
-      { active: 0, blacklisted: 0, high: 0 },
+      { active: 0, blacklisted: 0, high: 0, drrHeld: 0 },
     );
     return {
       nmId,
@@ -240,7 +239,7 @@ export class ProductClusterAutomationService {
     nmId: number;
     mode: AutomationMode;
     campaigns: { advertId: number; name: string | null; mode: AutomationMode }[];
-    counts: { active: number; blacklisted: number; high: number };
+    counts: { active: number; blacklisted: number; high: number; drrHeld: number };
   }> {
     const campaignList = await this.repository.getProductCampaignAdvertIds(nmId);
     for (const c of campaignList) {
