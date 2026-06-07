@@ -22,14 +22,15 @@ function RefreshIcon() {
   );
 }
 
-/** Тултип-расшифровка трёх метрик позиции. */
+/** Тултип-расшифровка позиции: чистая органика vs выдача с рекламой. */
 function positionTitle(p: ClusterPositionLatest): string {
-  return [
-    `Органика без рекламы: ${p.organicPosition ?? "—"}`,
-    `Органика с рекламой: ${p.displayPosition ?? "—"}`,
-    `Рекламный слот: ${p.adPosition ?? "—"}`,
-    `Просмотрено: ${p.scannedCount ?? "?"}`,
-  ].join("\n");
+  const lines = [
+    `Органика (без рекламы): ${p.organicPosition ?? ">300"}`,
+    `В выдаче с рекламой: ${p.displayPosition ?? "—"}`,
+  ];
+  if (p.isAd) lines.push("Реклама заметно поднимает товар в выдаче");
+  lines.push(`Просмотрено: ${p.scannedCount ?? "?"}`);
+  return lines.join("\n");
 }
 
 function renderValue(position: ClusterPositionLatest | undefined, probing: boolean) {
@@ -37,29 +38,20 @@ function renderValue(position: ClusterPositionLatest | undefined, probing: boole
   if (!position) return <span style={{ color: "var(--wb-text-muted, #888)" }}>—</span>;
   if (
     position.status === "found" &&
-    (position.organicPosition !== null || position.adPosition !== null)
+    (position.organicPosition !== null || position.displayPosition !== null)
   ) {
-    const { organicPosition: org, displayPosition: disp, adPosition: ad } = position;
+    const { organicPosition: org, displayPosition: disp } = position;
     return (
       <span style={{ fontWeight: 600 }} title={positionTitle(position)}>
-        {/* Основное — органика без рекламы; в скобках мутно — с рекламой, если отличается. */}
+        {/* Основное — ЧИСТАЯ органика; в скобках мутно — позиция с рекламой, если отличается. */}
         {org !== null ? (
-          <>
-            {org}
-            {disp !== null && disp !== org && (
-              <span style={{ marginLeft: "3px", fontWeight: 400, color: "var(--wb-text-muted, #888)" }}>
-                ({disp})
-              </span>
-            )}
-          </>
+          org
         ) : (
-          <span style={{ color: "var(--wb-text-muted, #888)" }}>—</span>
+          <span style={{ color: "var(--wb-text-muted, #888)" }}>&gt;300</span>
         )}
-        {ad !== null && (
-          <span
-            style={{ marginLeft: "4px", fontSize: "10px", fontWeight: 600, color: "#a86a00" }}
-          >
-            рек {ad}
+        {disp !== null && disp !== org && (
+          <span style={{ marginLeft: "3px", fontWeight: 400, color: "var(--wb-text-muted, #888)" }}>
+            (показ {disp})
           </span>
         )}
       </span>

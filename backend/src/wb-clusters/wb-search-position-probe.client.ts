@@ -18,9 +18,14 @@ import { ProbeSessionStore } from "./wb-search-position-probe.state";
  * Зонд места товара в публичной выдаче WB через РЕАЛЬНЫЙ браузер (browser-render).
  *
  * Почему браузер, а не голый fetch: сырой API search.wb.ru отдаёт боту анти-бот заглушку
- * (preset-метадата без товаров) и 429. А загрузка самой страницы выдачи в Chromium через
- * чистый (мобильный) IP проходит JS-challenge WB (~40-60с ОДИН раз на прогрев сессии) и
- * SSR-ит реальные карточки — мы читаем их из DOM (data-nm-id = порядок выдачи).
+ * (preset-метадата без товаров) и 429. А прогрев страницы выдачи в Chromium через чистый IP
+ * проходит JS-challenge WB (~40-60с ОДИН раз на сессию) и даёт тёплый контекст с cookie.
+ *
+ * Читаем ДВА фида (см. fetchProductPage / fetchOrganicPage):
+ *   • u-search (внутренний, выдача сайта С рекламным бустом) → displayPosition;
+ *   • search.wb.ru/exactmatch (внешний, ЧИСТАЯ органика без буста)  → organicPosition.
+ * Их разница = на сколько товар поднят рекламой. Рекламную метку (log) WB анониму не отдаёт,
+ * поэтому рекламный слот (adPosition) недоступен — органику берём отдельным «чистым» фидом.
  *
  * Тёплый браузер держим между замерами (прогрев платится один раз). Замеры сериализуем
  * (одна страница — один навигатор за раз). Картинки/шрифты блокируем — экономим трафик
@@ -42,12 +47,13 @@ export type PositionProbeStatus =
 
 export interface PositionProbeResult {
   status: PositionProbeStatus;
-  /** Метрика 1 — органическая позиция БЕЗ рекламы (нумерация только по орган. карточкам). */
+  /** Метрика 1 — ЧИСТАЯ органика без рекламы (позиция в внешнем search.wb.ru/exactmatch). */
   organicPosition: number | null;
-  /** Метрика 2 — органическая позиция С рекламой (порядковый номер в выдаче, реклама в счёте). */
+  /** Метрика 2 — позиция в выдаче сайта С рекламным бустом (что видит покупатель, u-search). */
   displayPosition: number | null;
-  /** Метрика 3 — рекламная позиция (слот, где товар стоит как буст; карточка с полем log). */
+  /** Метрика 3 — рекламный слот. НЕДОСТУПЕН: WB не отдаёт рекл. метку анониму → всегда null. */
   adPosition: number | null;
+  /** Реклама заметно бустит товар: displayPosition выше чистой органики на ≥5 позиций. */
   isAd: boolean;
   page: number | null;
   scanned: number;
@@ -320,11 +326,17 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
     return "ok";
   }
 
-  /** Одна страница (100 товаров) внутреннего product-endpoint в прогретом контексте. */
+  /**
+   * Одна страница (100 товаров) ВНУТРЕННЕГО product-endpoint (www.wildberries.ru/__internal/
+   * u-search) в прогретом контексте. Это выдача, которую SSR-ит сам сайт = С РЕКЛАМНЫМ
+   * БУСТОМ (порядок включает забустенные рекламой карточки) → даёт displayPosition. Рекламная
+   * метка (поле log/logs) WB здесь анониму не отдаёт, поэтому отличить рекламу внутри этого
+   * фида нельзя — чистую органику берём из ВТОРОГО фида (fetchOrganicPage / search.wb.ru).
+   */
   private async fetchProductPage(
     query: string,
     pageNumber: number,
-  ): Promise<Array<{ id: number; logs?: unknown[] }>> {
+  ): Promise<Array<{ id: number }>> {
     if (!this.context || !this.searchBaseUrl) return [];
     const url = new URL(this.searchBaseUrl);
     url.searchParams.set("query", query);
@@ -341,9 +353,48 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
     if (res.status() !== 200) return [];
     try {
       const json = JSON.parse(await res.text()) as {
-        products?: Array<{ id: number; logs?: unknown[] }>;
+        products?: Array<{ id: number }>;
       };
       return json.products ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Одна страница ЧИСТОЙ ОРГАНИКИ из ВНЕШНЕГО публичного search.wb.ru/exactmatch — этот фид
+   * НЕ подмешивает рекламный буст (A/B подтверждён: забустенные на сайте карточки в нём стоят
+   * на десятки позиций ниже / вообще вне топа). Даёт organicPosition «где товар был бы без
+   * рекламы». ВАЖНО: тянем браузерным fetch ВНУТРИ тёплой страницы www.wildberries.ru —
+   * APIRequestContext к search.wb.ru режется 429, а fetch из браузерного контекста (с cookie
+   * и fingerprint) проходит анти-бот и отдаёт 200. dest/hide_* берём из пойманного u-search
+   * шаблона, чтобы регион выдачи совпадал с displayPosition.
+   */
+  private async fetchOrganicPage(
+    query: string,
+    pageNumber: number,
+  ): Promise<number[]> {
+    if (!this.page || !this.searchBaseUrl) return [];
+    const tpl = new URL(this.searchBaseUrl);
+    const dest = tpl.searchParams.get("dest") ?? "";
+    const hideDtype = tpl.searchParams.get("hide_dtype") ?? "15";
+    const hideVflags = tpl.searchParams.get("hide_vflags") ?? "4294967296";
+    const organicUrl =
+      `https://search.wb.ru/exactmatch/ru/common/v18/search?appType=1&curr=rub` +
+      `&dest=${encodeURIComponent(dest)}&hide_dtype=${encodeURIComponent(hideDtype)}` +
+      `&hide_vflags=${encodeURIComponent(hideVflags)}&lang=ru&page=${pageNumber}` +
+      `&query=${encodeURIComponent(query)}&resultset=catalog&sort=popular&spp=30&suppressSpellcheck=false`;
+    try {
+      const ids = await this.page.evaluate(async (u: string): Promise<number[] | null> => {
+        const r = await fetch(u, { headers: { Accept: "*/*" } });
+        if (r.status !== 200) return null;
+        const body = (await r.json().catch(() => null)) as {
+          products?: Array<{ id: number }>;
+        } | null;
+        if (!body || !Array.isArray(body.products)) return null;
+        return body.products.map((p) => p.id);
+      }, organicUrl);
+      return Array.isArray(ids) ? ids : [];
     } catch {
       return [];
     }
@@ -373,70 +424,66 @@ export class WbSearchPositionProbeClient implements OnModuleDestroy {
         return { ...NOT_FOUND, status: warm };
       }
 
-      // Внутренний product-endpoint, 100 товаров/страница. ВСЕ нужные страницы (1..N)
-      // стартуем СРАЗУ параллельно — мобильный прокси тянет их конкурентно, топ-300 (3 стр.)
-      // укладывается в латентность одной. Сканируем ПОЛНОСТЬЮ (не early-exit): рекламная и
-      // органическая карточки товара могут лежать на разной глубине, нужны обе.
+      // ДВА ФИДА ПАРАЛЛЕЛЬНО (латентность ≈ одного, тянутся конкурентно):
+      //  • u-search (выдача сайта, С рекламным бустом) → displayPosition «что видит покупатель»;
+      //  • search.wb.ru (внешняя ЧИСТАЯ органика, без буста) → organicPosition «без рекламы».
+      // Все страницы 1..N стартуем сразу; сканируем полностью (не early-exit) — товар в разных
+      // фидах лежит на разной глубине.
       const maxPages = Math.max(1, Math.min(Math.ceil(depth / 100), 3));
       const tPage = Date.now();
-      const results = await Promise.all(
-        Array.from({ length: maxPages }, (_, i) => this.fetchProductPage(query, i + 1)),
-      );
+      const [displayPages, organicPages] = await Promise.all([
+        Promise.all(
+          Array.from({ length: maxPages }, (_, i) => this.fetchProductPage(query, i + 1)),
+        ),
+        Promise.all(
+          Array.from({ length: maxPages }, (_, i) => this.fetchOrganicPage(query, i + 1)),
+        ),
+      ]);
       this.logger.log(
-        `probe «${query}»: ${results.length} стр. готовы за ${Date.now() - tPage}ms`,
+        `probe «${query}»: ${maxPages} стр. ×2 фида за ${Date.now() - tPage}ms`,
       );
       this.scheduleIdleClose();
 
-      const total = results.reduce((sum, list) => sum + list.length, 0);
-      if (total === 0) {
-        this.logger.warn(`probe «${query}» nm ${nmId}: endpoint вернул 0 за ${elapsed()}`);
+      const displayScanned = displayPages.reduce((sum, list) => sum + list.length, 0);
+      const organicScanned = organicPages.reduce((sum, list) => sum + list.length, 0);
+      // Оба фида пустые → анти-бот заглушил (challenge/429), а не «товара нет».
+      if (displayScanned === 0 && organicScanned === 0) {
+        this.logger.warn(`probe «${query}» nm ${nmId}: оба фида вернули 0 за ${elapsed()}`);
         return { ...NOT_FOUND, status: "blocked" };
       }
 
-      // Два счётчика: raw (все карточки) и organic (только не-рекламные). Рекламная карточка
-      // = есть поле log. Находим рекламное и органическое появление нашего nm_id.
-      let raw = 0;
-      let organic = 0;
-      let adCards = 0;
-      let adPosition: number | null = null; // метрика 3: rawIndex рекл. карточки
-      let displayPosition: number | null = null; // метрика 2: rawIndex орган. карточки
-      let organicPosition: number | null = null; // метрика 1: organicIndex орган. карточки
-      outer: for (const products of results) {
-        for (const product of products) {
-          raw++;
-          if (raw > depth) break outer;
-          const isAdCard = Array.isArray(product.logs) && product.logs.length > 0;
-          if (isAdCard) adCards++;
-          else organic++;
-          if (product.id === nmId) {
-            if (isAdCard) {
-              if (adPosition === null) adPosition = raw;
-            } else if (displayPosition === null) {
-              displayPosition = raw;
-              organicPosition = organic;
-            }
+      const rankOf = (lists: Array<Array<{ id: number }>>): number | null => {
+        let rank = 0;
+        for (const list of lists) {
+          for (const item of list) {
+            rank++;
+            if (rank > depth) return null;
+            if (item.id === nmId) return rank;
           }
         }
-      }
-      const scanned = Math.min(raw, depth);
-      this.logger.log(
-        `probe «${query}»: cards=${raw} organic=${organic} ads=${adCards}`,
-      );
+        return null;
+      };
+      // displayPosition — порядок в выдаче сайта (с рекламой); organicPosition — в чистой органике.
+      const displayPosition = rankOf(displayPages);
+      const organicPosition = rankOf(organicPages.map((ids) => ids.map((id) => ({ id }))));
+      const scanned = Math.min(Math.max(displayScanned, organicScanned), depth);
 
-      if (organicPosition !== null || adPosition !== null) {
-        // «Органика с рекламой» достоверна только если в фиде ЕСТЬ рекламные карточки
-        // (u-search их сейчас не отдаёт → null). adPosition аналогично пуст без рекламы.
-        const display = adCards > 0 ? displayPosition : null;
+      if (displayPosition !== null || organicPosition !== null) {
+        // Буст рекламы: насколько сайт поднял товар над чистой органикой (organic − display).
+        const boosted =
+          displayPosition !== null &&
+          organicPosition !== null &&
+          organicPosition - displayPosition >= 5;
         this.logger.log(
-          `probe «${query}» nm ${nmId}: орг ${organicPosition ?? "—"} / показ ${display ?? "—"} / рек ${adPosition ?? "—"} за ${elapsed()}`,
+          `probe «${query}» nm ${nmId}: орг ${organicPosition ?? "—"} / показ ${displayPosition ?? "—"}${boosted ? " (буст)" : ""} за ${elapsed()}`,
         );
-        const refPos = organicPosition ?? adPosition!;
+        const refPos = displayPosition ?? organicPosition!;
         return {
           status: "found",
           organicPosition,
-          displayPosition: display,
-          adPosition,
-          isAd: adPosition !== null,
+          displayPosition,
+          adPosition: null, // рекламный слот WB анониму не отдаёт — метрика недоступна
+          isAd: boosted,
           page: Math.ceil(refPos / 100),
           scanned,
         };
