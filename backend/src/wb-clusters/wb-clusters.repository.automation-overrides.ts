@@ -8,7 +8,11 @@ export type ClusterAutomationStateValue =
   | "protected"
   | "blacklisted"
   // Новый кластер, добавленный ВБ после baseline: ждёт ручной модерации, движок его не трогает.
-  | "pending_review";
+  | "pending_review"
+  // Правило v2: бесзаказный кластер набирает данные (накопл. расход < 2× Макс СРО) — держим, копим.
+  | "learning"
+  // Правило v2 / регулятор ДРР: рентабельный кластер придержан ради дневного ДРР (вернётся сам).
+  | "excluded_drr";
 
 /** Статус модерации кластера: 'pending' (на проверке) | 'approved' (в работе у автоматики). */
 export type ClusterReviewStatus = "pending" | "approved";

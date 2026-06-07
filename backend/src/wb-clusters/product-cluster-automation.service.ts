@@ -3,6 +3,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { ProductCpoService } from "./product-cpo.service";
 import { priceBucket } from "./wb-clusters.accrual.bucket";
 import { decideForCluster, type ClusterDecision } from "./product-cluster-decision";
+import { decideForClusterV2 } from "./product-cluster-decision.v2";
 import type {
   AutomationMode,
   ClusterAutomationStateValue,
@@ -303,6 +304,31 @@ export class ProductClusterAutomationService {
   }
 
   /**
+   * Накопления кластеров из ТЕКУЩЕЙ ценовой корзины (по цене последнего накопленного дня).
+   * Возвращает Map по нормализованному имени кластера для правила v2. Корзина определяется
+   * ценой за вчера — тем же priceBucket, по которому раскладывал аккумулятор.
+   */
+  private async loadCurrentBucketAccrual(
+    advertId: number,
+    nmId: number,
+  ): Promise<Map<string, { accruedSpend: number; accruedOrdersRk: number; accruedOrdersJam: number }>> {
+    const date = await this.repository.getMskYesterday();
+    const price = await this.repository.getProductEffectivePriceForDate(nmId, date);
+    const bucket = priceBucket(price);
+    const rows = await this.repository.getAccrualBuckets(advertId, nmId);
+    const map = new Map<string, { accruedSpend: number; accruedOrdersRk: number; accruedOrdersJam: number }>();
+    for (const r of rows) {
+      if (r.priceBucket !== bucket) continue;
+      map.set(r.normalizedClusterName, {
+        accruedSpend: r.accruedSpend,
+        accruedOrdersRk: r.accruedOrdersRk,
+        accruedOrdersJam: r.accruedOrdersJam,
+      });
+    }
+    return map;
+  }
+
+  /**
    * Считает решения по всем кластерам кампании; в live — применяет к WB. Возвращает решения
    * И maxCpo, чтобы вызывающий (setMode/reviewCluster) собрал статус БЕЗ повторного тяжёлого
    * чтения (getManagedClusterAutomationStates) — это и делает первый показ цифр моментальным.
@@ -328,15 +354,43 @@ export class ProductClusterAutomationService {
     // baseline уже стоит, а строки состояния у кластера ещё нет → ВБ добавил его позже.
     const isBaselined = baselinedAt !== null;
 
+    // Правило v2 (фаза LEARNING на накопительных счётчиках) — за флагом. WB_CLUSTER_DECISION_V2=1
+    // включает v2 в preview (обкатка, WB не трогается); +WB_CLUSTER_DECISION_V2_LIVE=1 — и в live.
+    // По умолчанию обе выключены → боевая автоматика на старом правиле (v1, скользящие 30 дней).
+    const useV2 =
+      process.env.WB_CLUSTER_DECISION_V2 === "1" &&
+      (mode === "preview" || process.env.WB_CLUSTER_DECISION_V2_LIVE === "1");
+    const accrualByCluster = useV2
+      ? await this.loadCurrentBucketAccrual(advertId, nmId)
+      : new Map();
+
     const decisions = inputs.map((input) => {
       const prev = prevByCluster.get(input.normalizedClusterName);
       const reviewStatus: ClusterReviewStatus =
         prev?.reviewStatus ?? (isBaselined ? "pending" : "approved");
-      return decideForCluster(input, maxCpo, prev, mode, {
+      const rolesForCluster = {
         isProtected: roles.protectedNames.has(input.normalizedClusterName),
         isBlacklisted: roles.blacklistedNames.has(input.normalizedClusterName),
         reviewStatus,
-      });
+      };
+      if (useV2) {
+        const acc = accrualByCluster.get(input.normalizedClusterName);
+        return decideForClusterV2(
+          {
+            normalizedClusterName: input.normalizedClusterName,
+            clusterName: input.clusterName,
+            currentSourceKind: input.currentSourceKind,
+            accruedSpend: acc?.accruedSpend ?? 0,
+            accruedOrdersRk: acc?.accruedOrdersRk ?? 0,
+            accruedOrdersJam: acc?.accruedOrdersJam ?? 0,
+          },
+          maxCpo,
+          prev,
+          mode,
+          rolesForCluster,
+        );
+      }
+      return decideForCluster(input, maxCpo, prev, mode, rolesForCluster);
     });
 
     // Применяем к WB только в live и только при отличии от текущего состояния.
