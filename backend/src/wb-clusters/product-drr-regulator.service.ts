@@ -189,7 +189,6 @@ export class ProductDrrRegulatorService {
               maxCpo,
               computeClusterCr({
                 accruedOrdersRk: inp.shks ?? inp.ordersRk,
-                accruedOrdersJam: inp.ordersJam,
                 accruedViews: inp.views,
               }),
             )

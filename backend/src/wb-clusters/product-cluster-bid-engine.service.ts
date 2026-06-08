@@ -240,7 +240,6 @@ export class ProductClusterBidEngineService {
       const clusterName = input.clusterName;
       const cr = computeClusterCr({
         accruedOrdersRk: input.shks ?? input.ordersRk,
-        accruedOrdersJam: input.ordersJam,
         accruedViews: input.views,
       });
       const bidCap = computeBidCap(maxCpo, cr);
