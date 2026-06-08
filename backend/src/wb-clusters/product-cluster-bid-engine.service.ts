@@ -1,0 +1,193 @@
+import { Injectable, Logger } from "@nestjs/common";
+
+import { ProductClusterAccrualService } from "./product-cluster-accrual.service";
+import { ProductCpoService } from "./product-cpo.service";
+import { ProductPositionService } from "./product-position.service";
+import {
+  computeBidCap,
+  computeClusterCr,
+  computeDesiredBid,
+  isUnprofitableAtMin,
+  type BidEngineParams,
+} from "./product-cluster-bid";
+import { WbClustersRepository } from "./wb-clusters.repository";
+import { WbClustersService } from "./wb-clusters.service";
+
+/** Конфигурация ставочного движка из env (все параметры — открытые, калибруются на обкатке). */
+interface BidEngineConfig extends BidEngineParams {
+  /** Движок включён (считает + зондирует scope; пишет наблюдение). */
+  engine: boolean;
+  /** Применять ли ставки на WB реально (false = dry-run: только наблюдение). */
+  applyToWb: boolean;
+  /** scope товаров: 'all' или множество nmId. Вне scope движок товар не трогает. */
+  scopeAll: boolean;
+  scopeNmIds: Set<number>;
+  /** Порог значимости изменения ставки (₽) — не шлём микро-правки на WB. */
+  minDeltaToApply: number;
+}
+
+function numEnv(name: string, def: number): number {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) && v > 0 ? v : def;
+}
+
+function readConfig(): BidEngineConfig {
+  const raw = (process.env.WB_CLUSTER_BID_NMIDS ?? "").trim();
+  const scopeAll = raw.toLowerCase() === "all";
+  const scopeNmIds = new Set(
+    scopeAll
+      ? []
+      : raw
+          .split(",")
+          .map((s) => Number(s.trim()))
+          .filter((n) => Number.isFinite(n) && n > 0),
+  );
+  return {
+    engine: process.env.WB_CLUSTER_BID_ENGINE === "1",
+    applyToWb: process.env.WB_CLUSTER_BID_DRY_RUN !== "1",
+    scopeAll,
+    scopeNmIds,
+    minBid: numEnv("WB_CLUSTER_BID_MIN", 100),
+    maxWbBid: numEnv("WB_CLUSTER_BID_MAX", 5000),
+    kUp: numEnv("WB_CLUSTER_BID_K_UP", 0.34),
+    stepDown: numEnv("WB_CLUSTER_BID_STEP_DOWN", 0.1),
+    minDeltaToApply: numEnv("WB_CLUSTER_BID_MIN_DELTA", 10),
+  };
+}
+
+/**
+ * Ставочный движок (этап 3): позиционный регулятор ставок CPM заказных кластеров.
+ *
+ * По кругу (крон, busy-guard) для товаров из scope: для каждого заказного кластера зондирует
+ * позицию С РЕКЛАМОЙ, считает желаемую ставку (computeDesiredBid: к топ-4, асимметрично, под
+ * потолком bid_cap), пишет наблюдение (позиция/желаемая/причина) и — только для scope и не в
+ * dry-run — применяет ставку на WB через applyProductClusterBids (очередь bid-write).
+ *
+ * БЕЗОПАСНОСТЬ: по умолчанию движок ВЫКЛЮЧЕН (WB_CLUSTER_BID_ENGINE≠1) и scope ПУСТ — ничего
+ * не делает. Точечный тест: WB_CLUSTER_BID_ENGINE=1 + WB_CLUSTER_BID_NMIDS="<nmId>"; для самой
+ * первой обкатки без записи на WB — WB_CLUSTER_BID_DRY_RUN=1. Масштаб — NMIDS="all".
+ * См. product-cluster-bid.ts и docs/cluster-ad-strategy.md.
+ */
+@Injectable()
+export class ProductClusterBidEngineService {
+  private readonly logger = new Logger("ProductClusterBidEngine");
+  private busy = false;
+
+  constructor(
+    private readonly repository: WbClustersRepository,
+    private readonly productCpoService: ProductCpoService,
+    private readonly accrualService: ProductClusterAccrualService,
+    private readonly positionService: ProductPositionService,
+    private readonly wbClustersService: WbClustersService,
+  ) {}
+
+  /** Один круг движка по товарам из scope. Busy-guard: длинный круг не накладывается сам на себя. */
+  async runCycle(): Promise<void> {
+    const cfg = readConfig();
+    if (!cfg.engine) return;
+    if (cfg.scopeAll === false && cfg.scopeNmIds.size === 0) return; // scope пуст — нечего делать
+    if (this.busy) {
+      this.logger.log("предыдущий круг ещё идёт — пропуск (растянутый круг).");
+      return;
+    }
+    this.busy = true;
+    const startedAt = Date.now();
+    let touched = 0;
+    try {
+      const enabled = await this.repository.listEnabledAutomations();
+      const inScope = enabled.filter((a) => cfg.scopeAll || cfg.scopeNmIds.has(a.nmId));
+      for (const a of inScope) {
+        try {
+          touched += await this.regulateCampaign(a.advertId, a.nmId, cfg);
+        } catch (err) {
+          this.logger.warn(`bid ${a.advertId}/${a.nmId}: ${(err as Error).message}`);
+        }
+      }
+      this.logger.log(
+        `круг завершён за ${Math.round((Date.now() - startedAt) / 1000)}с: ` +
+          `товаров ${inScope.length}, кластеров обработано ${touched}` +
+          (cfg.applyToWb ? "" : " (DRY-RUN, WB не трогали)"),
+      );
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  private async regulateCampaign(
+    advertId: number,
+    nmId: number,
+    cfg: BidEngineConfig,
+  ): Promise<number> {
+    const params: BidEngineParams = {
+      minBid: cfg.minBid,
+      maxWbBid: cfg.maxWbBid,
+      kUp: cfg.kUp,
+      stepDown: cfg.stepDown,
+    };
+    const [accrual, cpoInputs, productCpo] = await Promise.all([
+      this.accrualService.loadCurrentBucketAccrual(advertId, nmId),
+      this.repository.getClusterCpoInputs(advertId, nmId),
+      this.productCpoService.getProductCpo(nmId),
+    ]);
+    const maxCpo = productCpo.maxCpo;
+    const nameByNcn = new Map(cpoInputs.map((i) => [i.normalizedClusterName, i.clusterName]));
+
+    // Заказные кластеры текущей корзины (max(РК,JAM) > 0) — только они в ставочном движке.
+    const ordered = [...accrual.entries()].filter(
+      ([, acc]) => Math.max(acc.accruedOrdersRk, acc.accruedOrdersJam) > 0,
+    );
+    if (ordered.length === 0) return 0;
+
+    const names = ordered.map(([ncn]) => ncn);
+    const currentBids = await this.repository.getCurrentClusterBids(nmId, advertId, names);
+
+    const toApply: { clusterName: string; bid: number }[] = [];
+    let processed = 0;
+    for (const [ncn, acc] of ordered) {
+      const clusterName = nameByNcn.get(ncn) ?? ncn;
+      const cr = computeClusterCr(acc);
+      const bidCap = computeBidCap(maxCpo, cr);
+      const currentBid = currentBids.get(ncn) ?? cfg.minBid;
+
+      // Убыточен даже на минимуме (bid_cap < мин) — не качаем ставку (кандидат на отключение
+      // по конверсии; отключение делает ДРР/базовое правило, не ставочный движок).
+      if (isUnprofitableAtMin(bidCap, cfg.minBid)) {
+        await this.repository.updateClusterBidObservation(advertId, nmId, ncn, {
+          position: null,
+          desiredBid: null,
+          reason: "unprofitable",
+        });
+        processed++;
+        continue;
+      }
+
+      // Зонд позиции С РЕКЛАМОЙ (сериализован в probe-клиенте; 429/сбой → retry внутри).
+      const snap = await this.positionService.probeCluster(nmId, clusterName);
+      const position = snap.status === "found" ? snap.organicPosition : null;
+      const desired = computeDesiredBid({ position, currentBid, bidCap }, params);
+
+      await this.repository.updateClusterBidObservation(advertId, nmId, ncn, {
+        position,
+        desiredBid: desired.bid,
+        reason: desired.reason,
+      });
+      processed++;
+
+      if (Math.abs(desired.bid - currentBid) >= cfg.minDeltaToApply) {
+        toApply.push({ clusterName, bid: desired.bid });
+      }
+    }
+
+    // Применяем на WB только в scope и не в dry-run. Тип кампании (manual+cpm) проверяет
+    // applyProductClusterBids — при несовместимости бросит, ловим и продолжаем.
+    if (cfg.applyToWb && toApply.length > 0) {
+      try {
+        await this.wbClustersService.applyProductClusterBids(nmId, advertId, toApply);
+        this.logger.log(`применено ставок ${toApply.length} для ${advertId}/${nmId}`);
+      } catch (err) {
+        this.logger.warn(`apply bids ${advertId}/${nmId}: ${(err as Error).message}`);
+      }
+    }
+    return processed;
+  }
+}

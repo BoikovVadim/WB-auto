@@ -103,6 +103,21 @@ export function getClusterAutomationCreateStatements({
       ALTER TABLE ${tableName("wb_cluster_automation_state")}
         ADD COLUMN IF NOT EXISTS last_bid_cap NUMERIC(12,2) NULL
     `,
+    // Этап 3 (позиционный регулятор): наблюдение за ставкой — последняя замеренная позиция
+    // (с рекламой), желаемая ставка и причина решения. Заполняет bid-движок; применение на WB
+    // только для товаров из scope (allowlist). См. product-cluster-bid.ts / bid-engine сервис.
+    `
+      ALTER TABLE ${tableName("wb_cluster_automation_state")}
+        ADD COLUMN IF NOT EXISTS last_position INTEGER NULL
+    `,
+    `
+      ALTER TABLE ${tableName("wb_cluster_automation_state")}
+        ADD COLUMN IF NOT EXISTS last_desired_bid NUMERIC(12,2) NULL
+    `,
+    `
+      ALTER TABLE ${tableName("wb_cluster_automation_state")}
+        ADD COLUMN IF NOT EXISTS last_bid_reason TEXT NULL
+    `,
     // baselined_at — момент, когда зафиксирован «исходный» набор кластеров кампании.
     // Кластер без строки state, появившийся ПОСЛЕ baseline → новый → на проверку (pending).
     `

@@ -9,6 +9,7 @@ import { AcquiringSyncService } from "./acquiring-sync.service";
 import { ProductCatalogService } from "./product-catalog.service";
 import { ProductClusterAccrualService } from "./product-cluster-accrual.service";
 import { ProductClusterAutomationService } from "./product-cluster-automation.service";
+import { ProductClusterBidEngineService } from "./product-cluster-bid-engine.service";
 import { ProductDrrRegulatorService } from "./product-drr-regulator.service";
 import { UnitEconomicsService } from "./unit-economics.service";
 import { WbClustersService } from "./wb-clusters.service";
@@ -24,6 +25,7 @@ export class WbClustersScheduler implements OnModuleInit {
     private readonly unitEconomicsService: UnitEconomicsService,
     private readonly productClusterAutomationService: ProductClusterAutomationService,
     private readonly productClusterAccrualService: ProductClusterAccrualService,
+    private readonly productClusterBidEngineService: ProductClusterBidEngineService,
     private readonly productDrrRegulatorService: ProductDrrRegulatorService,
   ) {}
 
@@ -114,6 +116,17 @@ export class WbClustersScheduler implements OnModuleInit {
   async handleDrrRegulator() {
     await this.productDrrRegulatorService.runDailyForAll().catch((err: Error) => {
       this.logger.warn(`handleDrrRegulator error: ${err.message}`);
+    });
+  }
+
+  // Ставочный движок (этап 3) — позиционный регулятор ставок CPM, круг каждые 10 мин
+  // (busy-guard: длинный круг не накладывается). По умолчанию НЕ работает: нужен флаг
+  // WB_CLUSTER_BID_ENGINE=1 + непустой scope WB_CLUSTER_BID_NMIDS. Применение к WB только в
+  // scope и не в dry-run. cron "0 */10" в TZ Europe/Moscow. См. product-cluster-bid-engine.service.
+  @Cron("0 */10 * * * *")
+  async handleBidEngine() {
+    await this.productClusterBidEngineService.runCycle().catch((err: Error) => {
+      this.logger.warn(`handleBidEngine error: ${err.message}`);
     });
   }
 

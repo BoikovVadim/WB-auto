@@ -1,4 +1,4 @@
-import { WbClustersRepositoryAccrual } from "./wb-clusters.repository.accrual";
+import { WbClustersRepositoryClusterBid } from "./wb-clusters.repository.cluster-bid";
 
 export interface ClusterPositionSnapshotInput {
   nmId: number;
@@ -37,7 +37,7 @@ export interface ClusterPositionLatest {
  * Звено цепочки репозитория для фичи «место товара в выдаче по кластеру»:
  * запись/чтение истории замеров позиций (wb_cluster_position_snapshots).
  */
-export abstract class WbClustersRepositoryPositions extends WbClustersRepositoryAccrual {
+export abstract class WbClustersRepositoryPositions extends WbClustersRepositoryClusterBid {
   async insertClusterPositionSnapshot(
     input: ClusterPositionSnapshotInput,
   ): Promise<void> {

@@ -22,6 +22,7 @@ import { ProductClusterAutomationController } from "./product-cluster-automation
 import { ProductClusterAutomationService } from "./product-cluster-automation.service";
 import { ProductClusterAccrualService } from "./product-cluster-accrual.service";
 import { ProductClusterRelevanceService } from "./product-cluster-relevance.service";
+import { ProductClusterBidEngineService } from "./product-cluster-bid-engine.service";
 import { WbClustersActionQueueService } from "./wb-clusters-action-queue.service";
 import { WbClustersBidQueueService } from "./wb-clusters-bid-queue.service";
 import { WbClustersRepository } from "./wb-clusters.repository";
@@ -73,6 +74,7 @@ import { WbPromotionApiClient } from "./wb-promotion-api.client";
     ProductClusterAutomationService,
     ProductClusterAccrualService,
     ProductClusterRelevanceService,
+    ProductClusterBidEngineService,
     AcquiringSyncService,
     ProductAdvertisingReadRepository,
     PromotionSyncRepository,
