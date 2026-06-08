@@ -87,10 +87,19 @@ export class ProductClusterBidEngineService {
    * которым движок что-то посчитал (есть желаемая ставка или bid_cap).
    */
   async getBidSuggestions(advertId: number, nmId: number) {
-    const states = await this.repository.getManagedClusterAutomationStates(advertId, nmId);
-    // Только кластеры с РЕАЛЬНЫМ предложением движка (посчитана желаемая ставка) — не весь
-    // список с потолком bid_cap (тот есть почти у всех заказных, но это не «предложение»).
-    const withBid = states.filter((s) => s.lastDesiredBid !== null);
+    const [states, cpoInputs] = await Promise.all([
+      this.repository.getManagedClusterAutomationStates(advertId, nmId),
+      this.repository.getClusterCpoInputs(advertId, nmId),
+    ]);
+    // Только АКТИВНЫЕ на WB кластеры (как таб «Активные»): движок крутит ставки только их;
+    // у неактивных может остаться stale-предложение в state — не показываем.
+    const activeNcn = new Set(
+      cpoInputs.filter((i) => i.currentSourceKind === "active").map((i) => i.normalizedClusterName),
+    );
+    // Только кластеры с РЕАЛЬНЫМ предложением движка (посчитана желаемая ставка).
+    const withBid = states.filter(
+      (s) => s.lastDesiredBid !== null && activeNcn.has(s.normalizedClusterName),
+    );
     const currentBids = await this.repository.getCurrentClusterBids(
       nmId,
       advertId,
@@ -172,10 +181,16 @@ export class ProductClusterBidEngineService {
     ]);
     const maxCpo = productCpo.maxCpo;
     const nameByNcn = new Map(cpoInputs.map((i) => [i.normalizedClusterName, i.clusterName]));
+    // Реальное состояние кластера на WB ('active' = показывается сейчас). Ставку крутим ТОЛЬКО
+    // для активных — выключенные/чёрный список/чужие (есть случайные заказы в accrual, но не в
+    // составе РК) не зондируем и не трогаем.
+    const sourceByNcn = new Map(cpoInputs.map((i) => [i.normalizedClusterName, i.currentSourceKind]));
 
-    // Заказные кластеры текущей корзины (max(РК,JAM) > 0) — только они в ставочном движке.
+    // Заказные АКТИВНЫЕ кластеры текущей корзины (max(РК,JAM) > 0 и активны на WB).
     const ordered = [...accrual.entries()].filter(
-      ([, acc]) => Math.max(acc.accruedOrdersRk, acc.accruedOrdersJam) > 0,
+      ([ncn, acc]) =>
+        Math.max(acc.accruedOrdersRk, acc.accruedOrdersJam) > 0 &&
+        sourceByNcn.get(ncn) === "active",
     );
     if (ordered.length === 0) return { processed: 0, applied: 0 };
 
