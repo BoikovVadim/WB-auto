@@ -117,3 +117,27 @@ export function computeDesiredBid(
 export function isUnprofitableAtMin(bidCap: number | null, minBid: number): boolean {
   return bidCap != null && bidCap < minBid;
 }
+
+/**
+ * Парсит минимальную ставку поиска (₽) из ответа WB /api/advert/v1/bids/min для товара.
+ * Формат: { bids: [{ nm_id, bids: [{ currency, type, value }] }] }, value — в КОПЕЙКАХ.
+ * Возвращает рубли (value/100) для type='search' нужного nm_id; null если не найдено.
+ */
+export function parseMinSearchBid(response: unknown, nmId: number): number | null {
+  if (typeof response !== "object" || response === null) return null;
+  const outer = (response as { bids?: unknown }).bids;
+  if (!Array.isArray(outer)) return null;
+  for (const entry of outer) {
+    if (typeof entry !== "object" || entry === null) continue;
+    if ((entry as { nm_id?: unknown }).nm_id !== nmId) continue;
+    const inner = (entry as { bids?: unknown }).bids;
+    if (!Array.isArray(inner)) return null;
+    for (const b of inner) {
+      if (typeof b !== "object" || b === null) continue;
+      if ((b as { type?: unknown }).type !== "search") continue;
+      const v = (b as { value?: unknown }).value;
+      if (typeof v === "number" && v > 0) return v / 100;
+    }
+  }
+  return null;
+}

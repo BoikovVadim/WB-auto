@@ -8,10 +8,12 @@ import {
   computeClusterCr,
   computeDesiredBid,
   isUnprofitableAtMin,
+  parseMinSearchBid,
   type BidEngineParams,
 } from "./product-cluster-bid";
 import { WbClustersRepository } from "./wb-clusters.repository";
 import { WbClustersService } from "./wb-clusters.service";
+import { WbPromotionApiClient } from "./wb-promotion-api.client";
 
 /** Конфигурация ставочного движка из env (все параметры — открытые, калибруются на обкатке). */
 interface BidEngineConfig extends BidEngineParams {
@@ -79,7 +81,40 @@ export class ProductClusterBidEngineService {
     private readonly accrualService: ProductClusterAccrualService,
     private readonly positionService: ProductPositionService,
     private readonly wbClustersService: WbClustersService,
+    private readonly promotionClient: WbPromotionApiClient,
   ) {}
+
+  /**
+   * Минимальная ставка WB кампании-товара (₽). Если в БД ещё нет (не синкалась) — лениво
+   * тянем из WB /api/advert/v1/bids/min, сохраняем в min_search_bid и используем. Это и есть
+   * «реальная минимальная ставка товара», от которой движок отталкивается (шаг и нижняя граница).
+   */
+  private async ensureMinBid(
+    advertId: number,
+    nmId: number,
+    bounds: { minSearchBid: number | null; paymentType: string | null },
+  ): Promise<number | null> {
+    if (bounds.minSearchBid != null) return bounds.minSearchBid;
+    if (!bounds.paymentType) return null;
+    try {
+      const resp = await this.promotionClient.getMinimumProductBids({
+        advert_id: advertId,
+        nm_ids: [nmId],
+        payment_type: bounds.paymentType,
+        placement_types: ["search"],
+      });
+      const min = parseMinSearchBid(resp, nmId);
+      if (min != null) {
+        await this.repository.upsertCampaignProductMinSearchBids([
+          { advertId, nmId, minSearchBid: min },
+        ]);
+      }
+      return min;
+    } catch (err) {
+      this.logger.warn(`min-bid sync ${advertId}/${nmId}: ${(err as Error).message}`);
+      return null;
+    }
+  }
 
   /**
    * Предложения движка по управляемым кластерам кампании (для модалки наблюдения): замеренная
@@ -179,9 +214,10 @@ export class ProductClusterBidEngineService {
       this.repository.getCampaignBidBounds(advertId, nmId),
     ]);
     const maxCpo = productCpo.maxCpo;
-    // Нижняя граница — РЕАЛЬНЫЙ минимум WB кампании (env-дефолт только если WB его не отдал).
-    // Базовая ставка кампании — то, что действует у кластера без своей ставки (стартовая точка).
-    const minBid = bounds.minSearchBid ?? cfg.minBid;
+    // Нижняя граница — РЕАЛЬНЫЙ минимум WB кампании (лениво синкаем, если в БД ещё нет;
+    // env-дефолт только если WB совсем не отдал). Базовая ставка кампании — то, что действует
+    // у кластера без своей ставки (стартовая точка).
+    const minBid = (await this.ensureMinBid(advertId, nmId, bounds)) ?? cfg.minBid;
     const baseBid = bounds.searchBid ?? minBid;
     const params: BidEngineParams = {
       minBid,

@@ -5,6 +5,7 @@ import {
   computeClusterCr,
   computeDesiredBid,
   isUnprofitableAtMin,
+  parseMinSearchBid,
   type BidEngineParams,
   CR_VIEWS_FLOOR,
 } from "./product-cluster-bid";
@@ -117,6 +118,29 @@ describe("computeDesiredBid (фиксированный шаг, без удер�
   it("bidCap ниже минимума → потолок = minBid", () => {
     const r = computeDesiredBid({ position: 8, currentBid: 300, bidCap: 50 }, PARAMS);
     expect(r.bid).toBe(PARAMS.minBid);
+  });
+});
+
+describe("parseMinSearchBid (ответ WB /bids/min)", () => {
+  const resp = { bids: [{ bids: [{ currency: "RUB", type: "search", value: 37000 }], nm_id: 198676662 }] };
+
+  it("берёт search-минимум нужного nm_id в рублях (копейки/100)", () => {
+    expect(parseMinSearchBid(resp, 198676662)).toBe(370);
+  });
+
+  it("другой nm_id → null", () => {
+    expect(parseMinSearchBid(resp, 999)).toBeNull();
+  });
+
+  it("мусорный ответ → null", () => {
+    expect(parseMinSearchBid(null, 1)).toBeNull();
+    expect(parseMinSearchBid({}, 1)).toBeNull();
+    expect(parseMinSearchBid({ bids: "x" }, 1)).toBeNull();
+  });
+
+  it("нет search-типа → null", () => {
+    const r = { bids: [{ bids: [{ type: "recommendations", value: 5000 }], nm_id: 1 }] };
+    expect(parseMinSearchBid(r, 1)).toBeNull();
   });
 });
 

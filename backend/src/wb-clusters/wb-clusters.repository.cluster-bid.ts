@@ -15,18 +15,24 @@ export abstract class WbClustersRepositoryClusterBid extends WbClustersRepositor
   async getCampaignBidBounds(
     advertId: number,
     nmId: number,
-  ): Promise<{ searchBid: number | null; minSearchBid: number | null }> {
+  ): Promise<{ searchBid: number | null; minSearchBid: number | null; paymentType: string | null }> {
     await this.ensureSchemaOrThrow();
-    const r = await this.getPool().query<{ search_bid: string | null; min_search_bid: string | null }>(
-      `SELECT search_bid::text, min_search_bid::text
-       FROM ${this.tableName("wb_campaign_products")}
-       WHERE advert_id = $1 AND nm_id = $2`,
+    const r = await this.getPool().query<{
+      search_bid: string | null;
+      min_search_bid: string | null;
+      payment_type: string | null;
+    }>(
+      `SELECT cp.search_bid::text, cp.min_search_bid::text, c.payment_type
+       FROM ${this.tableName("wb_campaign_products")} cp
+       LEFT JOIN ${this.tableName("wb_campaigns")} c ON c.advert_id = cp.advert_id
+       WHERE cp.advert_id = $1 AND cp.nm_id = $2`,
       [advertId, nmId],
     );
     const row = r.rows[0];
     return {
       searchBid: row?.search_bid != null ? Number(row.search_bid) : null,
       minSearchBid: row?.min_search_bid != null ? Number(row.min_search_bid) : null,
+      paymentType: row?.payment_type ?? null,
     };
   }
 
