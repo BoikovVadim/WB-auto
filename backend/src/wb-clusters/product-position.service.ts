@@ -57,11 +57,16 @@ export class ProductPositionService {
   async probeCluster(
     nmId: number,
     clusterName: string,
+    depth?: number,
   ): Promise<ClusterPositionLatest> {
     const probeQuery = clusterName.trim();
     const normalizedClusterName = probeQuery.toLowerCase();
 
-    const result = await this.probe.probeQueryPosition(probeQuery, nmId);
+    const result = await this.probe.probeQueryPosition(
+      probeQuery,
+      nmId,
+      depth != null ? { depth } : {},
+    );
 
     const snapshot: ClusterPositionLatest = {
       normalizedClusterName,

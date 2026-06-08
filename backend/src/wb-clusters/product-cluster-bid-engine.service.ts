@@ -266,9 +266,17 @@ export class ProductClusterBidEngineService {
         continue;
       }
 
-      // Зонд позиции С РЕКЛАМОЙ (сериализован в probe-клиенте; 429/сбой → retry внутри).
-      const snap = await this.positionService.probeCluster(nmId, clusterName);
-      const position = snap.status === "found" ? snap.organicPosition : null;
+      // Зонд позиции С РЕКЛАМОЙ по топ-100 (сериализован в probe-клиенте; 429/сбой → retry внутри).
+      const snap = await this.positionService.probeCluster(nmId, clusterName, 100);
+      // found → реальная позиция; not_found → товара нет в топ-100 → место >100 (глубоко выпал,
+      // разгоняем ставку); blocked/throttled/error → замер не удался → null (frozen, повтор
+      // на следующем круге обхода — анти-бот к тому времени отпустит / IP сменится).
+      const position =
+        snap.status === "found"
+          ? snap.organicPosition
+          : snap.status === "not_found"
+            ? (snap.scannedCount ?? 100) + 1
+            : null;
       const desired = computeDesiredBid({ position, currentBid, bidCap }, params);
       // Флаг «был в топ-4» — наблюдательный (на логику ставки не влияет): правило простое —
       // P>4 поднимаем %, P≤4 спускаем по 10₽. Храним факт достижения топа для аналитики.

@@ -19,7 +19,7 @@ const REASON_LABEL: Record<string, { text: string; cls: string }> = {
   down: { text: "понижаем ↓", cls: "wb-review-row__within" },
   at_cap: { text: "на потолке", cls: "wb-review-row__over" },
   at_min: { text: "на минимуме", cls: "wb-review-row__within" },
-  frozen: { text: "заморожено (нет позиции)", cls: "" },
+  frozen: { text: "замер не удался (повтор)", cls: "" },
   unprofitable: { text: "убыточно (CR низкая)", cls: "wb-review-row__over" },
 };
 
@@ -28,7 +28,8 @@ function bid(v: number | null): string {
 }
 
 function pos(v: number | null): string {
-  return v !== null ? `#${v}` : "—";
+  if (v === null) return "—";
+  return v > 100 ? ">100" : `#${v}`;
 }
 
 /**
