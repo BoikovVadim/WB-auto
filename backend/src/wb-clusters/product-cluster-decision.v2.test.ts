@@ -87,19 +87,19 @@ describe("decideForClusterV2", () => {
   });
 
   describe("фаза LEARNING (нет заказов)", () => {
-    it("держит в learning, пока накопленный расход < 2× Макс СРО", () => {
+    it("держит в learning, пока накопленный расход < Макс СРО", () => {
       const d = decide(
-        makeInput({ accruedSpend: 2 * MAX_CPO - 1, accruedOrdersRk: 0, accruedOrdersJam: 0 }),
+        makeInput({ accruedSpend: MAX_CPO - 1, accruedOrdersRk: 0, accruedOrdersJam: 0 }),
         makeRoles(),
       );
       expect(d.state).toBe("learning");
       expect(d.decision).toBe("noop"); // желаем active, и так active
-      expect(d.effectiveCpo).toBe(2 * MAX_CPO - 1); // нет заказов → показываем расход
+      expect(d.effectiveCpo).toBe(MAX_CPO - 1); // нет заказов → показываем расход
     });
 
-    it("исключает (надёжно плохой) при расходе ≥ 2× Макс СРО без единого заказа", () => {
+    it("исключает (надёжно плохой) при расходе ≥ Макс СРО без единого заказа", () => {
       const d = decide(
-        makeInput({ accruedSpend: 2 * MAX_CPO, accruedOrdersRk: 0, accruedOrdersJam: 0 }),
+        makeInput({ accruedSpend: MAX_CPO, accruedOrdersRk: 0, accruedOrdersJam: 0 }),
         makeRoles(),
       );
       expect(d.state).toBe("excluded_high");
