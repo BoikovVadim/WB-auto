@@ -92,6 +92,17 @@ export function getClusterAutomationCreateStatements({
       ALTER TABLE ${tableName("wb_cluster_automation_state")}
         ADD COLUMN IF NOT EXISTS suggested_review_action TEXT NULL
     `,
+    // last_cr / last_bid_cap — этап 2 ставочного движка (наблюдение в preview): CR показ→заказа
+    // и потолок ставки CPM (Макс СРО × 1000 × CR) по накопителям текущей ценовой корзины.
+    // Сам движок ставок (применение к WB) — этап 3. См. product-cluster-bid.ts.
+    `
+      ALTER TABLE ${tableName("wb_cluster_automation_state")}
+        ADD COLUMN IF NOT EXISTS last_cr NUMERIC(10,6) NULL
+    `,
+    `
+      ALTER TABLE ${tableName("wb_cluster_automation_state")}
+        ADD COLUMN IF NOT EXISTS last_bid_cap NUMERIC(12,2) NULL
+    `,
     // baselined_at — момент, когда зафиксирован «исходный» набор кластеров кампании.
     // Кластер без строки state, появившийся ПОСЛЕ baseline → новый → на проверку (pending).
     `

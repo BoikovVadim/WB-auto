@@ -42,6 +42,10 @@ export interface ClusterAutomationStateRow {
   reviewStatus: ClusterReviewStatus;
   /** Придержан регулятором дневного ДРР (excluded_drr); правило v2 уважает этот флаг. */
   drrHeld: boolean;
+  /** Этап 2: CR показ→заказа (доля) по накопителям текущей корзины; null если не считалось. */
+  lastCr: number | null;
+  /** Этап 2: потолок ставки CPM (Макс СРО × 1000 × CR); null если не считалось. */
+  lastBidCap: number | null;
 }
 
 /**
@@ -332,8 +336,10 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       last_decision: string | null;
       review_status: ClusterReviewStatus;
       drr_held: boolean;
+      last_cr: string | null;
+      last_bid_cap: string | null;
     }>(
-      `SELECT normalized_cluster_name, state, manual_protected, last_cpo::text, last_decision, review_status, drr_held
+      `SELECT normalized_cluster_name, state, manual_protected, last_cpo::text, last_decision, review_status, drr_held, last_cr::text, last_bid_cap::text
        FROM ${this.tableName("wb_cluster_automation_state")}
        WHERE advert_id = $1 AND nm_id = $2`,
       [advertId, nmId],
@@ -346,6 +352,8 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       lastDecision: r.last_decision,
       reviewStatus: r.review_status,
       drrHeld: r.drr_held,
+      lastCr: r.last_cr != null ? Number(r.last_cr) : null,
+      lastBidCap: r.last_bid_cap != null ? Number(r.last_bid_cap) : null,
     }));
   }
 
@@ -368,8 +376,10 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       last_decision: string | null;
       review_status: ClusterReviewStatus;
       drr_held: boolean;
+      last_cr: string | null;
+      last_bid_cap: string | null;
     }>(
-      `SELECT s.normalized_cluster_name, s.state, s.manual_protected, s.last_cpo::text, s.last_decision, s.review_status, s.drr_held
+      `SELECT s.normalized_cluster_name, s.state, s.manual_protected, s.last_cpo::text, s.last_decision, s.review_status, s.drr_held, s.last_cr::text, s.last_bid_cap::text
        FROM ${this.tableName("wb_cluster_automation_state")} s
        WHERE s.advert_id = $1 AND s.nm_id = $2
          AND EXISTS (
@@ -396,6 +406,8 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       lastDecision: r.last_decision,
       reviewStatus: r.review_status,
       drrHeld: r.drr_held,
+      lastCr: r.last_cr != null ? Number(r.last_cr) : null,
+      lastBidCap: r.last_bid_cap != null ? Number(r.last_bid_cap) : null,
     }));
   }
 
@@ -418,15 +430,18 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       reviewStatus: ClusterReviewStatus;
       /** ADVISORY-рекомендация мусор-фильтра для pending; NULL для не-pending. */
       suggestedReviewAction: "approve" | "blacklist" | null;
+      /** Этап 2: CR показ→заказа (доля) и потолок ставки CPM; NULL если не считалось. */
+      lastCr: number | null;
+      lastBidCap: number | null;
     }[],
   ): Promise<void> {
     if (rows.length === 0) return;
     await this.ensureSchemaOrThrow();
-    const cols = 10;
+    const cols = 12;
     const placeholders = rows
       .map(
         (_, i) =>
-          `($${i * cols + 1}, $${i * cols + 2}, $${i * cols + 3}, $${i * cols + 4}, $${i * cols + 5}, $${i * cols + 6}, $${i * cols + 7}, $${i * cols + 8}, $${i * cols + 9}, $${i * cols + 10}, NOW())`,
+          `($${i * cols + 1}, $${i * cols + 2}, $${i * cols + 3}, $${i * cols + 4}, $${i * cols + 5}, $${i * cols + 6}, $${i * cols + 7}, $${i * cols + 8}, $${i * cols + 9}, $${i * cols + 10}, $${i * cols + 11}, $${i * cols + 12}, NOW())`,
       )
       .join(", ");
     const values = rows.flatMap((r) => [
@@ -440,10 +455,12 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       r.lastDecision,
       r.reviewStatus,
       r.suggestedReviewAction,
+      r.lastCr,
+      r.lastBidCap,
     ]);
     await this.getPool().query(
       `INSERT INTO ${this.tableName("wb_cluster_automation_state")}
-         (advert_id, nm_id, normalized_cluster_name, state, manual_protected, last_cpo, last_spend, last_decision, review_status, suggested_review_action, decided_at)
+         (advert_id, nm_id, normalized_cluster_name, state, manual_protected, last_cpo, last_spend, last_decision, review_status, suggested_review_action, last_cr, last_bid_cap, decided_at)
        VALUES ${placeholders}
        ON CONFLICT (advert_id, nm_id, normalized_cluster_name) DO UPDATE SET
          state = EXCLUDED.state,
@@ -453,6 +470,8 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
          last_decision = EXCLUDED.last_decision,
          review_status = EXCLUDED.review_status,
          suggested_review_action = EXCLUDED.suggested_review_action,
+         last_cr = EXCLUDED.last_cr,
+         last_bid_cap = EXCLUDED.last_bid_cap,
          decided_at = NOW()`,
       values,
     );

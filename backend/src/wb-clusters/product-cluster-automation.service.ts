@@ -3,6 +3,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { ProductCpoService } from "./product-cpo.service";
 import { ProductClusterAccrualService } from "./product-cluster-accrual.service";
 import { ProductClusterRelevanceService } from "./product-cluster-relevance.service";
+import { computeBidCap, computeClusterCr } from "./product-cluster-bid";
 import { decideForCluster, type ClusterDecision } from "./product-cluster-decision";
 import { decideForClusterV2 } from "./product-cluster-decision.v2";
 import type {
@@ -379,21 +380,30 @@ export class ProductClusterAutomationService {
     // запросом — серийный цикл по ~всем кластерам давал десятки round-trip и тормозил
     // первый показ цифр в панели.
     await this.repository.upsertClusterAutomationStates(
-      decisions.map((d) => ({
-        advertId,
-        nmId,
-        normalizedClusterName: d.normalizedClusterName,
-        state: d.state,
-        manualProtected: d.manualProtected,
-        lastCpo: d.effectiveCpo,
-        lastSpend: d.spend,
-        lastDecision: d.decision,
-        reviewStatus: d.reviewStatus,
-        suggestedReviewAction:
-          d.reviewStatus === "pending"
-            ? suggestions.get(d.normalizedClusterName)?.suggestion ?? null
-            : null,
-      })),
+      decisions.map((d) => {
+        // Этап 2: CR показ→заказа и потолок ставки CPM по накопителям текущей корзины (только
+        // в v2, где есть accrual). Пока НАБЛЮДЕНИЕ — движок ставок (этап 3) их ещё не применяет.
+        const acc = accrualByCluster.get(d.normalizedClusterName);
+        const cr = acc ? computeClusterCr(acc) : null;
+        const bidCap = acc && cr !== null ? computeBidCap(maxCpo, cr) : null;
+        return {
+          advertId,
+          nmId,
+          normalizedClusterName: d.normalizedClusterName,
+          state: d.state,
+          manualProtected: d.manualProtected,
+          lastCpo: d.effectiveCpo,
+          lastSpend: d.spend,
+          lastDecision: d.decision,
+          reviewStatus: d.reviewStatus,
+          suggestedReviewAction:
+            d.reviewStatus === "pending"
+              ? suggestions.get(d.normalizedClusterName)?.suggestion ?? null
+              : null,
+          lastCr: cr,
+          lastBidCap: bidCap,
+        };
+      }),
     );
 
     // Авто-в-чёрный: pending-кластер содержит слово, выученное менеджером как чёрное по этому
