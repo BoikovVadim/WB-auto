@@ -19,6 +19,12 @@ export function buildClusterTableTotals(
   const orders = sumNullableNumbers(rows.map((row) => getWorkspaceOrderedItems(row)));
   const spend = sumNullableNumbers(rows.map((row) => row.spend));
 
+  // Накопленные итоги: расход/заказы суммируются, СРО = Σрасход/Σзаказы, CR = Σзаказы/Σпоказы
+  // (накопл. показы не выводятся колонкой, но нужны как знаменатель итогового CR).
+  const accruedSpend = sumNullableNumbers(rows.map((row) => row.accruedSpend ?? null));
+  const accruedOrders = sumNullableNumbers(rows.map((row) => row.accruedOrders ?? null));
+  const accruedViews = sumNullableNumbers(rows.map((row) => row.accruedViews ?? null));
+
   return {
     count: rows.length,
     jamQueryCount: sumNullableNumbers(rows.map((row) => row.jamQueryCount)),
@@ -44,6 +50,10 @@ export function buildClusterTableTotals(
     spend,
     currency:
       rows.find((row) => typeof row.currency === "string" && row.currency.length > 0)?.currency ?? null,
+    accruedSpend,
+    accruedOrders,
+    accruedCpo: getWorkspaceMoneyPerAction(accruedSpend, accruedOrders),
+    accruedCr: getWorkspaceRatio(accruedOrders, accruedViews),
   };
 }
 

@@ -378,6 +378,10 @@ function buildContractClusterTableFixture(): ContractClusterTableResponse {
       viewToOrder: 2,
       spend: 120,
       currency: "RUB",
+      accruedSpend: 120,
+      accruedOrders: 2,
+      accruedCpo: 60,
+      accruedCr: 2,
     },
     totalsScope: "filtered_population",
     filterCounts: {

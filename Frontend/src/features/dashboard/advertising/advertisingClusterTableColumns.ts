@@ -38,6 +38,11 @@ export const advertisingClusterTableColumns: AdvertisingColumnDefinition[] = [
   { key: "jamOrders", label: ui.jamOrders, filterKind: "number" },
   { key: "jamCtc", label: ui.jamCtc, filterKind: "number" },
   { key: "jamCto", label: ui.jamCto, filterKind: "number" },
+  // Накопленные данные текущей ценовой корзины (входы движка v2) — в конце, display-only.
+  { key: "accruedSpend", label: ui.accruedSpend, filterKind: "none" },
+  { key: "accruedOrders", label: ui.accruedOrders, filterKind: "none" },
+  { key: "accruedCpo", label: ui.accruedCpo, filterKind: "none" },
+  { key: "accruedCr", label: ui.accruedCr, filterKind: "none" },
 ];
 
 export const advertisingColumnOrderStorageKey = "wb-advertising-column-order-v2";

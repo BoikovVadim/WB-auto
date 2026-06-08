@@ -53,6 +53,10 @@ export function buildAdvertisingClusterWidths(
     cpo: 84,
     viewToOrder: 92,
     spend: 90,
+    accruedSpend: 104,
+    accruedOrders: 104,
+    accruedCpo: 104,
+    accruedCr: 96,
   };
 
   for (const column of columns) {
@@ -158,6 +162,18 @@ function formatAdvertisingColumnValue(
   }
   if (key === "spend") {
     return formatMoneyValue(row.spend, row.currency);
+  }
+  if (key === "accruedSpend") {
+    return formatMoneyValue(row.accruedSpend ?? null, row.currency);
+  }
+  if (key === "accruedOrders") {
+    return formatNullableNumber(row.accruedOrders ?? null);
+  }
+  if (key === "accruedCpo") {
+    return formatMoneyValue(row.accruedCpo ?? null, row.currency);
+  }
+  if (key === "accruedCr") {
+    return formatNullablePercent(row.accruedCr ?? null);
   }
   if (key === "clusterName") {
     return row.clusterName;

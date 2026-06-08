@@ -32,6 +32,10 @@ export function getEmptyAdvertisingClusterTotals(currency: string | null) {
     viewToOrder: null,
     spend: null,
     currency,
+    accruedSpend: null,
+    accruedOrders: null,
+    accruedCpo: null,
+    accruedCr: null,
   };
 }
 
@@ -93,6 +97,10 @@ export function computeClusterTotalsFromRows(
   const jamOrders = sumNullable(rows.map((r) => r.jamOrders));
   // Знаменатель CPO = Σ max(заказы РК, джем-заказы) по строкам (та же формула, что per-row).
   const cpoOrders = sumNullable(rows.map((r) => getAdvertisingCpoOrderedItems(r)));
+  // Накопленные итоги: расход/заказы суммируются, СРО = Σрасход/Σзаказы, CR = Σзаказы/Σпоказы.
+  const accruedSpend = sumNullable(rows.map((r) => r.accruedSpend ?? null));
+  const accruedOrders = sumNullable(rows.map((r) => r.accruedOrders ?? null));
+  const accruedViews = sumNullable(rows.map((r) => r.accruedViews ?? null));
 
   return {
     count: rows.length,
@@ -128,5 +136,9 @@ export function computeClusterTotalsFromRows(
     viewToOrder: ratio(orders, views),
     spend,
     currency,
+    accruedSpend,
+    accruedOrders,
+    accruedCpo: getAdvertisingCpoOrSpend(accruedSpend, accruedOrders),
+    accruedCr: ratio(accruedOrders, accruedViews),
   };
 }

@@ -200,7 +200,7 @@ export async function getProductAdvertisingWorkspaceClusterTable(
       const querySearchIndex = await getOrBuildQuerySearchIndex(self, nmId, advertId);
 
       return {
-        ...self.productAdvertisingWorkspaceReadService.buildClusterTableResponse({
+        ...(await self.productAdvertisingWorkspaceReadService.buildClusterTableResponse({
           nmId,
           snapshot: {
             ...sqlRows.payload,
@@ -215,7 +215,7 @@ export async function getProductAdvertisingWorkspaceClusterTable(
           sortDirection: responseSortDirection,
           page: input?.page ?? 1,
           pageSize: input?.pageSize ?? 200,
-        }),
+        })),
         readiness: {
           scope: "cluster_table",
           status: "ready",
@@ -232,7 +232,7 @@ export async function getProductAdvertisingWorkspaceClusterTable(
     // Exact explicit range: if Postgres has no rows yet, return an exact empty shell
     // for this period instead of reviving another period or rebuilding from sheet fallback.
     return {
-      ...self.productAdvertisingWorkspaceReadService.buildClusterTableResponse({
+      ...(await self.productAdvertisingWorkspaceReadService.buildClusterTableResponse({
         nmId,
         snapshot: {
           checkedAt: new Date().toISOString(),
@@ -249,7 +249,7 @@ export async function getProductAdvertisingWorkspaceClusterTable(
         sortDirection: responseSortDirection,
         page: input?.page ?? 1,
         pageSize: input?.pageSize ?? 200,
-      }),
+      })),
       readiness: {
         scope: "cluster_table",
         status: "materialization_pending",
@@ -280,7 +280,7 @@ export async function getProductAdvertisingWorkspaceClusterTable(
   if (storedRows) {
     const querySearchIndex = await getOrBuildQuerySearchIndex(self, nmId, advertId);
     return {
-      ...self.productAdvertisingWorkspaceReadService.buildClusterTableResponse({
+      ...(await self.productAdvertisingWorkspaceReadService.buildClusterTableResponse({
         nmId,
         snapshot: {
           ...storedRows.payload,
@@ -295,7 +295,7 @@ export async function getProductAdvertisingWorkspaceClusterTable(
         sortDirection: responseSortDirection,
         page: input?.page ?? 1,
         pageSize: input?.pageSize ?? 200,
-      }),
+      })),
       readiness: {
         scope: "cluster_table",
         status: "ready",

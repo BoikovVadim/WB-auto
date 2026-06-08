@@ -50,6 +50,10 @@ export function renderAdvertisingTotalsCell(
     viewToOrder: number | null;
     spend: number | null;
     currency: string | null;
+    accruedSpend?: number | null;
+    accruedOrders?: number | null;
+    accruedCpo?: number | null;
+    accruedCr?: number | null;
   },
 ) {
   switch (columnKey) {
@@ -103,6 +107,14 @@ export function renderAdvertisingTotalsCell(
       return formatNullablePercent(visibleClusterTotals.viewToOrder);
     case "spend":
       return formatMoneyValue(visibleClusterTotals.spend, visibleClusterTotals.currency);
+    case "accruedSpend":
+      return formatMoneyValue(visibleClusterTotals.accruedSpend ?? null, visibleClusterTotals.currency);
+    case "accruedOrders":
+      return formatNullableNumber(visibleClusterTotals.accruedOrders ?? null);
+    case "accruedCpo":
+      return formatMoneyValue(visibleClusterTotals.accruedCpo ?? null, visibleClusterTotals.currency);
+    case "accruedCr":
+      return formatNullablePercent(visibleClusterTotals.accruedCr ?? null);
     case "productPosition":
       return null;
   }
@@ -221,6 +233,14 @@ export function renderAdvertisingGroupCell(input: {
       return formatPercentRatio(getAdvertisingOrderedItems(row), row.views);
     case "spend":
       return formatMoneyValue(row.spend, row.currency);
+    case "accruedSpend":
+      return formatMoneyValue(row.accruedSpend ?? null, row.currency);
+    case "accruedOrders":
+      return formatNullableNumber(row.accruedOrders ?? null);
+    case "accruedCpo":
+      return formatMoneyValue(row.accruedCpo ?? null, row.currency);
+    case "accruedCr":
+      return formatNullablePercent(row.accruedCr ?? null);
     case "productPosition":
       return <ClusterPositionCell clusterName={row.clusterName} />;
   }
@@ -307,6 +327,10 @@ export function renderAdvertisingQueryCell(
     case "cpm":
     case "cpo":
     case "spend":
+    case "accruedSpend":
+    case "accruedOrders":
+    case "accruedCpo":
+    case "accruedCr":
     case "productPosition":
       return "-";
     case "viewToOrder":

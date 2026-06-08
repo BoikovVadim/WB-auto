@@ -141,7 +141,16 @@ export function useAdvertisingClusterTableControls(input: {
   ]);
 
   const handleSortChange = useCallback((key: AdvertisingClusterSortKey) => {
-    if (key === "productPosition") return; // несортируемая колонка (значение вне строки)
+    // Несортируемые колонки: позиция (значение вне строки) и накопленные (display-only).
+    if (
+      key === "productPosition" ||
+      key === "accruedSpend" ||
+      key === "accruedOrders" ||
+      key === "accruedCpo" ||
+      key === "accruedCr"
+    ) {
+      return;
+    }
     setSortState((currentValue) => {
       const direction: AdvertisingClusterSortDirection =
         currentValue.key === key

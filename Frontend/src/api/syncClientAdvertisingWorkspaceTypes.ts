@@ -210,6 +210,14 @@ export interface ProductAdvertisingWorkspaceClusterRow {
   actionRetryAt: string | null;
   actionLastError: string | null;
   updatedAt: string | null;
+  // Накопленные данные текущей ценовой корзины (входы движка v2). Опциональны: бэк проставляет
+  // их в read-path merge; fallback-путь может не отдать. accruedViews не выводится колонкой,
+  // нужен только как знаменатель накопл. CR в клиентском расчёте итоговой строки.
+  accruedSpend?: number | null;
+  accruedOrders?: number | null;
+  accruedViews?: number | null;
+  accruedCpo?: number | null;
+  accruedCr?: number | null;
 }
 
 export interface ProductAdvertisingWorkspaceClusterTableTotals {
@@ -236,6 +244,10 @@ export interface ProductAdvertisingWorkspaceClusterTableTotals {
   viewToOrder: number | null;
   spend: number | null;
   currency: string | null;
+  accruedSpend?: number | null;
+  accruedOrders?: number | null;
+  accruedCpo?: number | null;
+  accruedCr?: number | null;
 }
 
 export interface ProductAdvertisingWorkspaceClusterTableResponse {

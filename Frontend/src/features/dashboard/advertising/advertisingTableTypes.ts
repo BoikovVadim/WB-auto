@@ -27,12 +27,17 @@ export type AdvertisingClusterSortKey =
   | "cpo"
   | "viewToOrder"
   | "spend"
-  | "productPosition";
+  | "productPosition"
+  // Накопленные данные текущей ценовой корзины (входы движка v2) — display-only колонки.
+  | "accruedSpend"
+  | "accruedOrders"
+  | "accruedCpo"
+  | "accruedCr";
 
-/** Колонки, по которым реально можно сортировать (без вычисляемых вне строки, как позиция). */
+/** Колонки, по которым реально можно сортировать (без вычисляемых вне строки и накопленных). */
 export type AdvertisingClusterSortableKey = Exclude<
   AdvertisingClusterSortKey,
-  "productPosition"
+  "productPosition" | "accruedSpend" | "accruedOrders" | "accruedCpo" | "accruedCr"
 >;
 
 export type AdvertisingClusterSortDirection = "asc" | "desc";

@@ -12,10 +12,18 @@ import {
 import { buildProductAdvertisingWorkspaceQueriesResponse } from "./product-workspace-queries.builder";
 import { buildProductAdvertisingWorkspaceTableResponse } from "./product-workspace-table.builder";
 import { buildProductAdvertisingWorkspaceResponse } from "./product-workspace.builder";
+import {
+  type ClusterAccrualForRow,
+  loadCurrentBucketAccrualForRows,
+  mergeAccrualIntoClusterRows,
+} from "./wb-clusters-read-flow.accrual-merge";
+import { WbClustersRepository } from "./wb-clusters.repository";
 import type { ProductAdvertisingWorkspaceClusterNumericFilters } from "./wb-clusters.types";
 
 @Injectable()
 export class ProductAdvertisingWorkspaceReadService {
+  constructor(private readonly repository: WbClustersRepository) {}
+
   buildWorkspaceResponse(
     input: Parameters<typeof buildProductAdvertisingWorkspaceResponse>[0],
   ) {
@@ -35,7 +43,7 @@ export class ProductAdvertisingWorkspaceReadService {
     });
   }
 
-  buildClusterTableResponse(input: {
+  async buildClusterTableResponse(input: {
     nmId: number;
     snapshot: ProductAdvertisingWorkspaceCampaignRowsSnapshot;
     advertId: number;
@@ -52,9 +60,18 @@ export class ProductAdvertisingWorkspaceReadService {
       input.snapshot,
       input.snapshot.checkedAt,
     );
+    // Накопленные данные текущей ценовой корзины (входы движка v2) — для понимания решений.
+    // Best-effort: если accrual недоступен, строки получают null и таблица всё равно рисуется.
+    let accrual = new Map<string, ClusterAccrualForRow>();
+    try {
+      accrual = await loadCurrentBucketAccrualForRows(this.repository, input.advertId, input.nmId);
+    } catch {
+      accrual = new Map();
+    }
+    const rowsWithAccrual = mergeAccrualIntoClusterRows(normalizedSnapshot.rows, accrual);
     return buildProductAdvertisingWorkspaceTableResponse({
       nmId: input.nmId,
-      snapshot: normalizedSnapshot,
+      snapshot: { ...normalizedSnapshot, rows: rowsWithAccrual },
       advertId: input.advertId,
       status: input.status ?? "all",
       search: input.search ?? "",

@@ -128,7 +128,13 @@ export function isProductAdvertisingWorkspaceClusterRow(
       isProductAdvertisingActionSyncStatus(value.actionSyncStatus)) &&
     isNullableIsoDateString(value.actionRetryAt) &&
     isNullableNonEmptyString(value.actionLastError) &&
-    isNullableIsoDateString(value.updatedAt)
+    isNullableIsoDateString(value.updatedAt) &&
+    // Накопленные поля опциональны (бэк проставляет в read-path; fallback может не отдать).
+    (value.accruedSpend === undefined || isNullableNumber(value.accruedSpend)) &&
+    (value.accruedOrders === undefined || isNullableNumber(value.accruedOrders)) &&
+    (value.accruedViews === undefined || isNullableNumber(value.accruedViews)) &&
+    (value.accruedCpo === undefined || isNullableNumber(value.accruedCpo)) &&
+    (value.accruedCr === undefined || isNullableNumber(value.accruedCr))
   );
 }
 
