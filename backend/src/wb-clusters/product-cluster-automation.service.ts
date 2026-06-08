@@ -388,6 +388,7 @@ export class ProductClusterAutomationService {
         const cr = inp
           ? computeClusterCr({
               accruedOrdersRk: inp.shks ?? inp.ordersRk,
+              accruedOrdersJam: inp.ordersJam,
               accruedViews: inp.views,
             })
           : null;

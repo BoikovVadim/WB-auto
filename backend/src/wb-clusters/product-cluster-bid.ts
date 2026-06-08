@@ -14,19 +14,20 @@
 export const CR_VIEWS_FLOOR = 100;
 
 /**
- * CR (рекламный показ→заказ) = РЕКЛАМНЫЕ заказы / рекламные показы, пол 100 показов от шума.
- * ВАЖНО: числитель — ТОЛЬКО рекламные заказы (РК), БЕЗ JAM-органики. Потолок ставки — про
- * окупаемость рекламного показа, поэтому и конверсия рекламная; max(РК,JAM) раздувал бы CR
- * (органические заказы на рекламные показы). max(РК,JAM) остаётся в CPO для вкл/выкл, не здесь.
- * Возвращает долю (не проценты): 0.0123 = 1.23 %.
+ * CR (показ→заказ) = max(заказы РК, JAM) / max(показы, 100). Заказы — risk-on max(РК,JAM)
+ * (кластеры с JAM/halo-заказами тоже участвуют). Пол 100 показов гасит шум малых кластеров.
+ * Потолок выходит щедрым, но это безопасно: ставка ползёт по +10% и достигает топ-4 ЗАДОЛГО
+ * до потолка — потолок остаётся лишь предохранителем окупаемости. Возвращает долю: 0.0123 = 1.23%.
  */
 export function computeClusterCr(input: {
   accruedOrdersRk: number;
+  accruedOrdersJam: number;
   accruedViews: number;
 }): number {
-  if (input.accruedOrdersRk <= 0) return 0;
+  const orders = Math.max(input.accruedOrdersRk, input.accruedOrdersJam);
+  if (orders <= 0) return 0;
   const views = Math.max(input.accruedViews, CR_VIEWS_FLOOR);
-  return input.accruedOrdersRk / views;
+  return orders / views;
 }
 
 /**

@@ -12,22 +12,21 @@ import {
 
 const PARAMS: BidEngineParams = { minBid: 100, maxWbBid: 5000, coarsePct: 0.1, fineStep: 10 };
 
-describe("computeClusterCr (чистый рекламный CR, без JAM)", () => {
-  it("CR = рекламные заказы / показы при показах выше пола", () => {
-    expect(computeClusterCr({ accruedOrdersRk: 10, accruedViews: 1000 })).toBeCloseTo(0.01, 6);
+describe("computeClusterCr (max(РК,JAM), пол 100 показов)", () => {
+  it("CR = max(РК,JAM) / показы при показах выше пола", () => {
+    expect(computeClusterCr({ accruedOrdersRk: 10, accruedOrdersJam: 4, accruedViews: 1000 })).toBeCloseTo(0.01, 6);
   });
 
-  it("JAM не участвует — только рекламные заказы (не раздуваем органикой)", () => {
-    // даже если органики много, CR от рекламных заказов: 2/1000 = 0.2%
-    expect(computeClusterCr({ accruedOrdersRk: 2, accruedViews: 1000 })).toBeCloseTo(0.002, 6);
+  it("берёт JAM, если их больше (кластер с halo-заказами тоже считается)", () => {
+    expect(computeClusterCr({ accruedOrdersRk: 2, accruedOrdersJam: 9, accruedViews: 900 })).toBeCloseTo(0.01, 6);
   });
 
   it("пол 100 показов гасит шум малых кластеров", () => {
-    expect(computeClusterCr({ accruedOrdersRk: 2, accruedViews: 3 })).toBeCloseTo(2 / CR_VIEWS_FLOOR, 6);
+    expect(computeClusterCr({ accruedOrdersRk: 0, accruedOrdersJam: 2, accruedViews: 3 })).toBeCloseTo(2 / CR_VIEWS_FLOOR, 6);
   });
 
-  it("нет рекламных заказов → CR = 0", () => {
-    expect(computeClusterCr({ accruedOrdersRk: 0, accruedViews: 5000 })).toBe(0);
+  it("нет заказов вовсе → CR = 0", () => {
+    expect(computeClusterCr({ accruedOrdersRk: 0, accruedOrdersJam: 0, accruedViews: 5000 })).toBe(0);
   });
 });
 
