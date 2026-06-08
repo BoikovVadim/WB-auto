@@ -22,6 +22,13 @@ module.exports = {
         WB_CLUSTER_DECISION_V2: "1",
         WB_CLUSTER_DECISION_V2_LIVE: "1",
         WB_CLUSTER_DRR_REGULATOR: "1",
+        // Ставочный движок (этап 3) — ТОЧЕЧНЫЙ ТЕСТ на 1 товаре в DRY-RUN: зондирует кластеры
+        // товара 198676662 и считает желаемые ставки в БД (last_desired_bid), но на WB НЕ пишет
+        // (DRY_RUN=1). Когда ставки подтвердятся вменяемыми — убрать WB_CLUSTER_BID_DRY_RUN для
+        // боевого применения; масштаб — WB_CLUSTER_BID_NMIDS="all". См. product-cluster-bid-engine.
+        WB_CLUSTER_BID_ENGINE: "1",
+        WB_CLUSTER_BID_NMIDS: "198676662",
+        WB_CLUSTER_BID_DRY_RUN: "1",
       },
       instances: 1,
       exec_mode: "fork",
