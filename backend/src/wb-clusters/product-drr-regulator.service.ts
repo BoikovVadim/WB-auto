@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 
 import { ProductCpoService } from "./product-cpo.service";
 import { ProductDrrService } from "./product-drr.service";
+import { computeBidCap, computeClusterCr } from "./product-cluster-bid";
 import { priceBucket } from "./wb-clusters.accrual.bucket";
 import { WbClustersRepository } from "./wb-clusters.repository";
 
@@ -9,6 +10,12 @@ import { WbClustersRepository } from "./wb-clusters.repository";
 const DEAD_ZONE_PCT = 0.5;
 /** Неполный шаг — двигаем порог на долю расчётного избытка/дефицита (плавная сходимость). */
 const STEP_FRACTION = 0.65;
+
+/** Минимальная ставка (для рез по конверсии bid_cap < мин) — тот же параметр, что у bid-движка. */
+function minBidEnv(): number {
+  const v = Number(process.env.WB_CLUSTER_BID_MIN);
+  return Number.isFinite(v) && v > 0 ? v : 100;
+}
 
 interface RegClusterRow {
   advertId: number;
@@ -19,6 +26,8 @@ interface RegClusterRow {
   orderedAccrued: number;
   /** Вчерашний расход кластера (₽) — единица рублёвого набора под избыток/дефицит. */
   ydaySpend: number;
+  /** Потолок окупаемости (Макс СРО × 1000 × CR); null — нет данных. Для ранжирования заказных. */
+  bidCap: number | null;
 }
 
 /**
@@ -91,27 +100,34 @@ export class ProductDrrRegulatorService {
     if (Math.abs(di.drr - plan) < DEAD_ZONE_PCT) return 0;
 
     // Целевой расход: план×выручка; при нулевой/малой выручке fallback-кэп = 1 целевой CPO.
-    const cpo = (await this.productCpoService.getProductCpo(nmId)).cpo;
+    const { cpo, maxCpo } = await this.productCpoService.getProductCpo(nmId);
     const targetSpend =
       di.revenue != null && di.revenue > 0 ? (plan * di.revenue) / 100 : (cpo ?? 0);
     const excess = di.spend - targetSpend; // >0 перетрата, <0 недотрата
     const amount = Math.abs(excess) * STEP_FRACTION; // неполный шаг
     if (amount <= 0) return 0;
 
-    const clusters = await this.collectClusters(nmId, advertIds, date);
+    const minBid = minBidEnv();
+    const clusters = await this.collectClusters(nmId, advertIds, date, maxCpo);
+    const isOrdered = (c: RegClusterRow) => c.orderedAccrued > 0;
+    const isUnprofitable = (c: RegClusterRow) => c.bidCap != null && c.bidCap < minBid;
 
     const toSet: { advertId: number; normalizedClusterName: string; held: boolean }[] = [];
     if (excess > 0) {
-      // Перетрата → отключаем БЕСЗАКАЗНЫЕ (по убыванию вчерашнего расхода), пока не покроем избыток.
-      const cands = clusters
-        .filter(
-          (c) =>
-            !c.drrHeld &&
-            c.orderedAccrued === 0 &&
-            c.ydaySpend > 0 &&
-            (c.state === "active" || c.state === "learning"),
-        )
-        .sort((a, b) => b.ydaySpend - a.ydaySpend);
+      // ПЕРЕТРАТА — выключаем целиком снизу вверх по ценности, пока Σ срезанного ≈ избытку:
+      const active = clusters.filter(
+        (c) => !c.drrHeld && c.ydaySpend > 0 && (c.state === "active" || c.state === "learning"),
+      );
+      const cands = [
+        // 1) убыточные заказные (bid_cap < мин) — наименее ценные;
+        ...active.filter((c) => isOrdered(c) && isUnprofitable(c)).sort((a, b) => b.ydaySpend - a.ydaySpend),
+        // 2) бесзаказные по убыванию расхода (большой → мелкий);
+        ...active.filter((c) => !isOrdered(c)).sort((a, b) => b.ydaySpend - a.ydaySpend),
+        // 3) рентабельные заказные по ВОЗРАСТАНИЮ bid_cap (худшая конверсия первой).
+        ...active
+          .filter((c) => isOrdered(c) && !isUnprofitable(c))
+          .sort((a, b) => (a.bidCap ?? Infinity) - (b.bidCap ?? Infinity)),
+      ];
       let acc = 0;
       for (const c of cands) {
         if (acc >= amount) break;
@@ -119,12 +135,16 @@ export class ProductDrrRegulatorService {
         acc += c.ydaySpend;
       }
     } else {
-      // Недотрата → возвращаем придержанные (по возрастанию расхода — самые дешёвые первыми).
-      const held = clusters
-        .filter((c) => c.drrHeld)
-        .sort((a, b) => a.ydaySpend - b.ydaySpend);
+      // НЕДОТРАТА — включаем обратным порядком: рентабельные с бóльшим bid_cap → бесзаказные
+      // мелкие → крупные (мелкие первыми = шире разведка на тот же бюджет).
+      const held = clusters.filter((c) => c.drrHeld);
+      const order = [
+        ...held.filter((c) => isOrdered(c) && !isUnprofitable(c)).sort((a, b) => (b.bidCap ?? 0) - (a.bidCap ?? 0)),
+        ...held.filter((c) => !isOrdered(c)).sort((a, b) => a.ydaySpend - b.ydaySpend),
+        ...held.filter((c) => isOrdered(c) && isUnprofitable(c)).sort((a, b) => a.ydaySpend - b.ydaySpend),
+      ];
       let acc = 0;
-      for (const c of held) {
+      for (const c of order) {
         if (acc >= amount) break;
         toSet.push({ advertId: c.advertId, normalizedClusterName: c.normalizedClusterName, held: false });
         acc += c.ydaySpend;
@@ -145,11 +165,12 @@ export class ProductDrrRegulatorService {
     return toSet.length;
   }
 
-  /** Собирает кластеры всех кампаний товара: состояние, drr_held, накопл. заказы, вчерашний расход. */
+  /** Собирает кластеры всех кампаний товара: состояние, drr_held, накопл. заказы, расход, bid_cap. */
   private async collectClusters(
     nmId: number,
     advertIds: number[],
     date: string,
+    maxCpo: number | null,
   ): Promise<RegClusterRow[]> {
     const price = await this.repository.getProductEffectivePriceForDate(nmId, date);
     const bucket = priceBucket(price);
@@ -167,6 +188,7 @@ export class ProductDrrRegulatorService {
       for (const s of states) {
         const acc = accByNcn.get(s.normalizedClusterName);
         const ordered = acc ? Math.max(acc.accruedOrdersRk, acc.accruedOrdersJam) : 0;
+        const bidCap = acc ? computeBidCap(maxCpo, computeClusterCr(acc)) : null;
         rows.push({
           advertId,
           normalizedClusterName: s.normalizedClusterName,
@@ -174,6 +196,7 @@ export class ProductDrrRegulatorService {
           drrHeld: s.drrHeld,
           orderedAccrued: ordered,
           ydaySpend: spendByNcn.get(s.normalizedClusterName) ?? 0,
+          bidCap,
         });
       }
     }

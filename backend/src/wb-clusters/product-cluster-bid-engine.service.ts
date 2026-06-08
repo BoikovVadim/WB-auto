@@ -92,22 +92,36 @@ export class ProductClusterBidEngineService {
     }
     this.busy = true;
     const startedAt = Date.now();
-    let touched = 0;
+    let processed = 0;
+    let applied = 0;
     try {
       const enabled = await this.repository.listEnabledAutomations();
       const inScope = enabled.filter((a) => cfg.scopeAll || cfg.scopeNmIds.has(a.nmId));
       for (const a of inScope) {
         try {
-          touched += await this.regulateCampaign(a.advertId, a.nmId, cfg);
+          const r = await this.regulateCampaign(a.advertId, a.nmId, cfg);
+          processed += r.processed;
+          applied += r.applied;
         } catch (err) {
           this.logger.warn(`bid ${a.advertId}/${a.nmId}: ${(err as Error).message}`);
         }
       }
-      this.logger.log(
-        `круг завершён за ${Math.round((Date.now() - startedAt) / 1000)}с: ` +
-          `товаров ${inScope.length}, кластеров обработано ${touched}` +
-          (cfg.applyToWb ? "" : " (DRY-RUN, WB не трогали)"),
-      );
+      // Телеметрия круга (этап 5): длительность / обработано / применено. Сигнал, если круг
+      // дольше целевого времени — пора добавить параллельный зонд/IP/батчинг (не деградирует молча).
+      const durMs = Date.now() - startedAt;
+      const targetMs = numEnv("WB_CLUSTER_BID_CYCLE_TARGET_MS", 31 * 60_000);
+      const summary =
+        `круг ${Math.round(durMs / 1000)}с: товаров ${inScope.length}, ` +
+        `кластеров ${processed}, применено ставок ${applied}` +
+        (cfg.applyToWb ? "" : " (DRY-RUN)");
+      if (durMs > targetMs) {
+        this.logger.warn(
+          `${summary} — ПРЕВЫШЕНО целевое время ${Math.round(targetMs / 1000)}с: ` +
+            `добавить параллельный зонд/IP или батчинг.`,
+        );
+      } else {
+        this.logger.log(summary);
+      }
     } finally {
       this.busy = false;
     }
@@ -117,7 +131,7 @@ export class ProductClusterBidEngineService {
     advertId: number,
     nmId: number,
     cfg: BidEngineConfig,
-  ): Promise<number> {
+  ): Promise<{ processed: number; applied: number }> {
     const params: BidEngineParams = {
       minBid: cfg.minBid,
       maxWbBid: cfg.maxWbBid,
@@ -135,7 +149,7 @@ export class ProductClusterBidEngineService {
     const ordered = [...accrual.entries()].filter(
       ([, acc]) => Math.max(acc.accruedOrdersRk, acc.accruedOrdersJam) > 0,
     );
-    if (ordered.length === 0) return 0;
+    if (ordered.length === 0) return { processed: 0, applied: 0 };
 
     const names = ordered.map(([ncn]) => ncn);
     const currentBids = await this.repository.getCurrentClusterBids(nmId, advertId, names);
@@ -179,14 +193,16 @@ export class ProductClusterBidEngineService {
 
     // Применяем на WB только в scope и не в dry-run. Тип кампании (manual+cpm) проверяет
     // applyProductClusterBids — при несовместимости бросит, ловим и продолжаем.
+    let applied = 0;
     if (cfg.applyToWb && toApply.length > 0) {
       try {
         await this.wbClustersService.applyProductClusterBids(nmId, advertId, toApply);
-        this.logger.log(`применено ставок ${toApply.length} для ${advertId}/${nmId}`);
+        applied = toApply.length;
+        this.logger.log(`применено ставок ${applied} для ${advertId}/${nmId}`);
       } catch (err) {
         this.logger.warn(`apply bids ${advertId}/${nmId}: ${(err as Error).message}`);
       }
     }
-    return processed;
+    return { processed, applied };
   }
 }
