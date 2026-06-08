@@ -41,19 +41,22 @@ export function computeBidCap(maxCpo: number | null, cr: number): number | null 
 
 // ── Этап 3: позиционный регулятор ставки ───────────────────────────────────────
 
-/** Цель — топ-4 (коридор 4-5): P>5 поднимаем, P≤4 пробуем снизить, P=5 держим. */
-export const BID_TARGET_POSITION = 4;
-export const BID_CORRIDOR_TOP = 5;
+/**
+ * Граница: позиция ≤ этой → пробуем ПОНИЖАТЬ (держимся в топе, ищем дешевле), > → ПОВЫШАЕМ.
+ * По решению пользователя: на 5 месте пробуем понижать (рынок меняется — ночью дешевле).
+ */
+export const BID_DOWN_AT_OR_ABOVE = 5;
 
 export interface BidEngineParams {
   /** Минимальная ставка CPM (₽). */
   minBid: number;
   /** Жёсткий максимум ставки WB (₽) — clamp сверху вместе с bid_cap. */
   maxWbBid: number;
-  /** Агрессивность подъёма: доля пути к bid_cap = clamp01(kUp × (P − 4)). */
-  kUp: number;
-  /** Осторожность probe-down: доля пути к minBid за один шаг вниз. */
-  stepDown: number;
+  /**
+   * Шаг ставки за один круг = доля от МИНИМАЛЬНОЙ ставки (0.1 = 10% от minBid).
+   * ФИКСИРОВАННЫЙ абсолютный шаг, симметричный вверх/вниз — никаких прыжков на потолок.
+   */
+  stepFrac: number;
 }
 
 export interface DesiredBidInput {
@@ -69,7 +72,7 @@ export interface DesiredBidResult {
   /** Новая ставка (₽), уже приведённая clamp(minBid, min(bidCap, maxWbBid)). */
   bid: number;
   /** Причина — для телеметрии/наблюдения. */
-  reason: "up" | "down" | "hold" | "frozen" | "at_cap" | "at_min";
+  reason: "up" | "down" | "frozen" | "at_cap" | "at_min";
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -77,41 +80,37 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 /**
- * Желаемая ставка по позиции С РЕКЛАМОЙ (этап 3). Цель — топ-4 (коридор 4-5).
- *  - нет позиции → замораживаем ставку как есть (зонд не дал данных — R3);
- *  - P > 5 (выпал) → поднимаем долей пути к bid_cap ∝ (P−4), вверх агрессивно;
- *  - P ≤ 4 (в топе) → probe-down: осторожно снижаем, ищем минимально достаточную;
- *  - P = 5 (коридор) → держим.
- * Итог всегда clamp(minBid, min(bidCap, maxWbBid)). Если потолок ≤ minBid (CR слишком
- * низкая) — это сигнал отключения (решается в сервисе), здесь возвращаем minBid/at_min.
+ * Желаемая ставка по позиции С РЕКЛАМОЙ (этап 3). БЕЗ удержания — каждый круг двигаем ставку
+ * фиксированным шагом (10% от минимальной ставки), рынок меняется постоянно:
+ *  - нет позиции → заморозка (зонд не дал данных — R3);
+ *  - P ≤ 5 (в топе/коридоре) → ПОНИЖАЕМ на шаг (пробуем платить меньше; если позиция
+ *    удержится — следующий круг ещё понизит; просядем — следующий круг поднимет);
+ *  - P > 5 (выпали) → ПОВЫШАЕМ на шаг.
+ * Шаг фиксированный, симметричный. Итог всегда clamp(minBid, min(bidCap, maxWbBid)):
+ * вверх упираемся в потолок окупаемости, вниз — в минимальную ставку.
  */
 export function computeDesiredBid(
   input: DesiredBidInput,
   params: BidEngineParams,
 ): DesiredBidResult {
-  const { minBid, maxWbBid, kUp, stepDown } = params;
+  const { minBid, maxWbBid, stepFrac } = params;
   const cap = input.bidCap != null && input.bidCap > 0 ? input.bidCap : minBid;
   const hi = Math.max(minBid, Math.min(cap, maxWbBid));
   const cur = clamp(input.currentBid, minBid, hi);
+  const step = minBid * stepFrac;
 
-  // Нет позиции — не дёргаем ставку (R3: ставки замораживаются как есть).
+  // Нет позиции — не дёргаем ставку (R3: замораживаем как есть).
   if (input.position == null) return { bid: cur, reason: "frozen" };
 
-  // В топе — probe-down (раз держимся, пробуем платить меньше).
-  if (input.position <= BID_TARGET_POSITION) {
+  // В топе/коридоре (P ≤ 5) — понижаем на шаг (ищем минимально достаточную ставку).
+  if (input.position <= BID_DOWN_AT_OR_ABOVE) {
     if (cur <= minBid) return { bid: minBid, reason: "at_min" };
-    const next = clamp(cur - (cur - minBid) * stepDown, minBid, hi);
-    return { bid: next, reason: "down" };
+    return { bid: clamp(cur - step, minBid, hi), reason: "down" };
   }
 
-  // Коридор (ровно 5) — держим.
-  if (input.position <= BID_CORRIDOR_TOP) return { bid: cur, reason: "hold" };
-
-  // Выпали (P > 5) — поднимаем долей пути к потолку ∝ (P−4), агрессивно.
+  // Выпали (P > 5) — повышаем на шаг.
   if (cur >= hi) return { bid: hi, reason: "at_cap" };
-  const frac = clamp(kUp * (input.position - BID_TARGET_POSITION), 0, 1);
-  const next = clamp(cur + (hi - cur) * frac, minBid, hi);
-  return { bid: next, reason: "up" };
+  return { bid: clamp(cur + step, minBid, hi), reason: "up" };
 }
 
 /** Кластер убыточен даже на минимуме (bid_cap < minBid) → кандидат на отключение по конверсии. */

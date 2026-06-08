@@ -49,9 +49,9 @@ function readConfig(): BidEngineConfig {
     scopeNmIds,
     minBid: numEnv("WB_CLUSTER_BID_MIN", 100),
     maxWbBid: numEnv("WB_CLUSTER_BID_MAX", 5000),
-    kUp: numEnv("WB_CLUSTER_BID_K_UP", 0.34),
-    stepDown: numEnv("WB_CLUSTER_BID_STEP_DOWN", 0.1),
-    minDeltaToApply: numEnv("WB_CLUSTER_BID_MIN_DELTA", 10),
+    // Шаг = доля от минимальной ставки за круг (0.1 = 10% от minBid), фикс, симметрично.
+    stepFrac: numEnv("WB_CLUSTER_BID_STEP_PCT", 0.1),
+    minDeltaToApply: numEnv("WB_CLUSTER_BID_MIN_DELTA", 1),
   };
 }
 
@@ -121,8 +121,7 @@ export class ProductClusterBidEngineService {
     const params: BidEngineParams = {
       minBid: cfg.minBid,
       maxWbBid: cfg.maxWbBid,
-      kUp: cfg.kUp,
-      stepDown: cfg.stepDown,
+      stepFrac: cfg.stepFrac,
     };
     const [accrual, cpoInputs, productCpo] = await Promise.all([
       this.accrualService.loadCurrentBucketAccrual(advertId, nmId),
