@@ -118,6 +118,12 @@ export function getClusterAutomationCreateStatements({
       ALTER TABLE ${tableName("wb_cluster_automation_state")}
         ADD COLUMN IF NOT EXISTS last_bid_reason TEXT NULL
     `,
+    // bid_reached_top — достигал ли кластер топ-4 хоть раз (фаза ставочного движка): до
+    // первого достижения разгон +10%, после — точный шаг ±10₽. См. product-cluster-bid.ts.
+    `
+      ALTER TABLE ${tableName("wb_cluster_automation_state")}
+        ADD COLUMN IF NOT EXISTS bid_reached_top BOOLEAN NOT NULL DEFAULT FALSE
+    `,
     // baselined_at — момент, когда зафиксирован «исходный» набор кластеров кампании.
     // Кластер без строки state, появившийся ПОСЛЕ baseline → новый → на проверку (pending).
     `

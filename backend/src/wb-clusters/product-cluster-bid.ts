@@ -68,6 +68,11 @@ export interface DesiredBidInput {
   currentBid: number;
   /** Потолок окупаемости (Макс СРО × 1000 × CR); null/≤0 — регулировать не на чем. */
   bidCap: number | null;
+  /**
+   * Достигал ли кластер уже топ-4 хоть раз. До первого достижения — разгон +10%; после —
+   * точная подстройка ±10 ₽ в обе стороны (выпал → поднимаем по 10, а не разгоном).
+   */
+  reachedTop: boolean;
 }
 
 export interface DesiredBidResult {
@@ -82,13 +87,13 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 /**
- * Желаемая ставка по позиции С РЕКЛАМОЙ (этап 3). Двухскоростной подъём, без удержания:
+ * Желаемая ставка по позиции С РЕКЛАМОЙ (этап 3). Без удержания:
  *  - нет позиции → заморозка (зонд не дал данных — R3);
- *  - P > 4 (ещё НЕ в топ-4) → РАЗГОН: +coarsePct% от текущей ставки за круг (быстро к цели);
- *  - P ≤ 4 (в топ-4) → ТОЧНО: понижаем на fineStep ₽ за круг (ищем минимально достаточную;
- *    выпал из топ-4 — следующий круг снова разгон вверх).
- * Итог всегда clamp(minBid, min(bidCap, maxWbBid)): вверх упираемся в потолок окупаемости,
- * вниз — в минимальную ставку.
+ *  - P ≤ 4 (в топ-4) → понижаем на fineStep ₽ за круг (ищем минимально достаточную);
+ *  - P > 4 и на потолке (cur ≥ hi) → стоим на потолке (выше нельзя — at_cap);
+ *  - P > 4, ещё НЕ были в топ-4 (reachedTop=false) → РАЗГОН +coarsePct% (быстро к цели);
+ *  - P > 4, уже были в топ-4 (reachedTop=true) → точно +fineStep ₽ (выпал — поднимаем по 10).
+ * Итог всегда clamp(minBid, min(bidCap, maxWbBid)).
  */
 export function computeDesiredBid(
   input: DesiredBidInput,
@@ -108,9 +113,12 @@ export function computeDesiredBid(
     return { bid: clamp(cur - fineStep, minBid, hi), reason: "down" };
   }
 
-  // Ещё не в топ-4 — разгон вверх на coarsePct% от текущей ставки.
+  // Не в топ-4. Упёрлись в потолок окупаемости — стоим на нём (выше нельзя).
   if (cur >= hi) return { bid: hi, reason: "at_cap" };
-  return { bid: clamp(cur * (1 + coarsePct), minBid, hi), reason: "up" };
+
+  // Уже были в топ-4 → точный шаг вверх +fineStep; иначе первичный разгон +coarsePct%.
+  const next = input.reachedTop ? cur + fineStep : cur * (1 + coarsePct);
+  return { bid: clamp(next, minBid, hi), reason: "up" };
 }
 
 /** Кластер убыточен даже на минимуме (bid_cap < minBid) → кандидат на отключение по конверсии. */

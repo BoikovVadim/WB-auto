@@ -8,6 +8,7 @@ import {
   computeDesiredBid,
   isUnprofitableAtMin,
   parseMinSearchBid,
+  BID_TARGET_POSITION,
   type BidEngineParams,
 } from "./product-cluster-bid";
 import { WbClustersRepository } from "./wb-clusters.repository";
@@ -206,11 +207,14 @@ export class ProductClusterBidEngineService {
     nmId: number,
     cfg: BidEngineConfig,
   ): Promise<{ processed: number; applied: number }> {
-    const [cpoInputs, productCpo, bounds] = await Promise.all([
+    const [cpoInputs, productCpo, bounds, states] = await Promise.all([
       this.repository.getClusterCpoInputs(advertId, nmId),
       this.productCpoService.getProductCpo(nmId),
       this.repository.getCampaignBidBounds(advertId, nmId),
+      this.repository.getManagedClusterAutomationStates(advertId, nmId),
     ]);
+    // Достигал ли кластер топ-4 ранее (фаза: разгон до 1-го топа → потом точный шаг ±10₽).
+    const reachedByNcn = new Map(states.map((s) => [s.normalizedClusterName, s.lastReachedTop]));
     const maxCpo = productCpo.maxCpo;
     // Нижняя граница — РЕАЛЬНЫЙ минимум WB кампании (лениво синкаем, если в БД ещё нет;
     // env-дефолт только если WB совсем не отдал). Базовая ставка кампании — то, что действует
@@ -247,6 +251,7 @@ export class ProductClusterBidEngineService {
       const bidCap = computeBidCap(maxCpo, cr);
       // Текущая ставка: своя кластерная, иначе базовая ставка кампании (не выдуманный минимум).
       const currentBid = currentBids.get(ncn) ?? baseBid;
+      const prevReachedTop = reachedByNcn.get(ncn) ?? false;
 
       // Убыточен даже на минимуме (bid_cap < мин) — не качаем ставку (кандидат на отключение
       // по конверсии; отключение делает ДРР/базовое правило, не ставочный движок).
@@ -255,6 +260,7 @@ export class ProductClusterBidEngineService {
           position: null,
           desiredBid: null,
           reason: "unprofitable",
+          reachedTop: prevReachedTop,
         });
         processed++;
         continue;
@@ -263,12 +269,15 @@ export class ProductClusterBidEngineService {
       // Зонд позиции С РЕКЛАМОЙ (сериализован в probe-клиенте; 429/сбой → retry внутри).
       const snap = await this.positionService.probeCluster(nmId, clusterName);
       const position = snap.status === "found" ? snap.organicPosition : null;
-      const desired = computeDesiredBid({ position, currentBid, bidCap }, params);
+      const desired = computeDesiredBid({ position, currentBid, bidCap, reachedTop: prevReachedTop }, params);
+      // Запоминаем достижение топ-4 навсегда (фаза переключается на точный шаг).
+      const reachedTop = prevReachedTop || (position !== null && position <= BID_TARGET_POSITION);
 
       await this.repository.updateClusterBidObservation(advertId, nmId, ncn, {
         position,
         desiredBid: desired.bid,
         reason: desired.reason,
+        reachedTop,
       });
       processed++;
 

@@ -41,14 +41,14 @@ export abstract class WbClustersRepositoryClusterBid extends WbClustersRepositor
     advertId: number,
     nmId: number,
     normalizedClusterName: string,
-    obs: { position: number | null; desiredBid: number | null; reason: string },
+    obs: { position: number | null; desiredBid: number | null; reason: string; reachedTop: boolean },
   ): Promise<void> {
     await this.ensureSchemaOrThrow();
     await this.getPool().query(
       `UPDATE ${this.tableName("wb_cluster_automation_state")}
-         SET last_position = $4, last_desired_bid = $5, last_bid_reason = $6
+         SET last_position = $4, last_desired_bid = $5, last_bid_reason = $6, bid_reached_top = $7
        WHERE advert_id = $1 AND nm_id = $2 AND normalized_cluster_name = $3`,
-      [advertId, nmId, normalizedClusterName, obs.position, obs.desiredBid, obs.reason],
+      [advertId, nmId, normalizedClusterName, obs.position, obs.desiredBid, obs.reason, obs.reachedTop],
     );
   }
 }
