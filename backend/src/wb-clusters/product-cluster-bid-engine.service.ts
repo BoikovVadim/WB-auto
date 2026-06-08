@@ -81,6 +81,32 @@ export class ProductClusterBidEngineService {
     private readonly wbClustersService: WbClustersService,
   ) {}
 
+  /**
+   * Предложения движка по управляемым кластерам кампании (для модалки наблюдения): замеренная
+   * позиция, текущая ставка, желаемая ставка, потолок bid_cap, причина. Только кластеры, по
+   * которым движок что-то посчитал (есть желаемая ставка или bid_cap).
+   */
+  async getBidSuggestions(advertId: number, nmId: number) {
+    const states = await this.repository.getManagedClusterAutomationStates(advertId, nmId);
+    const withBid = states.filter((s) => s.lastDesiredBid !== null || s.lastBidCap !== null);
+    const currentBids = await this.repository.getCurrentClusterBids(
+      nmId,
+      advertId,
+      withBid.map((s) => s.normalizedClusterName),
+    );
+    return {
+      clusters: withBid.map((s) => ({
+        normalizedClusterName: s.normalizedClusterName,
+        state: s.state,
+        position: s.lastPosition,
+        currentBid: currentBids.get(s.normalizedClusterName) ?? null,
+        desiredBid: s.lastDesiredBid,
+        bidCap: s.lastBidCap,
+        reason: s.lastBidReason,
+      })),
+    };
+  }
+
   /** Один круг движка по товарам из scope. Busy-guard: длинный круг не накладывается сам на себя. */
   async runCycle(): Promise<void> {
     const cfg = readConfig();

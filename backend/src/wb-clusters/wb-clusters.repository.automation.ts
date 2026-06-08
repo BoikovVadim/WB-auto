@@ -46,6 +46,12 @@ export interface ClusterAutomationStateRow {
   lastCr: number | null;
   /** Этап 2: потолок ставки CPM (Макс СРО × 1000 × CR); null если не считалось. */
   lastBidCap: number | null;
+  /** Этап 3: последняя замеренная позиция (с рекламой); null — не найдена/не зондировалось. */
+  lastPosition: number | null;
+  /** Этап 3: желаемая ставка движка (₽); null — не считалось. */
+  lastDesiredBid: number | null;
+  /** Этап 3: причина решения (up/down/frozen/at_cap/at_min/unprofitable). */
+  lastBidReason: string | null;
 }
 
 /**
@@ -338,8 +344,11 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       drr_held: boolean;
       last_cr: string | null;
       last_bid_cap: string | null;
+      last_position: number | null;
+      last_desired_bid: string | null;
+      last_bid_reason: string | null;
     }>(
-      `SELECT normalized_cluster_name, state, manual_protected, last_cpo::text, last_decision, review_status, drr_held, last_cr::text, last_bid_cap::text
+      `SELECT normalized_cluster_name, state, manual_protected, last_cpo::text, last_decision, review_status, drr_held, last_cr::text, last_bid_cap::text, last_position, last_desired_bid::text, last_bid_reason
        FROM ${this.tableName("wb_cluster_automation_state")}
        WHERE advert_id = $1 AND nm_id = $2`,
       [advertId, nmId],
@@ -354,6 +363,9 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       drrHeld: r.drr_held,
       lastCr: r.last_cr != null ? Number(r.last_cr) : null,
       lastBidCap: r.last_bid_cap != null ? Number(r.last_bid_cap) : null,
+      lastPosition: r.last_position,
+      lastDesiredBid: r.last_desired_bid != null ? Number(r.last_desired_bid) : null,
+      lastBidReason: r.last_bid_reason,
     }));
   }
 
@@ -378,8 +390,11 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       drr_held: boolean;
       last_cr: string | null;
       last_bid_cap: string | null;
+      last_position: number | null;
+      last_desired_bid: string | null;
+      last_bid_reason: string | null;
     }>(
-      `SELECT s.normalized_cluster_name, s.state, s.manual_protected, s.last_cpo::text, s.last_decision, s.review_status, s.drr_held, s.last_cr::text, s.last_bid_cap::text
+      `SELECT s.normalized_cluster_name, s.state, s.manual_protected, s.last_cpo::text, s.last_decision, s.review_status, s.drr_held, s.last_cr::text, s.last_bid_cap::text, s.last_position, s.last_desired_bid::text, s.last_bid_reason
        FROM ${this.tableName("wb_cluster_automation_state")} s
        WHERE s.advert_id = $1 AND s.nm_id = $2
          AND EXISTS (
@@ -408,6 +423,9 @@ export abstract class WbClustersRepositoryAutomation extends WbClustersRepositor
       drrHeld: r.drr_held,
       lastCr: r.last_cr != null ? Number(r.last_cr) : null,
       lastBidCap: r.last_bid_cap != null ? Number(r.last_bid_cap) : null,
+      lastPosition: r.last_position,
+      lastDesiredBid: r.last_desired_bid != null ? Number(r.last_desired_bid) : null,
+      lastBidReason: r.last_bid_reason,
     }));
   }
 

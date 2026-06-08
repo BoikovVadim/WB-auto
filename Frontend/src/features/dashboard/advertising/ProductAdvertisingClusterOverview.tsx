@@ -9,6 +9,7 @@ import { ProductAdvertisingDateFilter } from "./ProductAdvertisingDateFilter";
 import { ProductAdvertisingChangeLogPanel } from "./ProductAdvertisingChangeLogPanel";
 import { ProductAdvertisingFilterSettingsModal } from "./ProductAdvertisingFilterSettingsModal";
 import { ProductAdvertisingReviewModal } from "./ProductAdvertisingReviewModal";
+import { ProductAdvertisingBidSuggestionsModal } from "./ProductAdvertisingBidSuggestionsModal";
 import type { ProductAdvertisingClusterTableSectionProps } from "./ProductAdvertisingClusterTableSection";
 import {
   getAdvertisingCampaignLabel,
@@ -104,6 +105,7 @@ export function ProductAdvertisingClusterOverview(
   const handleCloseFilterSettings = useCallback(() => setIsFilterSettingsOpen(false), []);
   const handleOpenReview = useCallback(() => setIsReviewOpen(true), []);
   const handleCloseReview = useCallback(() => setIsReviewOpen(false), []);
+  const [isBidSuggestOpen, setIsBidSuggestOpen] = useState(false);
 
   // Планка CPO товара (= CPO × 2, считается на бэке) — на одной линии с «Активные».
   const { maxCpo } = useProductMaxCpo(props.nmId);
@@ -236,14 +238,23 @@ export function ProductAdvertisingClusterOverview(
                 onReview={handleOpenReview}
                 onToggle={(enabled) => setAutomationMode(enabled ? "preview" : "off")}
                 actions={
-                  <button
-                    type="button"
-                    disabled={automationBusy}
-                    onClick={() => setAutomationMode(automation.mode === "live" ? "preview" : "live")}
-                    style={{ fontSize: "11px", padding: "2px 8px", cursor: "pointer", border: "1px solid var(--wb-border, #ddd)", borderRadius: "6px", background: automation.mode === "live" ? "#fff" : "#1f8a4c", color: automation.mode === "live" ? "var(--wb-text-main)" : "#fff" }}
-                  >
-                    {automation.mode === "live" ? "В предпросмотр" : "Включить автоматизацию"}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setIsBidSuggestOpen(true)}
+                      style={{ fontSize: "11px", padding: "2px 8px", cursor: "pointer", border: "1px solid var(--wb-border, #ddd)", borderRadius: "6px", background: "#fff", color: "var(--wb-text-main)" }}
+                    >
+                      Ставки движка
+                    </button>
+                    <button
+                      type="button"
+                      disabled={automationBusy}
+                      onClick={() => setAutomationMode(automation.mode === "live" ? "preview" : "live")}
+                      style={{ fontSize: "11px", padding: "2px 8px", cursor: "pointer", border: "1px solid var(--wb-border, #ddd)", borderRadius: "6px", background: automation.mode === "live" ? "#fff" : "#1f8a4c", color: automation.mode === "live" ? "var(--wb-text-main)" : "#fff" }}
+                    >
+                      {automation.mode === "live" ? "В предпросмотр" : "Включить автоматизацию"}
+                    </button>
+                  </>
                 }
               />
             )}
@@ -435,6 +446,14 @@ export function ProductAdvertisingClusterOverview(
           busy={automationBusy}
           onReview={reviewCluster}
           onClose={handleCloseReview}
+        />
+      )}
+
+      {isBidSuggestOpen && automationAdvertId !== null && props.nmId !== null && (
+        <ProductAdvertisingBidSuggestionsModal
+          nmId={props.nmId}
+          advertId={automationAdvertId}
+          onClose={() => setIsBidSuggestOpen(false)}
         />
       )}
     </>

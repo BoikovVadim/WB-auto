@@ -103,6 +103,35 @@ export async function fetchPendingClusters(
   return response.data ?? [];
 }
 
+/** Предложение ставочного движка по кластеру (наблюдение): позиция/текущая/желаемая/причина. */
+export type BidSuggestionRow = {
+  normalizedClusterName: string;
+  state: ClusterAutomationState;
+  /** Замеренная позиция (с рекламой); null — не найдена. */
+  position: number | null;
+  /** Текущая ставка CPM (₽); null — не выставлена. */
+  currentBid: number | null;
+  /** Желаемая ставка движка (₽); null — не считалось. */
+  desiredBid: number | null;
+  /** Потолок окупаемости bid_cap (₽). */
+  bidCap: number | null;
+  /** Причина: up | down | frozen | at_cap | at_min | unprofitable. */
+  reason: string | null;
+};
+
+export type BidSuggestionsResponse = { clusters: BidSuggestionRow[] };
+
+/** Предложения движка по ставкам кластеров кампании — для модалки наблюдения. */
+export async function fetchBidSuggestions(
+  nmId: number,
+  advertId: number,
+): Promise<BidSuggestionsResponse> {
+  const response = await apiClient.get<BidSuggestionsResponse>(
+    `/wb-clusters/products/${nmId}/campaigns/${advertId}/bid-suggestions`,
+  );
+  return response.data ?? { clusters: [] };
+}
+
 export type ProductAutomationStatusesResponse = {
   byNmId: Record<number, ProductAutomationStatusEntry>;
 };

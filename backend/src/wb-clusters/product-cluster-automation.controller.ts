@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, UseGuards } from
 
 import { WbClustersWriteGuard } from "../common/guards/wb-clusters-write.guard";
 import { ProductClusterAutomationService } from "./product-cluster-automation.service";
+import { ProductClusterBidEngineService } from "./product-cluster-bid-engine.service";
 import { ProductDrrRegulatorService } from "./product-drr-regulator.service";
 import { SetAutomationModeDto } from "./dto/set-automation-mode.dto";
 import { SetClusterFiltersDto } from "./dto/set-cluster-filters.dto";
@@ -17,7 +18,17 @@ export class ProductClusterAutomationController {
   constructor(
     private readonly service: ProductClusterAutomationService,
     private readonly drrRegulator: ProductDrrRegulatorService,
+    private readonly bidEngine: ProductClusterBidEngineService,
   ) {}
+
+  /** Предложения ставочного движка по кластерам кампании (позиция/текущая/желаемая/причина). */
+  @Get(":nmId/campaigns/:advertId/bid-suggestions")
+  getBidSuggestions(
+    @Param("nmId", ParseIntPipe) nmId: number,
+    @Param("advertId", ParseIntPipe) advertId: number,
+  ) {
+    return this.bidEngine.getBidSuggestions(advertId, nmId);
+  }
 
   /** Ручной прогон регулятора дневного ДРР (обычно идёт кроном 06:30 МСК). Под write-guard. */
   @Post("automation/drr-regulator/run")
