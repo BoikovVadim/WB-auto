@@ -1,3 +1,5 @@
+import { ServiceUnavailableException } from "@nestjs/common";
+
 import {
   buildMergedClusterBidList,
   getClusterBidJobRetryDelayMs,
@@ -117,6 +119,20 @@ export abstract class WbClustersBidQueueWriteGroupHandler extends WbClustersBidQ
           },
         });
       }
+
+      // Read-back: «accepted» ≠ «применено». Сверяем фактические ставки с желаемыми перед
+      // confirmed (режим WB_CLUSTER_BID_READBACK, дефолт observe). Включается сам при выходе
+      // ставок из dry-run — отдельной доводки на запуске не требуется.
+      await this.verifyBidReadback(
+        mergedBidList.map((item) => ({
+          advertId: group.advertId,
+          nmId: group.nmId,
+          clusterName: item.clusterName,
+          bid: item.bid,
+        })),
+        runtime,
+        syncRunId,
+      );
 
       const confirmedAt = new Date().toISOString();
       await this.wbClustersRepository.upsertClusterBids(
@@ -252,4 +268,91 @@ export abstract class WbClustersBidQueueWriteGroupHandler extends WbClustersBidQ
     }
   }
 
+  /**
+   * Read-back ставок: перечитывает фактические ставки кампаний из WB (get-bids) и сверяет с
+   * желаемыми. Режим из WB_CLUSTER_BID_READBACK: "off" — выкл; "observe" (дефолт) — расхождение
+   * пишем в raw-archive, но запись подтверждаем; "enforce" — расхождение → recoverable-ретрай
+   * (а не ложный confirmed). В dry-run ставки не пишутся → метод не вызывается; включается сам,
+   * как только снят WB_CLUSTER_BID_DRY_RUN. get-bids — best-effort: сбой не блокирует подтверждение.
+   */
+  protected async verifyBidReadback(
+    items: Array<{ advertId: number; nmId: number; clusterName: string; bid: number }>,
+    runtime: BidQueueRuntime,
+    syncRunId: string,
+  ): Promise<void> {
+    const mode = (process.env.WB_CLUSTER_BID_READBACK ?? "observe").trim();
+    if (mode === "off" || items.length === 0) return;
+
+    const campaigns = Array.from(
+      new Map(
+        items.map((i) => [`${i.advertId}:${i.nmId}`, { advert_id: i.advertId, nm_id: i.nmId }]),
+      ).values(),
+    );
+
+    let readbackBids: ReturnType<BidQueueRuntime["normalizeNormQueryBidsFromWb"]>;
+    try {
+      const response = await this.wbPromotionApiClient.getNormQueryBids(campaigns, {
+        failFastOnTooManyRequests: true,
+        maxQueueWaitMs: 5_000,
+      });
+      readbackBids = runtime.normalizeNormQueryBidsFromWb(response.bids ?? []);
+    } catch {
+      return; // верификация — слой поверх записи, её сбой не блокирует подтверждение
+    }
+
+    const actualByKey = new Map(
+      readbackBids.map((item) => [
+        `${item.advert_id}:${item.nm_id}:${runtime.normalizeAdvertisingText(item.norm_query)}`,
+        typeof item.bid === "number" ? item.bid : null,
+      ]),
+    );
+
+    const mismatches: Array<{
+      advertId: number;
+      nmId: number;
+      clusterName: string;
+      desired: number;
+      actual: number | null;
+    }> = [];
+    for (const item of items) {
+      const key = `${item.advertId}:${item.nmId}:${runtime.normalizeAdvertisingText(item.clusterName)}`;
+      const desired = normalizeBidForWb(item.bid);
+      const actual = actualByKey.get(key) ?? null;
+      if (actual !== desired) {
+        mismatches.push({
+          advertId: item.advertId,
+          nmId: item.nmId,
+          clusterName: item.clusterName,
+          desired,
+          actual,
+        });
+      }
+    }
+
+    if (mismatches.length === 0) return;
+
+    await this.wbClustersRepository.saveRawArchive({
+      syncRunId,
+      archiveType: "normquery-bids-readback-mismatch",
+      advertId: null,
+      nmId: null,
+      payload: {
+        direction: "inbound",
+        entityType: "cluster-bid",
+        requestIntent: "verify-cluster-bid-readback",
+        respondedAt: new Date().toISOString(),
+        readbackMode: mode,
+        mismatchCount: mismatches.length,
+        mismatches: mismatches.slice(0, 50),
+      },
+    });
+
+    if (mode === "enforce") {
+      const first = mismatches[0];
+      throw new ServiceUnavailableException(
+        `WB read-back ставок: кампания ${first.advertId}/${first.nmId} кластер "${first.clusterName}" — ` +
+          `желаемая ${first.desired}, в кабинете ${first.actual ?? "нет"} (всего расхождений ${mismatches.length}) — помечаю на повтор.`,
+      );
+    }
+  }
 }

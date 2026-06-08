@@ -101,6 +101,9 @@ export abstract class WbClustersBidQueueWriteBatch extends WbClustersBidQueueWri
         },
       });
 
+      // Read-back перед confirmed (см. verifyBidReadback / WB_CLUSTER_BID_READBACK).
+      await this.verifyBidReadback(flattenedBids, runtime, syncRunId);
+
       const confirmedAt = new Date().toISOString();
       await this.wbClustersRepository.upsertClusterBids(
         flattenedBids.map((item) => ({
