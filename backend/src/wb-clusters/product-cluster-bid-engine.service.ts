@@ -11,6 +11,7 @@ import {
   BID_TARGET_POSITION,
   type BidEngineParams,
 } from "./product-cluster-bid";
+import { loadLiveBucketAccrual } from "./wb-clusters-accrual-live";
 import { WbClustersRepository } from "./wb-clusters.repository";
 import { WbClustersService } from "./wb-clusters.service";
 import { WbPromotionApiClient } from "./wb-promotion-api.client";
@@ -228,11 +229,16 @@ export class ProductClusterBidEngineService {
       fineStep: cfg.fineStep,
     };
 
-    // Заказные АКТИВНЫЕ кластеры за РЕАЛЬНЫЕ 30 дней (max(РК,JAM) > 0 и активны на WB). CR и
-    // bid_cap считаем от реальных показов за 30 дней (cpoInputs.views), не от накопителя.
+    // CR и bid_cap считаем из ЖИВОГО накопителя (отстоявшаяся корзина + сегодняшний overlay) —
+    // освежается каждые 10 минут, поэтому потолок ставки корректируется на лету. Заказные
+    // АКТИВНЫЕ кластеры: накопл max(РК,JAM) > 0 и активны на WB.
+    const liveAccrual = await loadLiveBucketAccrual(this.repository, advertId, nmId);
+    const accruedOrders = (ncn: string) => {
+      const acc = liveAccrual.get(ncn);
+      return acc ? Math.max(acc.accruedOrdersRk, acc.accruedOrdersJam) : 0;
+    };
     const ordered = cpoInputs.filter(
-      (i) =>
-        Math.max(i.shks ?? i.ordersRk, i.ordersJam) > 0 && i.currentSourceKind === "active",
+      (i) => accruedOrders(i.normalizedClusterName) > 0 && i.currentSourceKind === "active",
     );
     if (ordered.length === 0) return { processed: 0, applied: 0 };
 
@@ -244,10 +250,11 @@ export class ProductClusterBidEngineService {
     for (const input of ordered) {
       const ncn = input.normalizedClusterName;
       const clusterName = input.clusterName;
+      const acc = liveAccrual.get(ncn);
       const cr = computeClusterCr({
-        accruedOrdersRk: input.shks ?? input.ordersRk,
-        accruedOrdersJam: input.ordersJam,
-        accruedViews: input.views,
+        accruedOrdersRk: acc?.accruedOrdersRk ?? 0,
+        accruedOrdersJam: acc?.accruedOrdersJam ?? 0,
+        accruedViews: acc?.accruedViews ?? 0,
       });
       const bidCap = computeBidCap(maxCpo, cr);
       // Текущая ставка: своя кластерная, иначе базовая ставка кампании (не выдуманный минимум).

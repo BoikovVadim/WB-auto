@@ -42,6 +42,15 @@ export abstract class WbClustersRepositoryAccrual extends WbClustersRepositoryCl
     return result.rows[0]!.d;
   }
 
+  /** Сегодняшняя дата МСК — для live-overlay накопителя (сегодняшние дельты поверх корзины). */
+  async getMskToday(): Promise<string> {
+    await this.ensureSchemaOrThrow();
+    const result = await this.getPool().query<{ d: string }>(
+      `SELECT ((NOW() AT TIME ZONE 'Europe/Moscow')::DATE)::text AS d`,
+    );
+    return result.rows[0]!.d;
+  }
+
   /** Цена товара со скидкой (целые ₽) на конкретный день — для определения ценовой корзины.
    *  Берём снапшот за дату, а при отсутствии — ближайший ранее (цена меняется редко). */
   async getProductEffectivePriceForDate(

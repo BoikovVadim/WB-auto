@@ -1,7 +1,10 @@
 import { Injectable, Logger } from "@nestjs/common";
 
 import { ProductCpoService } from "./product-cpo.service";
-import { ProductClusterAccrualService } from "./product-cluster-accrual.service";
+import {
+  ProductClusterAccrualService,
+  type ClusterBucketAccrual,
+} from "./product-cluster-accrual.service";
 import { ProductClusterRelevanceService } from "./product-cluster-relevance.service";
 import {
   applyDecisionsToWb,
@@ -343,9 +346,15 @@ export class ProductClusterAutomationService {
     const useV2 =
       process.env.WB_CLUSTER_DECISION_V2 === "1" &&
       (mode === "preview" || process.env.WB_CLUSTER_DECISION_V2_LIVE === "1");
-    const accrualByCluster = useV2
-      ? await this.accrualService.loadCurrentBucketAccrual(advertId, nmId)
-      : new Map();
+    // Два среза накопителя: ОТСТОЯВШИЙСЯ (до вчера) — для решений вкл/выкл (стабильно, без
+    // внутридневного флаппинга записей минус-фраз в WB); ЖИВОЙ (корзина + сегодняшний overlay) —
+    // для потолка ставки и накопл-колонок (освежается каждые 10 мин, bid_cap корректируется на лету).
+    const [settledAccrual, liveAccrual] = await Promise.all([
+      useV2
+        ? this.accrualService.loadCurrentBucketAccrual(advertId, nmId)
+        : Promise.resolve(new Map<string, ClusterBucketAccrual>()),
+      this.accrualService.loadCurrentBucketAccrualLive(advertId, nmId),
+    ]);
 
     const decisions = inputs.map((input) => {
       const prev = prevByCluster.get(input.normalizedClusterName);
@@ -357,7 +366,7 @@ export class ProductClusterAutomationService {
         reviewStatus,
       };
       if (useV2) {
-        const acc = accrualByCluster.get(input.normalizedClusterName);
+        const acc = settledAccrual.get(input.normalizedClusterName);
         return decideForClusterV2(
           {
             normalizedClusterName: input.normalizedClusterName,
@@ -422,7 +431,7 @@ export class ProductClusterAutomationService {
     // запросом — серийный цикл по ~всем кластерам давал десятки round-trip и тормозил
     // первый показ цифр в панели.
     await this.repository.upsertClusterAutomationStates(
-      buildAutomationStateRows({ advertId, nmId, decisions: decisionsToPersist, inputs, suggestions, maxCpo }),
+      buildAutomationStateRows({ advertId, nmId, decisions: decisionsToPersist, accrualByCluster: liveAccrual, suggestions, maxCpo }),
     );
 
     // Авто-в-чёрный: pending-кластер содержит слово, выученное менеджером как чёрное по этому

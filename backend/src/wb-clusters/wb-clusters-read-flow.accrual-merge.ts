@@ -1,19 +1,20 @@
 import { computeClusterCr } from "./product-cluster-bid";
-import { priceBucket } from "./wb-clusters.accrual.bucket";
+import { loadLiveBucketAccrual } from "./wb-clusters-accrual-live";
 import type { WbClustersRepository } from "./wb-clusters.repository";
 import type { ProductAdvertisingWorkspaceClusterRow } from "./wb-clusters.types";
 
 /**
  * Подмешивание накопленных счётчиков ТЕКУЩЕЙ ценовой корзины (входы движка решений v2) в строки
- * таблицы кластеров — чтобы в UI было видно, ПОЧЕМУ движок включил/исключил кластер. Считается
- * в read-path (а не в снапшоте), поэтому всегда отражает актуальную корзину. Формулы согласованы
- * с движком: заказы = max(РК, JAM); СРО = расход/заказы (или сам расход при 0 заказов, как
- * effectiveCpo); CR = computeClusterCr (тот же, что у потолка ставки) в процентах.
+ * таблицы кластеров — чтобы в UI было видно, ПОЧЕМУ движок включил/исключил кластер. Берётся
+ * «живой» накопитель (отстоявшаяся корзина + сегодняшний overlay), поэтому числа освежаются
+ * каждые 10 минут вместе с движком. Формулы согласованы с движком: заказы = max(РК, JAM); СРО =
+ * расход/заказы (или сам расход при 0 заказов, как effectiveCpo); CR = computeClusterCr (тот же,
+ * что у потолка ставки) в процентах.
  */
 
 type AccrualRepo = Pick<
   WbClustersRepository,
-  "getMskYesterday" | "getProductEffectivePriceForDate" | "getAccrualBuckets"
+  "getMskToday" | "getProductEffectivePriceForDate" | "getAccrualBuckets" | "getDailyClusterDeltas"
 >;
 
 export interface ClusterAccrualForRow {
@@ -24,20 +25,16 @@ export interface ClusterAccrualForRow {
   accruedCr: number | null;
 }
 
-/** Накопления текущей корзины кампании, ключ — нормализованное имя кластера (как матчит движок). */
+/** Живые накопления текущей корзины кампании, ключ — нормализованное имя кластера. */
 export async function loadCurrentBucketAccrualForRows(
   repo: AccrualRepo,
   advertId: number,
   nmId: number,
 ): Promise<Map<string, ClusterAccrualForRow>> {
-  const date = await repo.getMskYesterday();
-  const price = await repo.getProductEffectivePriceForDate(nmId, date);
-  const bucket = priceBucket(price);
-  const buckets = await repo.getAccrualBuckets(advertId, nmId);
+  const live = await loadLiveBucketAccrual(repo, advertId, nmId);
 
   const map = new Map<string, ClusterAccrualForRow>();
-  for (const r of buckets) {
-    if (r.priceBucket !== bucket) continue;
+  for (const [ncn, r] of live) {
     const orders = Math.max(r.accruedOrdersRk, r.accruedOrdersJam);
     const accruedCpo =
       orders > 0 ? r.accruedSpend / orders : r.accruedSpend > 0 ? r.accruedSpend : null;
@@ -46,7 +43,7 @@ export async function loadCurrentBucketAccrualForRows(
       accruedOrdersJam: r.accruedOrdersJam,
       accruedViews: r.accruedViews,
     });
-    map.set(r.normalizedClusterName, {
+    map.set(ncn, {
       accruedSpend: r.accruedSpend,
       accruedOrders: orders,
       accruedViews: r.accruedViews,

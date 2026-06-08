@@ -1,37 +1,35 @@
 import { computeBidCap, computeClusterCr } from "./product-cluster-bid";
 import type { ClusterDecision } from "./product-cluster-decision";
 import type { PendingRelevanceResult } from "./product-cluster-relevance.service";
-import type {
-  ClusterAutomationStateValue,
-  ClusterCpoInput,
-} from "./wb-clusters.repository.automation";
+import type { LiveBucketAccrual } from "./wb-clusters-accrual-live";
+import type { ClusterAutomationStateValue } from "./wb-clusters.repository.automation";
 
 /**
- * Чистый маппер: превращает посчитанные decisions + входы CPO + advisory-рекомендации
+ * Чистый маппер: превращает посчитанные decisions + ЖИВОЙ накопитель + advisory-рекомендации
  * мусор-фильтра в строки для upsertClusterAutomationStates. Вынесено из
  * product-cluster-automation.service по ответственности (orchestration ≠ row-mapping).
  *
- * CR (показ→заказ) и потолок ставки CPM (bidCap) считаются от РЕАЛЬНЫХ показов за 30 дней
- * (cpoInputs.views), а не от крошечного накопителя корзины — это наблюдение для движка ставок.
+ * CR (показ→заказ) и потолок ставки CPM (bidCap) считаются из ЖИВОГО накопителя (отстоявшаяся
+ * корзина + сегодняшний overlay) — освежается каждые 10 минут вместе с движком, поэтому bid_cap
+ * корректируется на лету.
  */
 export function buildAutomationStateRows(params: {
   advertId: number;
   nmId: number;
   decisions: ClusterDecision[];
-  inputs: ClusterCpoInput[];
+  accrualByCluster: Map<string, LiveBucketAccrual>;
   suggestions: Map<string, PendingRelevanceResult>;
   maxCpo: number;
 }) {
-  const { advertId, nmId, decisions, inputs, suggestions, maxCpo } = params;
-  const inputByNcn = new Map(inputs.map((i) => [i.normalizedClusterName, i]));
+  const { advertId, nmId, decisions, accrualByCluster, suggestions, maxCpo } = params;
 
   return decisions.map((d) => {
-    const inp = inputByNcn.get(d.normalizedClusterName);
-    const cr = inp
+    const acc = accrualByCluster.get(d.normalizedClusterName);
+    const cr = acc
       ? computeClusterCr({
-          accruedOrdersRk: inp.shks ?? inp.ordersRk,
-          accruedOrdersJam: inp.ordersJam,
-          accruedViews: inp.views,
+          accruedOrdersRk: acc.accruedOrdersRk,
+          accruedOrdersJam: acc.accruedOrdersJam,
+          accruedViews: acc.accruedViews,
         })
       : null;
     const bidCap = cr !== null ? computeBidCap(maxCpo, cr) : null;

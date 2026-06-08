@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 
 import { priceBucket } from "./wb-clusters.accrual.bucket";
+import { loadLiveBucketAccrual } from "./wb-clusters-accrual-live";
 import { WbClustersRepository } from "./wb-clusters.repository";
 
 /** Накопленные счётчики кластера из текущей ценовой корзины (для правила v2). */
@@ -79,5 +80,18 @@ export class ProductClusterAccrualService {
       });
     }
     return map;
+  }
+
+  /**
+   * ЖИВОЙ накопитель текущей корзины: отстоявшаяся корзина (до вчера) + overlay сегодняшнего дня.
+   * Освежается каждые 10 минут (с синком расхода/заказов) → из него движок пересчитывает решения
+   * и потолок ставки на лету. Двойного счёта нет (сегодня в корзину ещё не внесён). См.
+   * wb-clusters-accrual-live.ts.
+   */
+  async loadCurrentBucketAccrualLive(
+    advertId: number,
+    nmId: number,
+  ): Promise<Map<string, ClusterBucketAccrual>> {
+    return loadLiveBucketAccrual(this.repository, advertId, nmId);
   }
 }
