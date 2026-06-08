@@ -7,6 +7,29 @@ import { WbClustersRepositoryAccrual } from "./wb-clusters.repository.accrual";
  * в wb_cluster_automation_state. См. product-cluster-bid.ts и bid-engine сервис.
  */
 export abstract class WbClustersRepositoryClusterBid extends WbClustersRepositoryAccrual {
+  /**
+   * Ставочные границы кампании-товара из WB (₽): searchBid — текущая базовая ставка кампании
+   * (действует у кластеров без своей ставки), minSearchBid — минимально допустимая ставка WB
+   * (из /api/advert/v1/bids/min). Источник правды для нижней границы и шага движка.
+   */
+  async getCampaignBidBounds(
+    advertId: number,
+    nmId: number,
+  ): Promise<{ searchBid: number | null; minSearchBid: number | null }> {
+    await this.ensureSchemaOrThrow();
+    const r = await this.getPool().query<{ search_bid: string | null; min_search_bid: string | null }>(
+      `SELECT search_bid::text, min_search_bid::text
+       FROM ${this.tableName("wb_campaign_products")}
+       WHERE advert_id = $1 AND nm_id = $2`,
+      [advertId, nmId],
+    );
+    const row = r.rows[0];
+    return {
+      searchBid: row?.search_bid != null ? Number(row.search_bid) : null,
+      minSearchBid: row?.min_search_bid != null ? Number(row.min_search_bid) : null,
+    };
+  }
+
   /** Записать наблюдение bid-движка по одному кластеру (позиция/желаемая ставка/причина). */
   async updateClusterBidObservation(
     advertId: number,

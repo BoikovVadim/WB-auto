@@ -87,10 +87,13 @@ export class ProductClusterBidEngineService {
    * которым движок что-то посчитал (есть желаемая ставка или bid_cap).
    */
   async getBidSuggestions(advertId: number, nmId: number) {
-    const [states, cpoInputs] = await Promise.all([
+    const [states, cpoInputs, bounds] = await Promise.all([
       this.repository.getManagedClusterAutomationStates(advertId, nmId),
       this.repository.getClusterCpoInputs(advertId, nmId),
+      this.repository.getCampaignBidBounds(advertId, nmId),
     ]);
+    // Базовая ставка кампании — то, что действует у кластера без своей ставки (для отображения).
+    const baseBid = bounds.searchBid ?? bounds.minSearchBid;
     // Только АКТИВНЫЕ на WB кластеры (как таб «Активные»): движок крутит ставки только их;
     // у неактивных может остаться stale-предложение в state — не показываем.
     const activeNcn = new Set(
@@ -110,7 +113,7 @@ export class ProductClusterBidEngineService {
         normalizedClusterName: s.normalizedClusterName,
         state: s.state,
         position: s.lastPosition,
-        currentBid: currentBids.get(s.normalizedClusterName) ?? null,
+        currentBid: currentBids.get(s.normalizedClusterName) ?? baseBid,
         desiredBid: s.lastDesiredBid,
         bidCap: s.lastBidCap,
         reason: s.lastBidReason,
@@ -169,17 +172,22 @@ export class ProductClusterBidEngineService {
     nmId: number,
     cfg: BidEngineConfig,
   ): Promise<{ processed: number; applied: number }> {
-    const params: BidEngineParams = {
-      minBid: cfg.minBid,
-      maxWbBid: cfg.maxWbBid,
-      stepFrac: cfg.stepFrac,
-    };
-    const [accrual, cpoInputs, productCpo] = await Promise.all([
+    const [accrual, cpoInputs, productCpo, bounds] = await Promise.all([
       this.accrualService.loadCurrentBucketAccrual(advertId, nmId),
       this.repository.getClusterCpoInputs(advertId, nmId),
       this.productCpoService.getProductCpo(nmId),
+      this.repository.getCampaignBidBounds(advertId, nmId),
     ]);
     const maxCpo = productCpo.maxCpo;
+    // Нижняя граница — РЕАЛЬНЫЙ минимум WB кампании (env-дефолт только если WB его не отдал).
+    // Базовая ставка кампании — то, что действует у кластера без своей ставки (стартовая точка).
+    const minBid = bounds.minSearchBid ?? cfg.minBid;
+    const baseBid = bounds.searchBid ?? minBid;
+    const params: BidEngineParams = {
+      minBid,
+      maxWbBid: cfg.maxWbBid,
+      stepFrac: cfg.stepFrac,
+    };
     const nameByNcn = new Map(cpoInputs.map((i) => [i.normalizedClusterName, i.clusterName]));
     // Реальное состояние кластера на WB ('active' = показывается сейчас). Ставку крутим ТОЛЬКО
     // для активных — выключенные/чёрный список/чужие (есть случайные заказы в accrual, но не в
@@ -203,11 +211,12 @@ export class ProductClusterBidEngineService {
       const clusterName = nameByNcn.get(ncn) ?? ncn;
       const cr = computeClusterCr(acc);
       const bidCap = computeBidCap(maxCpo, cr);
-      const currentBid = currentBids.get(ncn) ?? cfg.minBid;
+      // Текущая ставка: своя кластерная, иначе базовая ставка кампании (не выдуманный минимум).
+      const currentBid = currentBids.get(ncn) ?? baseBid;
 
       // Убыточен даже на минимуме (bid_cap < мин) — не качаем ставку (кандидат на отключение
       // по конверсии; отключение делает ДРР/базовое правило, не ставочный движок).
-      if (isUnprofitableAtMin(bidCap, cfg.minBid)) {
+      if (isUnprofitableAtMin(bidCap, minBid)) {
         await this.repository.updateClusterBidObservation(advertId, nmId, ncn, {
           position: null,
           desiredBid: null,
