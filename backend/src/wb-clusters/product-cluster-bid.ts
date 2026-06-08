@@ -41,11 +41,8 @@ export function computeBidCap(maxCpo: number | null, cr: number): number | null 
 
 // ── Этап 3: позиционный регулятор ставки ───────────────────────────────────────
 
-/**
- * Граница: позиция ≤ этой → пробуем ПОНИЖАТЬ (держимся в топе, ищем дешевле), > → ПОВЫШАЕМ.
- * По решению пользователя: на 5 месте пробуем понижать (рынок меняется — ночью дешевле).
- */
-export const BID_DOWN_AT_OR_ABOVE = 5;
+/** Целевая позиция — топ-4. Хуже → разгон вверх; в топе → точная подстройка вниз. */
+export const BID_TARGET_POSITION = 4;
 
 export interface BidEngineParams {
   /** Минимальная ставка CPM (₽). */
@@ -53,10 +50,15 @@ export interface BidEngineParams {
   /** Жёсткий максимум ставки WB (₽) — clamp сверху вместе с bid_cap. */
   maxWbBid: number;
   /**
-   * Шаг ставки за один круг = доля от МИНИМАЛЬНОЙ ставки (0.1 = 10% от minBid).
-   * ФИКСИРОВАННЫЙ абсолютный шаг, симметричный вверх/вниз — никаких прыжков на потолок.
+   * РАЗГОН: пока не добрались до топ-4 — поднимаем на эту долю от ТЕКУЩЕЙ ставки за круг
+   * (0.10 = +10%). Быстро доехать до цели.
    */
-  stepFrac: number;
+  coarsePct: number;
+  /**
+   * ТОЧНАЯ подстройка: в топ-4 снижаем на этот фикс-шаг (₽) за круг — ищем минимально
+   * достаточную ставку мелкими шагами.
+   */
+  fineStep: number;
 }
 
 export interface DesiredBidInput {
@@ -80,37 +82,35 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 /**
- * Желаемая ставка по позиции С РЕКЛАМОЙ (этап 3). БЕЗ удержания — каждый круг двигаем ставку
- * фиксированным шагом (10% от минимальной ставки), рынок меняется постоянно:
+ * Желаемая ставка по позиции С РЕКЛАМОЙ (этап 3). Двухскоростной подъём, без удержания:
  *  - нет позиции → заморозка (зонд не дал данных — R3);
- *  - P ≤ 5 (в топе/коридоре) → ПОНИЖАЕМ на шаг (пробуем платить меньше; если позиция
- *    удержится — следующий круг ещё понизит; просядем — следующий круг поднимет);
- *  - P > 5 (выпали) → ПОВЫШАЕМ на шаг.
- * Шаг фиксированный, симметричный. Итог всегда clamp(minBid, min(bidCap, maxWbBid)):
- * вверх упираемся в потолок окупаемости, вниз — в минимальную ставку.
+ *  - P > 4 (ещё НЕ в топ-4) → РАЗГОН: +coarsePct% от текущей ставки за круг (быстро к цели);
+ *  - P ≤ 4 (в топ-4) → ТОЧНО: понижаем на fineStep ₽ за круг (ищем минимально достаточную;
+ *    выпал из топ-4 — следующий круг снова разгон вверх).
+ * Итог всегда clamp(minBid, min(bidCap, maxWbBid)): вверх упираемся в потолок окупаемости,
+ * вниз — в минимальную ставку.
  */
 export function computeDesiredBid(
   input: DesiredBidInput,
   params: BidEngineParams,
 ): DesiredBidResult {
-  const { minBid, maxWbBid, stepFrac } = params;
+  const { minBid, maxWbBid, coarsePct, fineStep } = params;
   const cap = input.bidCap != null && input.bidCap > 0 ? input.bidCap : minBid;
   const hi = Math.max(minBid, Math.min(cap, maxWbBid));
   const cur = clamp(input.currentBid, minBid, hi);
-  const step = minBid * stepFrac;
 
   // Нет позиции — не дёргаем ставку (R3: замораживаем как есть).
   if (input.position == null) return { bid: cur, reason: "frozen" };
 
-  // В топе/коридоре (P ≤ 5) — понижаем на шаг (ищем минимально достаточную ставку).
-  if (input.position <= BID_DOWN_AT_OR_ABOVE) {
+  // В топ-4 — точная подстройка вниз по fineStep (ищем минимально достаточную ставку).
+  if (input.position <= BID_TARGET_POSITION) {
     if (cur <= minBid) return { bid: minBid, reason: "at_min" };
-    return { bid: clamp(cur - step, minBid, hi), reason: "down" };
+    return { bid: clamp(cur - fineStep, minBid, hi), reason: "down" };
   }
 
-  // Выпали (P > 5) — повышаем на шаг.
+  // Ещё не в топ-4 — разгон вверх на coarsePct% от текущей ставки.
   if (cur >= hi) return { bid: hi, reason: "at_cap" };
-  return { bid: clamp(cur + step, minBid, hi), reason: "up" };
+  return { bid: clamp(cur * (1 + coarsePct), minBid, hi), reason: "up" };
 }
 
 /** Кластер убыточен даже на минимуме (bid_cap < minBid) → кандидат на отключение по конверсии. */

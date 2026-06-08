@@ -50,8 +50,9 @@ function readConfig(): BidEngineConfig {
     scopeNmIds,
     minBid: numEnv("WB_CLUSTER_BID_MIN", 100),
     maxWbBid: numEnv("WB_CLUSTER_BID_MAX", 5000),
-    // Шаг = доля от минимальной ставки за круг (0.1 = 10% от minBid), фикс, симметрично.
-    stepFrac: numEnv("WB_CLUSTER_BID_STEP_PCT", 0.1),
+    // Разгон до топ-4: +10% от текущей за круг. В топ-4: точный шаг вниз 10 ₽.
+    coarsePct: numEnv("WB_CLUSTER_BID_COARSE_PCT", 0.1),
+    fineStep: numEnv("WB_CLUSTER_BID_FINE_STEP", 10),
     minDeltaToApply: numEnv("WB_CLUSTER_BID_MIN_DELTA", 1),
   };
 }
@@ -219,7 +220,8 @@ export class ProductClusterBidEngineService {
     const params: BidEngineParams = {
       minBid,
       maxWbBid: cfg.maxWbBid,
-      stepFrac: cfg.stepFrac,
+      coarsePct: cfg.coarsePct,
+      fineStep: cfg.fineStep,
     };
 
     // Заказные АКТИВНЫЕ кластеры за РЕАЛЬНЫЕ 30 дней (max(РК,JAM) > 0 и активны на WB). CR и

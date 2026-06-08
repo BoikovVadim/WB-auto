@@ -10,7 +10,7 @@ import {
   CR_VIEWS_FLOOR,
 } from "./product-cluster-bid";
 
-const PARAMS: BidEngineParams = { minBid: 100, maxWbBid: 5000, stepFrac: 0.1 }; // шаг = 10₽
+const PARAMS: BidEngineParams = { minBid: 100, maxWbBid: 5000, coarsePct: 0.1, fineStep: 10 };
 
 describe("computeClusterCr (чистый рекламный CR, без JAM)", () => {
   it("CR = рекламные заказы / показы при показах выше пола", () => {
@@ -52,64 +52,57 @@ describe("computeBidCap", () => {
   });
 });
 
-describe("computeDesiredBid (фиксированный шаг, без удержания)", () => {
-  it("нет позиции → заморозка (ставка не меняется)", () => {
-    const r = computeDesiredBid({ position: null, currentBid: 800, bidCap: 2000 }, PARAMS);
+describe("computeDesiredBid (разгон +10% до топ-4, затем точно −10₽)", () => {
+  it("нет позиции → заморозка", () => {
+    const r = computeDesiredBid({ position: null, currentBid: 800, bidCap: 5000 }, PARAMS);
     expect(r.reason).toBe("frozen");
     expect(r.bid).toBe(800);
   });
 
-  it("P=5 → ПОНИЖАЕМ на фикс-шаг (пробуем дешевле, рынок меняется)", () => {
-    const r = computeDesiredBid({ position: 5, currentBid: 800, bidCap: 2000 }, PARAMS);
+  it("P=5 (ещё не в топ-4) → РАЗГОН +10% от текущей", () => {
+    const r = computeDesiredBid({ position: 5, currentBid: 500, bidCap: 5000 }, PARAMS);
+    expect(r.reason).toBe("up");
+    expect(r.bid).toBeCloseTo(550, 6); // 500 × 1.10
+  });
+
+  it("P=20 (далеко) → тоже +10% (мультипликативный разгон, ускоряется)", () => {
+    const r = computeDesiredBid({ position: 20, currentBid: 370, bidCap: 5000 }, PARAMS);
+    expect(r.reason).toBe("up");
+    expect(r.bid).toBeCloseTo(407, 6); // 370 × 1.10
+  });
+
+  it("P=4 (в топ-4) → ТОЧНО −10₽", () => {
+    const r = computeDesiredBid({ position: 4, currentBid: 800, bidCap: 5000 }, PARAMS);
     expect(r.reason).toBe("down");
     expect(r.bid).toBe(790); // 800 − 10
   });
 
-  it("P=2 (в топе) → понижаем на фикс-шаг", () => {
-    const r = computeDesiredBid({ position: 2, currentBid: 800, bidCap: 2000 }, PARAMS);
+  it("P=2 (в топе) → тоже −10₽ (ищем минимально достаточную)", () => {
+    const r = computeDesiredBid({ position: 2, currentBid: 800, bidCap: 5000 }, PARAMS);
     expect(r.reason).toBe("down");
-    expect(r.bid).toBe(790); // 800 − 10
+    expect(r.bid).toBe(790);
   });
 
-  it("P=2 на минимуме → at_min (ниже не идём)", () => {
-    const r = computeDesiredBid({ position: 2, currentBid: 100, bidCap: 2000 }, PARAMS);
+  it("P=2 на минимуме → at_min", () => {
+    const r = computeDesiredBid({ position: 2, currentBid: 100, bidCap: 5000 }, PARAMS);
     expect(r.reason).toBe("at_min");
     expect(r.bid).toBe(100);
   });
 
-  it("P=6 (выпали) → ПОВЫШАЕМ на фикс-шаг (никаких прыжков)", () => {
-    const r = computeDesiredBid({ position: 6, currentBid: 500, bidCap: 2000 }, PARAMS);
-    expect(r.reason).toBe("up");
-    expect(r.bid).toBe(510); // 500 + 10
+  it("разгон не прыгает на потолок — только +10% за круг", () => {
+    const r = computeDesiredBid({ position: 159, currentBid: 370, bidCap: 5000 }, PARAMS);
+    expect(r.bid).toBeCloseTo(407, 6); // 370×1.1, а НЕ 5000
   });
 
-  it("P=159 (глубоко выпали) → всё равно только +шаг (фикс, не прыжок к потолку)", () => {
-    const r = computeDesiredBid({ position: 159, currentBid: 100, bidCap: 2833 }, PARAMS);
-    expect(r.reason).toBe("up");
-    expect(r.bid).toBe(110); // 100 + 10, а НЕ 2833
-  });
-
-  it("P=8 на потолке → at_cap", () => {
+  it("разгон упирается в потолок (at_cap)", () => {
     const r = computeDesiredBid({ position: 8, currentBid: 2000, bidCap: 2000 }, PARAMS);
     expect(r.reason).toBe("at_cap");
     expect(r.bid).toBe(2000);
   });
 
-  it("шаг симметричен: вверх +10 и вниз −10 одинаковы", () => {
-    const up = computeDesiredBid({ position: 8, currentBid: 500, bidCap: 2000 }, PARAMS);
-    const down = computeDesiredBid({ position: 3, currentBid: 500, bidCap: 2000 }, PARAMS);
-    expect(up.bid - 500).toBe(10);
-    expect(500 - down.bid).toBe(10);
-  });
-
-  it("clamp сверху по min(bidCap, maxWbBid)", () => {
-    const r = computeDesiredBid({ position: 8, currentBid: 5000, bidCap: 9000 }, PARAMS);
-    expect(r.bid).toBe(PARAMS.maxWbBid); // at_cap на maxWb
-  });
-
-  it("bidCap ниже минимума → потолок = minBid", () => {
-    const r = computeDesiredBid({ position: 8, currentBid: 300, bidCap: 50 }, PARAMS);
-    expect(r.bid).toBe(PARAMS.minBid);
+  it("разгон clamp по min(bidCap, maxWbBid)", () => {
+    const r = computeDesiredBid({ position: 8, currentBid: 4900, bidCap: 9000 }, PARAMS);
+    expect(r.bid).toBe(PARAMS.maxWbBid); // 4900×1.1=5390 → clamp 5000
   });
 });
 
