@@ -88,7 +88,9 @@ export class ProductClusterBidEngineService {
    */
   async getBidSuggestions(advertId: number, nmId: number) {
     const states = await this.repository.getManagedClusterAutomationStates(advertId, nmId);
-    const withBid = states.filter((s) => s.lastDesiredBid !== null || s.lastBidCap !== null);
+    // Только кластеры с РЕАЛЬНЫМ предложением движка (посчитана желаемая ставка) — не весь
+    // список с потолком bid_cap (тот есть почти у всех заказных, но это не «предложение»).
+    const withBid = states.filter((s) => s.lastDesiredBid !== null);
     const currentBids = await this.repository.getCurrentClusterBids(
       nmId,
       advertId,
