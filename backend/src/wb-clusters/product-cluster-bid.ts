@@ -68,11 +68,6 @@ export interface DesiredBidInput {
   currentBid: number;
   /** Потолок окупаемости (Макс СРО × 1000 × CR); null/≤0 — регулировать не на чем. */
   bidCap: number | null;
-  /**
-   * Достигал ли кластер уже топ-4 хоть раз. До первого достижения — разгон +10%; после —
-   * точная подстройка ±10 ₽ в обе стороны (выпал → поднимаем по 10, а не разгоном).
-   */
-  reachedTop: boolean;
 }
 
 export interface DesiredBidResult {
@@ -87,12 +82,11 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 /**
- * Желаемая ставка по позиции С РЕКЛАМОЙ (этап 3). Без удержания:
+ * Желаемая ставка по позиции С РЕКЛАМОЙ (этап 3):
  *  - нет позиции → заморозка (зонд не дал данных — R3);
- *  - P ≤ 4 (в топ-4) → понижаем на fineStep ₽ за круг (ищем минимально достаточную);
- *  - P > 4 и на потолке (cur ≥ hi) → стоим на потолке (выше нельзя — at_cap);
- *  - P > 4, ещё НЕ были в топ-4 (reachedTop=false) → РАЗГОН +coarsePct% (быстро к цели);
- *  - P > 4, уже были в топ-4 (reachedTop=true) → точно +fineStep ₽ (выпал — поднимаем по 10).
+ *  - P > 4 (хуже цели) → ПОДНИМАЕМ на coarsePct% от текущей ставки (разгон к топ-4);
+ *  - P ≤ 4 (достигли топ-4) → СПУСКАЕМ на fineStep ₽ за круг (ищем минимально достаточную);
+ *  - на потолке окупаемости (cur ≥ hi, P > 4) → стоим на нём (выше платить нерентабельно).
  * Итог всегда clamp(minBid, min(bidCap, maxWbBid)).
  */
 export function computeDesiredBid(
@@ -107,18 +101,15 @@ export function computeDesiredBid(
   // Нет позиции — не дёргаем ставку (R3: замораживаем как есть).
   if (input.position == null) return { bid: cur, reason: "frozen" };
 
-  // В топ-4 — точная подстройка вниз по fineStep (ищем минимально достаточную ставку).
+  // Достигли топ-4 — спускаем по fineStep ₽ (ищем минимально достаточную ставку).
   if (input.position <= BID_TARGET_POSITION) {
     if (cur <= minBid) return { bid: minBid, reason: "at_min" };
     return { bid: clamp(cur - fineStep, minBid, hi), reason: "down" };
   }
 
-  // Не в топ-4. Упёрлись в потолок окупаемости — стоим на нём (выше нельзя).
+  // Хуже цели — поднимаем на coarsePct% от текущей. На потолке окупаемости стоим.
   if (cur >= hi) return { bid: hi, reason: "at_cap" };
-
-  // Уже были в топ-4 → точный шаг вверх +fineStep; иначе первичный разгон +coarsePct%.
-  const next = input.reachedTop ? cur + fineStep : cur * (1 + coarsePct);
-  return { bid: clamp(next, minBid, hi), reason: "up" };
+  return { bid: clamp(cur * (1 + coarsePct), minBid, hi), reason: "up" };
 }
 
 /** Кластер убыточен даже на минимуме (bid_cap < minBid) → кандидат на отключение по конверсии. */

@@ -269,8 +269,9 @@ export class ProductClusterBidEngineService {
       // Зонд позиции С РЕКЛАМОЙ (сериализован в probe-клиенте; 429/сбой → retry внутри).
       const snap = await this.positionService.probeCluster(nmId, clusterName);
       const position = snap.status === "found" ? snap.organicPosition : null;
-      const desired = computeDesiredBid({ position, currentBid, bidCap, reachedTop: prevReachedTop }, params);
-      // Запоминаем достижение топ-4 навсегда (фаза переключается на точный шаг).
+      const desired = computeDesiredBid({ position, currentBid, bidCap }, params);
+      // Флаг «был в топ-4» — наблюдательный (на логику ставки не влияет): правило простое —
+      // P>4 поднимаем %, P≤4 спускаем по 10₽. Храним факт достижения топа для аналитики.
       const reachedTop = prevReachedTop || (position !== null && position <= BID_TARGET_POSITION);
 
       await this.repository.updateClusterBidObservation(advertId, nmId, ncn, {
