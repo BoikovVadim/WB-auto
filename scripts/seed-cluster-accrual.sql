@@ -20,8 +20,9 @@ auto AS (
   SELECT advert_id, nm_id FROM wb_campaign_automation WHERE mode IN ('preview', 'live')
 ),
 rk AS (
+  -- РК-заказы = заказанные товары (shks), fallback на orders — как CPO/таблица (shks ?? orders).
   SELECT s.advert_id, s.nm_id, s.normalized_cluster_name AS ncn,
-         SUM(s.spend) AS spend, SUM(s.orders) AS orders_rk, SUM(s.views) AS views
+         SUM(s.spend) AS spend, COALESCE(SUM(s.shks), SUM(s.orders)) AS orders_rk, SUM(s.views) AS views
   FROM wb_cluster_daily_stats s
   JOIN auto a ON a.advert_id = s.advert_id AND a.nm_id = s.nm_id
   CROSS JOIN bounds b

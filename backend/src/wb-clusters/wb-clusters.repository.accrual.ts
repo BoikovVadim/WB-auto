@@ -92,7 +92,10 @@ export abstract class WbClustersRepositoryAccrual extends WbClustersRepositoryCl
         SELECT normalized_cluster_name AS ncn,
                MAX(cluster_name)        AS cluster_name,
                SUM(spend)               AS spend,
-               SUM(orders)              AS orders_rk,
+               -- РК-заказы = заказанные товары (shks), fallback на orders — как CPO/таблица
+               -- (shks ?? orders). Раньше брался только orders → накопл РК занижался и max(РК,JAM)
+               -- почти всегда выпадал на JAM.
+               COALESCE(SUM(shks), SUM(orders)) AS orders_rk,
                SUM(views)               AS views
         FROM ${this.tableName("wb_cluster_daily_stats")}
         WHERE advert_id = $1 AND nm_id = $2 AND stat_date = $3::date
