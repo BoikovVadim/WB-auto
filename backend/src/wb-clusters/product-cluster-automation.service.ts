@@ -379,13 +379,20 @@ export class ProductClusterAutomationService {
     // Сохраняем состояние (и в preview — для отображения «что бы сделали») ОДНИМ батч-
     // запросом — серийный цикл по ~всем кластерам давал десятки round-trip и тормозил
     // первый показ цифр в панели.
+    const inputByNcn = new Map(inputs.map((i) => [i.normalizedClusterName, i]));
     await this.repository.upsertClusterAutomationStates(
       decisions.map((d) => {
-        // Этап 2: CR показ→заказа и потолок ставки CPM по накопителям текущей корзины (только
-        // в v2, где есть accrual). Пока НАБЛЮДЕНИЕ — движок ставок (этап 3) их ещё не применяет.
-        const acc = accrualByCluster.get(d.normalizedClusterName);
-        const cr = acc ? computeClusterCr(acc) : null;
-        const bidCap = acc && cr !== null ? computeBidCap(maxCpo, cr) : null;
+        // Этап 2: CR показ→заказа и потолок ставки CPM от РЕАЛЬНЫХ показов за 30 дней
+        // (cpoInputs.views), а не от крошечного накопителя. Наблюдение — движок ставок (этап 3).
+        const inp = inputByNcn.get(d.normalizedClusterName);
+        const cr = inp
+          ? computeClusterCr({
+              accruedOrdersRk: inp.shks ?? inp.ordersRk,
+              accruedOrdersJam: inp.ordersJam,
+              accruedViews: inp.views,
+            })
+          : null;
+        const bidCap = cr !== null ? computeBidCap(maxCpo, cr) : null;
         return {
           advertId,
           nmId,

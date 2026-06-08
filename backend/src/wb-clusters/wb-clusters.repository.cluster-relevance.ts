@@ -1,7 +1,5 @@
-import {
-  WbClustersRepositoryAutomation,
-  type ClusterReviewStatus,
-} from "./wb-clusters.repository.automation";
+import { WbClustersRepositoryClusterCpoInputs } from "./wb-clusters.repository.cluster-cpo-inputs";
+import { type ClusterReviewStatus } from "./wb-clusters.repository.automation";
 
 /** Сырые тексты для мусор-фильтра релевантности кластера (токенизацию делает сервис). */
 export interface ClusterRelevanceData {
@@ -20,7 +18,7 @@ export interface ClusterRelevanceData {
  * (профиль товара + фразы кластеров + статус модерации); токенизацию и само решение
  * делает ProductClusterRelevanceService. См. product-cluster-relevance.ts.
  */
-export abstract class WbClustersRepositoryClusterRelevance extends WbClustersRepositoryAutomation {
+export abstract class WbClustersRepositoryClusterRelevance extends WbClustersRepositoryClusterCpoInputs {
   async getClusterRelevanceData(advertId: number, nmId: number): Promise<ClusterRelevanceData> {
     await this.ensureSchemaOrThrow();
     const profileResult = await this.getPool().query<{

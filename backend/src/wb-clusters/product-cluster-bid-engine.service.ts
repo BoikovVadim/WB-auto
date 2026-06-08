@@ -1,6 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
 
-import { ProductClusterAccrualService } from "./product-cluster-accrual.service";
 import { ProductCpoService } from "./product-cpo.service";
 import { ProductPositionService } from "./product-position.service";
 import {
@@ -78,7 +77,6 @@ export class ProductClusterBidEngineService {
   constructor(
     private readonly repository: WbClustersRepository,
     private readonly productCpoService: ProductCpoService,
-    private readonly accrualService: ProductClusterAccrualService,
     private readonly positionService: ProductPositionService,
     private readonly wbClustersService: WbClustersService,
     private readonly promotionClient: WbPromotionApiClient,
@@ -207,8 +205,7 @@ export class ProductClusterBidEngineService {
     nmId: number,
     cfg: BidEngineConfig,
   ): Promise<{ processed: number; applied: number }> {
-    const [accrual, cpoInputs, productCpo, bounds] = await Promise.all([
-      this.accrualService.loadCurrentBucketAccrual(advertId, nmId),
+    const [cpoInputs, productCpo, bounds] = await Promise.all([
       this.repository.getClusterCpoInputs(advertId, nmId),
       this.productCpoService.getProductCpo(nmId),
       this.repository.getCampaignBidBounds(advertId, nmId),
@@ -224,28 +221,28 @@ export class ProductClusterBidEngineService {
       maxWbBid: cfg.maxWbBid,
       stepFrac: cfg.stepFrac,
     };
-    const nameByNcn = new Map(cpoInputs.map((i) => [i.normalizedClusterName, i.clusterName]));
-    // Реальное состояние кластера на WB ('active' = показывается сейчас). Ставку крутим ТОЛЬКО
-    // для активных — выключенные/чёрный список/чужие (есть случайные заказы в accrual, но не в
-    // составе РК) не зондируем и не трогаем.
-    const sourceByNcn = new Map(cpoInputs.map((i) => [i.normalizedClusterName, i.currentSourceKind]));
 
-    // Заказные АКТИВНЫЕ кластеры текущей корзины (max(РК,JAM) > 0 и активны на WB).
-    const ordered = [...accrual.entries()].filter(
-      ([ncn, acc]) =>
-        Math.max(acc.accruedOrdersRk, acc.accruedOrdersJam) > 0 &&
-        sourceByNcn.get(ncn) === "active",
+    // Заказные АКТИВНЫЕ кластеры за РЕАЛЬНЫЕ 30 дней (max(РК,JAM) > 0 и активны на WB). CR и
+    // bid_cap считаем от реальных показов за 30 дней (cpoInputs.views), не от накопителя.
+    const ordered = cpoInputs.filter(
+      (i) =>
+        Math.max(i.shks ?? i.ordersRk, i.ordersJam) > 0 && i.currentSourceKind === "active",
     );
     if (ordered.length === 0) return { processed: 0, applied: 0 };
 
-    const names = ordered.map(([ncn]) => ncn);
+    const names = ordered.map((i) => i.normalizedClusterName);
     const currentBids = await this.repository.getCurrentClusterBids(nmId, advertId, names);
 
     const toApply: { clusterName: string; bid: number }[] = [];
     let processed = 0;
-    for (const [ncn, acc] of ordered) {
-      const clusterName = nameByNcn.get(ncn) ?? ncn;
-      const cr = computeClusterCr(acc);
+    for (const input of ordered) {
+      const ncn = input.normalizedClusterName;
+      const clusterName = input.clusterName;
+      const cr = computeClusterCr({
+        accruedOrdersRk: input.shks ?? input.ordersRk,
+        accruedOrdersJam: input.ordersJam,
+        accruedViews: input.views,
+      });
       const bidCap = computeBidCap(maxCpo, cr);
       // Текущая ставка: своя кластерная, иначе базовая ставка кампании (не выдуманный минимум).
       const currentBid = currentBids.get(ncn) ?? baseBid;

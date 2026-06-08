@@ -3,7 +3,6 @@ import { Injectable, Logger } from "@nestjs/common";
 import { ProductCpoService } from "./product-cpo.service";
 import { ProductDrrService } from "./product-drr.service";
 import { computeBidCap, computeClusterCr } from "./product-cluster-bid";
-import { priceBucket } from "./wb-clusters.accrual.bucket";
 import { WbClustersRepository } from "./wb-clusters.repository";
 
 /** Мёртвая зона регулятора вокруг плана ДРР (±%) — не дёргаемся на мелких отклонениях. */
@@ -172,23 +171,29 @@ export class ProductDrrRegulatorService {
     date: string,
     maxCpo: number | null,
   ): Promise<RegClusterRow[]> {
-    const price = await this.repository.getProductEffectivePriceForDate(nmId, date);
-    const bucket = priceBucket(price);
     const rows: RegClusterRow[] = [];
     for (const advertId of advertIds) {
-      const [states, buckets, deltas] = await Promise.all([
+      const [states, cpoInputs, deltas] = await Promise.all([
         this.repository.getClusterAutomationStates(advertId, nmId),
-        this.repository.getAccrualBuckets(advertId, nmId),
+        this.repository.getClusterCpoInputs(advertId, nmId),
         this.repository.getDailyClusterDeltas(advertId, nmId, date),
       ]);
-      const accByNcn = new Map(
-        buckets.filter((b) => b.priceBucket === bucket).map((b) => [b.normalizedClusterName, b]),
-      );
+      // Заказы и bid_cap — от РЕАЛЬНЫХ 30 дней (cpoInputs.views), не от накопителя.
+      const inputByNcn = new Map(cpoInputs.map((i) => [i.normalizedClusterName, i]));
       const spendByNcn = new Map(deltas.map((d) => [d.normalizedClusterName, d.spend]));
       for (const s of states) {
-        const acc = accByNcn.get(s.normalizedClusterName);
-        const ordered = acc ? Math.max(acc.accruedOrdersRk, acc.accruedOrdersJam) : 0;
-        const bidCap = acc ? computeBidCap(maxCpo, computeClusterCr(acc)) : null;
+        const inp = inputByNcn.get(s.normalizedClusterName);
+        const ordered = inp ? Math.max(inp.shks ?? inp.ordersRk, inp.ordersJam) : 0;
+        const bidCap = inp
+          ? computeBidCap(
+              maxCpo,
+              computeClusterCr({
+                accruedOrdersRk: inp.shks ?? inp.ordersRk,
+                accruedOrdersJam: inp.ordersJam,
+                accruedViews: inp.views,
+              }),
+            )
+          : null;
         rows.push({
           advertId,
           normalizedClusterName: s.normalizedClusterName,
