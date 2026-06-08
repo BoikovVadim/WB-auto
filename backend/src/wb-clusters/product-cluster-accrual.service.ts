@@ -8,6 +8,8 @@ export interface ClusterBucketAccrual {
   accruedSpend: number;
   accruedOrdersRk: number;
   accruedOrdersJam: number;
+  /** Накопленные показы — знаменатель CR для ставочного движка. */
+  accruedViews: number;
 }
 
 /**
@@ -73,6 +75,7 @@ export class ProductClusterAccrualService {
         accruedSpend: r.accruedSpend,
         accruedOrdersRk: r.accruedOrdersRk,
         accruedOrdersJam: r.accruedOrdersJam,
+        accruedViews: r.accruedViews,
       });
     }
     return map;

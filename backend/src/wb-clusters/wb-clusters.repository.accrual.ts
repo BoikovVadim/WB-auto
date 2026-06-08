@@ -10,6 +10,8 @@ export interface DailyClusterDelta {
   ordersRk: number;
   /** Дневные JAM-заказы за день (orders_current из подневного снапшота). */
   ordersJam: number;
+  /** Дневные рекламные ПОКАЗЫ за день (для CR = заказы/показы). */
+  views: number;
 }
 
 /** Накопленная корзина кластера (для движка решений). */
@@ -20,6 +22,8 @@ export interface ClusterAccrualBucket {
   accruedSpend: number;
   accruedOrdersRk: number;
   accruedOrdersJam: number;
+  /** Накопленные показы — знаменатель CR. */
+  accruedViews: number;
   lastAccruedDate: string | null;
 }
 
@@ -72,13 +76,15 @@ export abstract class WbClustersRepositoryAccrual extends WbClustersRepositoryCl
       spend: string | null;
       orders_rk: string | null;
       orders_jam: string | null;
+      views: string | null;
     }>(
       `
       WITH rk AS (
         SELECT normalized_cluster_name AS ncn,
                MAX(cluster_name)        AS cluster_name,
                SUM(spend)               AS spend,
-               SUM(orders)              AS orders_rk
+               SUM(orders)              AS orders_rk,
+               SUM(views)               AS views
         FROM ${this.tableName("wb_cluster_daily_stats")}
         WHERE advert_id = $1 AND nm_id = $2 AND stat_date = $3::date
         GROUP BY normalized_cluster_name
@@ -99,7 +105,8 @@ export abstract class WbClustersRepositoryAccrual extends WbClustersRepositoryCl
              rk.cluster_name                       AS cluster_name,
              rk.spend                              AS spend,
              rk.orders_rk                          AS orders_rk,
-             jam.orders_jam                        AS orders_jam
+             jam.orders_jam                        AS orders_jam,
+             rk.views                              AS views
       FROM rk
       FULL OUTER JOIN jam ON jam.ncn = rk.ncn
       `,
@@ -112,6 +119,7 @@ export abstract class WbClustersRepositoryAccrual extends WbClustersRepositoryCl
       spend: num(r.spend),
       ordersRk: num(r.orders_rk),
       ordersJam: num(r.orders_jam),
+      views: num(r.views),
     }));
   }
 
@@ -135,7 +143,7 @@ export abstract class WbClustersRepositoryAccrual extends WbClustersRepositoryCl
     let i = 1;
     for (const d of input.deltas) {
       values.push(
-        `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}::date)`,
+        `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}::date)`,
       );
       params.push(
         input.advertId,
@@ -146,6 +154,7 @@ export abstract class WbClustersRepositoryAccrual extends WbClustersRepositoryCl
         d.spend,
         d.ordersRk,
         d.ordersJam,
+        d.views,
         input.date,
       );
     }
@@ -153,13 +162,14 @@ export abstract class WbClustersRepositoryAccrual extends WbClustersRepositoryCl
       `
       INSERT INTO ${this.tableName("wb_cluster_accrual")}
         (advert_id, nm_id, normalized_cluster_name, price_bucket, base_price,
-         accrued_spend, accrued_orders_rk, accrued_orders_jam, last_accrued_date)
+         accrued_spend, accrued_orders_rk, accrued_orders_jam, accrued_views, last_accrued_date)
       VALUES ${values.join(", ")}
       ON CONFLICT (advert_id, nm_id, normalized_cluster_name, price_bucket)
       DO UPDATE SET
         accrued_spend      = ${this.tableName("wb_cluster_accrual")}.accrued_spend      + EXCLUDED.accrued_spend,
         accrued_orders_rk  = ${this.tableName("wb_cluster_accrual")}.accrued_orders_rk  + EXCLUDED.accrued_orders_rk,
         accrued_orders_jam = ${this.tableName("wb_cluster_accrual")}.accrued_orders_jam + EXCLUDED.accrued_orders_jam,
+        accrued_views      = ${this.tableName("wb_cluster_accrual")}.accrued_views      + EXCLUDED.accrued_views,
         last_accrued_date  = EXCLUDED.last_accrued_date,
         base_price         = COALESCE(EXCLUDED.base_price, ${this.tableName("wb_cluster_accrual")}.base_price),
         updated_at         = NOW()
@@ -209,12 +219,13 @@ export abstract class WbClustersRepositoryAccrual extends WbClustersRepositoryCl
       accrued_spend: string;
       accrued_orders_rk: string;
       accrued_orders_jam: string;
+      accrued_views: string;
       last_accrued_date: string | null;
     }>(
       `
       SELECT normalized_cluster_name, price_bucket, base_price::text,
              accrued_spend::text, accrued_orders_rk::text, accrued_orders_jam::text,
-             last_accrued_date::text
+             accrued_views::text, last_accrued_date::text
       FROM ${this.tableName("wb_cluster_accrual")}
       WHERE advert_id = $1 AND nm_id = $2
       `,
@@ -227,6 +238,7 @@ export abstract class WbClustersRepositoryAccrual extends WbClustersRepositoryCl
       accruedSpend: Number(r.accrued_spend),
       accruedOrdersRk: Number(r.accrued_orders_rk),
       accruedOrdersJam: Number(r.accrued_orders_jam),
+      accruedViews: Number(r.accrued_views),
       lastAccruedDate: r.last_accrued_date,
     }));
   }

@@ -35,11 +35,19 @@ export function getClusterAccrualCreateStatements({
         accrued_spend           NUMERIC(14,2) NOT NULL DEFAULT 0,
         accrued_orders_rk       NUMERIC(14,2) NOT NULL DEFAULT 0,
         accrued_orders_jam      NUMERIC(14,2) NOT NULL DEFAULT 0,
+        accrued_views           NUMERIC(14,2) NOT NULL DEFAULT 0,
         last_accrued_date       DATE          NULL,
         started_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
         updated_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
         PRIMARY KEY (advert_id, nm_id, normalized_cluster_name, price_bucket)
       )
+    `,
+    // Накопленные ПОКАЗЫ кластера — для расчёта конверсии CR = заказы / показы (ставочный
+    // движок: bid_cap = Макс СРО × 1000 × CR). ADD COLUMN — fast DDL, применяется на проде
+    // вне version-gate, на существующей таблице добирает колонку с DEFAULT 0.
+    `
+      ALTER TABLE ${tableName("wb_cluster_accrual")}
+        ADD COLUMN IF NOT EXISTS accrued_views NUMERIC(14,2) NOT NULL DEFAULT 0
     `,
     // Индекс под аккумулятор и чтение всех корзин кластера кампании (advert+nm).
     `
