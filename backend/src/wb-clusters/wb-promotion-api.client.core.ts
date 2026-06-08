@@ -180,7 +180,18 @@ export class WbPromotionApiClient {
     }
     const results: NonNullable<PromotionNormQueryMinusResponse["items"]> = [];
     for (const item of items) {
-      await this.request<void>({ method: "POST", path: "/adv/v0/normquery/set-minus", body: item }, options);
+      try {
+        await this.request<void>({ method: "POST", path: "/adv/v0/normquery/set-minus", body: item }, options);
+      } catch (error) {
+        // set-minus идёт по одному HTTP на кампанию и НЕ атомарен: если упали на середине,
+        // часть кампаний WB уже применил. Прокидываем их списком на ошибке, чтобы вызывающий
+        // синхронизировал локальное зеркало по факту и ретрай не откатил кабинет старым набором.
+        if (error && typeof error === "object") {
+          (error as { appliedMinusItems?: PromotionNormQueryMinusResponse["items"] }).appliedMinusItems =
+            [...results];
+        }
+        throw error;
+      }
       results.push({ advert_id: item.advert_id, nm_id: item.nm_id, norm_queries: item.norm_queries });
     }
     return { items: results } satisfies PromotionNormQueryMinusResponse;

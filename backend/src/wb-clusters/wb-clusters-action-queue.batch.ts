@@ -12,6 +12,7 @@ import type {
   PreparedClusterActionWriteGroup,
 } from "./wb-clusters-action-queue.types";
 import type { ClusterActionSyncStatus } from "./wb-clusters.types";
+import type { PromotionNormQueryMinusResponse } from "./types/promotion-api.types";
 
 import { WbClustersActionQueuePrepare } from "./wb-clusters-action-queue.prepare";
 
@@ -109,6 +110,12 @@ export abstract class WbClustersActionQueueBatch extends WbClustersActionQueuePr
         requestItems,
         runtime.isRecoverablePromotionError,
       );
+      // Read-back: «accepted» от WB ≠ «применено в кабинете». Перечитываем минус-набор и
+      // сверяем с желаемым. По умолчанию режим «observe» — расхождение пишем в raw-archive, но
+      // запись подтверждаем (накапливаем доказательства, что нормализация фраз WB совпадает с
+      // нашей). Режим «enforce» (после проверки) уводит расхождение в ретрай. Сам get-minus
+      // best-effort: если упал — не блокируем успешную запись.
+      await this.verifyMinusReadback(requestItems, runtime, syncRunId);
       await this.wbClustersRepository.replaceCampaignMinusPhrases(
         requestItems.map((item) => ({
           advertId: item.advert_id,
@@ -162,6 +169,17 @@ export abstract class WbClustersActionQueueBatch extends WbClustersActionQueuePr
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown cluster action queue processing error";
+      // Частичный фейл: кампании, которые WB уже успел применить до сбоя, синхронизируем в
+      // локальном зеркале — иначе ретрай пересоберёт их набор из устаревших данных и откатит
+      // кабинет. set-minus у каждой кампании — полный replace-набор, поэтому write-back точечный.
+      const appliedItems = (error as { appliedMinusItems?: ClusterActionMinusRequestItem[] })
+        ?.appliedMinusItems;
+      if (Array.isArray(appliedItems) && appliedItems.length > 0) {
+        await this.wbClustersRepository.replaceCampaignMinusPhrases(
+          appliedItems.map((item) => ({ advertId: item.advert_id, nmId: item.nm_id })),
+          appliedItems,
+        );
+      }
       await this.wbClustersRepository.saveRawArchive({
         syncRunId,
         archiveType: "normquery-minus-set-error",
@@ -265,38 +283,92 @@ export abstract class WbClustersActionQueueBatch extends WbClustersActionQueuePr
     }
   }
 
+  /**
+   * Одна попытка set-minus всего батча. Повторы — НЕ здесь, а на уровне job-reschedule (с
+   * backoff и учётом Retry-After), поэтому имя без «QuickRetry»: внутрипроходного быстрого
+   * ретрая нет (он был мёртвым — массив задержек из одного нуля). Возвращает 1 (число попыток)
+   * для совместимости с raw-archive `attemptCount`.
+   */
   protected async setNormQueryMinusWithQuickRetry(
     items: ClusterActionMinusRequestItem[],
-    isRecoverablePromotionError: (error: unknown) => boolean,
+    _isRecoverablePromotionError: (error: unknown) => boolean,
   ) {
-    const retryDelaysMs = [0];
-    let lastError: unknown = null;
+    await this.wbPromotionApiClient.setNormQueryMinus(items, {
+      failFastOnTooManyRequests: true,
+      maxQueueWaitMs: 2_000,
+    });
+    return 1;
+  }
 
-    for (let attemptIndex = 0; attemptIndex < retryDelaysMs.length; attemptIndex += 1) {
-      const delayMs = retryDelaysMs[attemptIndex] ?? 0;
-      if (delayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
+  /**
+   * Read-back-верификация: перечитывает фактический минус-набор кампаний из WB и сверяет с
+   * желаемым. Режим из WB_CLUSTER_ACTION_READBACK: "off" — выключено; "observe" (дефолт) —
+   * расхождение пишем в raw-archive, но запись подтверждаем; "enforce" — расхождение бросает
+   * recoverable ServiceUnavailable (ретрай, а не ложный confirmed). get-minus — best-effort:
+   * его недоступность не блокирует подтверждение успешной записи.
+   */
+  protected async verifyMinusReadback(
+    requestItems: ClusterActionMinusRequestItem[],
+    runtime: ActionQueueRuntime,
+    syncRunId: string,
+  ): Promise<void> {
+    const mode = (process.env.WB_CLUSTER_ACTION_READBACK ?? "observe").trim();
+    if (mode === "off") return;
 
-      try {
-        await this.wbPromotionApiClient.setNormQueryMinus(items, {
-          failFastOnTooManyRequests: true,
-          maxQueueWaitMs: 2_000,
+    let readback: PromotionNormQueryMinusResponse;
+    try {
+      readback = await this.wbPromotionApiClient.getNormQueryMinus(
+        requestItems.map((item) => ({ advert_id: item.advert_id, nm_id: item.nm_id })),
+      );
+    } catch {
+      return; // верификация — слой поверх записи, её сбой не блокирует подтверждение
+    }
+
+    const actualByKey = new Map(
+      (readback.items ?? []).map((item) => [
+        `${item.advert_id}:${item.nm_id}`,
+        new Set((item.norm_queries ?? []).map((q) => runtime.normalizeAdvertisingText(q))),
+      ]),
+    );
+
+    const mismatches: Array<{ advertId: number; nmId: number; desired: number; actual: number }> = [];
+    for (const item of requestItems) {
+      const desired = new Set(item.norm_queries.map((q) => runtime.normalizeAdvertisingText(q)));
+      const actual = actualByKey.get(`${item.advert_id}:${item.nm_id}`) ?? new Set<string>();
+      const matches = desired.size === actual.size && [...desired].every((q) => actual.has(q));
+      if (!matches) {
+        mismatches.push({
+          advertId: item.advert_id,
+          nmId: item.nm_id,
+          desired: desired.size,
+          actual: actual.size,
         });
-        return attemptIndex + 1;
-      } catch (error) {
-        lastError = error;
-        if (!isRecoverablePromotionError(error) || attemptIndex === retryDelaysMs.length - 1) {
-          throw error;
-        }
       }
     }
 
-    throw lastError instanceof Error
-      ? lastError
-      : new ServiceUnavailableException(
-          "Не удалось применить изменение кластеров в WB Promotion API после быстрых повторов.",
-        );
-  }
+    if (mismatches.length === 0) return;
 
+    await this.wbClustersRepository.saveRawArchive({
+      syncRunId,
+      archiveType: "normquery-minus-readback-mismatch",
+      advertId: null,
+      nmId: null,
+      payload: {
+        direction: "inbound",
+        entityType: "cluster-action",
+        requestIntent: "verify-cluster-action-readback",
+        respondedAt: new Date().toISOString(),
+        readbackMode: mode,
+        mismatches,
+      },
+    });
+
+    if (mode === "enforce") {
+      const first = mismatches[0];
+      throw new ServiceUnavailableException(
+        `WB read-back: минус-набор кампании ${first.advertId}/${first.nmId} не совпал с желаемым ` +
+          `(ожидали ${first.desired} фраз, в кабинете ${first.actual}; всего расхождений ${mismatches.length}) — помечаю на повтор.`,
+      );
+    }
+  }
 }

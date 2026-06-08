@@ -3,7 +3,11 @@ import { Injectable, Logger } from "@nestjs/common";
 import { ProductCpoService } from "./product-cpo.service";
 import { ProductClusterAccrualService } from "./product-cluster-accrual.service";
 import { ProductClusterRelevanceService } from "./product-cluster-relevance.service";
-import { computeBidCap, computeClusterCr } from "./product-cluster-bid";
+import {
+  applyDecisionsToWb,
+  buildAutomationStateRows,
+  revertBlockedDecisions,
+} from "./product-cluster-automation.persist";
 import { decideForCluster, type ClusterDecision } from "./product-cluster-decision";
 import { decideForClusterV2 } from "./product-cluster-decision.v2";
 import type {
@@ -57,6 +61,8 @@ export interface ClusterAutomationStatusResult {
 @Injectable()
 export class ProductClusterAutomationService {
   private readonly logger = new Logger("ProductClusterAutomation");
+  /** Busy-guard: длинный live-обход не должен накладываться на свой предыдущий 10-мин тик. */
+  private runAllInFlight = false;
 
   constructor(
     private readonly repository: WbClustersRepository,
@@ -278,11 +284,30 @@ export class ProductClusterAutomationService {
 
   /** Крон-обход: один прогон по всем включённым (preview/live) кампаниям. */
   async runAll(): Promise<void> {
-    const enabled = await this.repository.listEnabledAutomations();
-    for (const a of enabled) {
-      await this.evaluateOne(a.advertId, a.nmId, a.mode).catch((e: unknown) => {
-        this.logger.warn(`Automation pass failed for ${a.advertId}/${a.nmId}: ${String(e)}`);
-      });
+    // Busy-guard: если предыдущий обход не успел закрыться к следующему 10-мин тику (в live
+    // обход дёргает запись в WB по всем кампаниям и может растянуться) — пропускаем тик, чтобы
+    // два прохода не толкали противоречивые решения в одну очередь.
+    if (this.runAllInFlight) {
+      this.logger.warn("runAll: предыдущий обход ещё идёт — пропускаю тик.");
+      return;
+    }
+    this.runAllInFlight = true;
+    try {
+      const enabled = await this.repository.listEnabledAutomations();
+      let failed = 0;
+      for (const a of enabled) {
+        await this.evaluateOne(a.advertId, a.nmId, a.mode).catch((e: unknown) => {
+          failed += 1;
+          this.logger.warn(`Automation pass failed for ${a.advertId}/${a.nmId}: ${String(e)}`);
+        });
+      }
+      // Сводная телеметрия прогона: системную деградацию (истёкший токен, недоступность WB)
+      // видно одной строкой, а не только россыпью per-campaign warn'ов.
+      if (failed > 0) {
+        this.logger.warn(`runAll: обход завершён с ошибками по ${failed}/${enabled.length} кампаниям.`);
+      }
+    } finally {
+      this.runAllInFlight = false;
     }
   }
 
@@ -371,46 +396,33 @@ export class ProductClusterAutomationService {
     );
 
     // Применяем к WB только в live и только при отличии от текущего состояния.
-    // pending-кластеры имеют decision='noop' → applyDecisions их не трогает.
+    // pending-кластеры имеют decision='noop' → applyDecisionsToWb их не трогает. Если гард
+    // MAX_EXCLUDE_SHARE заблокировал запись — откатываем заблокированные решения, чтобы БД не
+    // разошлась с кабинетом (см. revertBlockedDecisions).
+    let applyBlocked = false;
     if (mode === "live") {
-      await this.applyDecisions(advertId, nmId, decisions, inputs.length);
+      applyBlocked = (
+        await applyDecisionsToWb({
+          advertId,
+          nmId,
+          decisions,
+          totalClusters: inputs.length,
+          maxExcludeShare: MAX_EXCLUDE_SHARE,
+          applyAction: (action, names) =>
+            this.wbClustersService.applyProductClusterAction(nmId, advertId, action, names, "automation"),
+          onBlocked: (message) => this.logger.warn(message),
+        })
+      ).blocked;
     }
+    const decisionsToPersist = applyBlocked
+      ? revertBlockedDecisions(decisions, prevByCluster)
+      : decisions;
 
     // Сохраняем состояние (и в preview — для отображения «что бы сделали») ОДНИМ батч-
     // запросом — серийный цикл по ~всем кластерам давал десятки round-trip и тормозил
     // первый показ цифр в панели.
-    const inputByNcn = new Map(inputs.map((i) => [i.normalizedClusterName, i]));
     await this.repository.upsertClusterAutomationStates(
-      decisions.map((d) => {
-        // Этап 2: CR показ→заказа и потолок ставки CPM от РЕАЛЬНЫХ показов за 30 дней
-        // (cpoInputs.views), а не от крошечного накопителя. Наблюдение — движок ставок (этап 3).
-        const inp = inputByNcn.get(d.normalizedClusterName);
-        const cr = inp
-          ? computeClusterCr({
-              accruedOrdersRk: inp.shks ?? inp.ordersRk,
-              accruedOrdersJam: inp.ordersJam,
-              accruedViews: inp.views,
-            })
-          : null;
-        const bidCap = cr !== null ? computeBidCap(maxCpo, cr) : null;
-        return {
-          advertId,
-          nmId,
-          normalizedClusterName: d.normalizedClusterName,
-          state: d.state,
-          manualProtected: d.manualProtected,
-          lastCpo: d.effectiveCpo,
-          lastSpend: d.spend,
-          lastDecision: d.decision,
-          reviewStatus: d.reviewStatus,
-          suggestedReviewAction:
-            d.reviewStatus === "pending"
-              ? suggestions.get(d.normalizedClusterName)?.suggestion ?? null
-              : null,
-          lastCr: cr,
-          lastBidCap: bidCap,
-        };
-      }),
+      buildAutomationStateRows({ advertId, nmId, decisions: decisionsToPersist, inputs, suggestions, maxCpo }),
     );
 
     // Авто-в-чёрный: pending-кластер содержит слово, выученное менеджером как чёрное по этому
@@ -436,7 +448,7 @@ export class ProductClusterAutomationService {
     if (!isBaselined) {
       await this.repository.markCampaignBaselined(advertId, nmId);
     }
-    return { decisions, maxCpo };
+    return { decisions: decisionsToPersist, maxCpo };
   }
 
   /** Статус (как getStatus) из уже посчитанных decisions — без повторного чтения из БД. */
@@ -457,40 +469,4 @@ export class ProductClusterAutomationService {
     return { mode, maxCpo, pendingCount, clusters };
   }
 
-  private async applyDecisions(
-    advertId: number,
-    nmId: number,
-    decisions: ClusterDecision[],
-    totalClusters: number,
-  ): Promise<void> {
-    const toExclude = decisions.filter((d) => d.decision === "exclude");
-    const toInclude = decisions.filter((d) => d.decision === "include");
-
-    // Гард: не исключать разом почти всё (защита от обнуления кампании).
-    if (totalClusters > 0 && toExclude.length / totalClusters > MAX_EXCLUDE_SHARE) {
-      this.logger.warn(
-        `Automation ${advertId}/${nmId}: исключение ${toExclude.length}/${totalClusters} кластеров превышает порог ${MAX_EXCLUDE_SHARE * 100}% — пропускаю запись на WB.`,
-      );
-      return;
-    }
-
-    if (toExclude.length > 0) {
-      await this.wbClustersService.applyProductClusterAction(
-        nmId,
-        advertId,
-        "exclude",
-        toExclude.map((d) => d.clusterName),
-        "automation",
-      );
-    }
-    if (toInclude.length > 0) {
-      await this.wbClustersService.applyProductClusterAction(
-        nmId,
-        advertId,
-        "include",
-        toInclude.map((d) => d.clusterName),
-        "automation",
-      );
-    }
-  }
 }

@@ -122,8 +122,9 @@ export class WbClustersScheduler implements OnModuleInit {
   // Ставочный движок (этап 3) — позиционный регулятор ставок CPM, круг каждые 10 мин
   // (busy-guard: длинный круг не накладывается). По умолчанию НЕ работает: нужен флаг
   // WB_CLUSTER_BID_ENGINE=1 + непустой scope WB_CLUSTER_BID_NMIDS. Применение к WB только в
-  // scope и не в dry-run. cron "0 */10" в TZ Europe/Moscow. См. product-cluster-bid-engine.service.
-  @Cron("0 */10 * * * *")
+  // scope и не в dry-run. Старт сдвинут на +30с от движка решений (тот на "0 */10"), чтобы два
+  // тяжёлых обхода не били БД/WB в одну секунду. cron в TZ Europe/Moscow. См. bid-engine.service.
+  @Cron("30 */10 * * * *")
   async handleBidEngine() {
     await this.productClusterBidEngineService.runCycle().catch((err: Error) => {
       this.logger.warn(`handleBidEngine error: ${err.message}`);
