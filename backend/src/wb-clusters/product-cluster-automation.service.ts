@@ -1,10 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 
 import { ProductCpoService } from "./product-cpo.service";
-import {
-  ProductClusterAccrualService,
-  type ClusterBucketAccrual,
-} from "./product-cluster-accrual.service";
+import { ProductClusterAccrualService } from "./product-cluster-accrual.service";
 import { ProductClusterRelevanceService } from "./product-cluster-relevance.service";
 import {
   applyDecisionsToWb,
@@ -346,15 +343,11 @@ export class ProductClusterAutomationService {
     const useV2 =
       process.env.WB_CLUSTER_DECISION_V2 === "1" &&
       (mode === "preview" || process.env.WB_CLUSTER_DECISION_V2_LIVE === "1");
-    // Два среза накопителя: ОТСТОЯВШИЙСЯ (до вчера) — для решений вкл/выкл (стабильно, без
-    // внутридневного флаппинга записей минус-фраз в WB); ЖИВОЙ (корзина + сегодняшний overlay) —
-    // для потолка ставки и накопл-колонок (освежается каждые 10 мин, bid_cap корректируется на лету).
-    const [settledAccrual, liveAccrual] = await Promise.all([
-      useV2
-        ? this.accrualService.loadCurrentBucketAccrual(advertId, nmId)
-        : Promise.resolve(new Map<string, ClusterBucketAccrual>()),
-      this.accrualService.loadCurrentBucketAccrualLive(advertId, nmId),
-    ]);
+    // ЖИВОЙ накопитель (отстоявшаяся корзина + сегодняшний overlay) — освежается каждые 10 мин;
+    // из него И решения вкл/выкл по СРО, И потолок ставки. Флаппинга нет: СРО снижается только от
+    // заказа, а выключенный кластер замораживает расход → переключения ограничены частотой заказов
+    // (у пограничных малозаказных кластеров — редки). Грузим всегда (нужен и для bid_cap-колонок).
+    const accrualByCluster = await this.accrualService.loadCurrentBucketAccrualLive(advertId, nmId);
 
     const decisions = inputs.map((input) => {
       const prev = prevByCluster.get(input.normalizedClusterName);
@@ -366,7 +359,7 @@ export class ProductClusterAutomationService {
         reviewStatus,
       };
       if (useV2) {
-        const acc = settledAccrual.get(input.normalizedClusterName);
+        const acc = accrualByCluster.get(input.normalizedClusterName);
         return decideForClusterV2(
           {
             normalizedClusterName: input.normalizedClusterName,
@@ -431,7 +424,7 @@ export class ProductClusterAutomationService {
     // запросом — серийный цикл по ~всем кластерам давал десятки round-trip и тормозил
     // первый показ цифр в панели.
     await this.repository.upsertClusterAutomationStates(
-      buildAutomationStateRows({ advertId, nmId, decisions: decisionsToPersist, accrualByCluster: liveAccrual, suggestions, maxCpo }),
+      buildAutomationStateRows({ advertId, nmId, decisions: decisionsToPersist, accrualByCluster, suggestions, maxCpo }),
     );
 
     // Авто-в-чёрный: pending-кластер содержит слово, выученное менеджером как чёрное по этому
