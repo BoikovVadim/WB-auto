@@ -97,23 +97,28 @@ export function computeDesiredBid(
 ): DesiredBidResult {
   const { minBid, maxWbBid, coarsePct, fineStep } = params;
   const cap = input.bidCap != null && input.bidCap > 0 ? input.bidCap : minBid;
-  const hi = Math.max(minBid, Math.min(cap, maxWbBid));
-  const cur = clamp(input.currentBid, minBid, hi);
+  // WB Promotion API принимает ставку ТОЛЬКО целым числом (дробная → «incorrect request body»,
+  // и WB отклоняет ВЕСЬ батч). Поэтому держим расчёт в целых: нижняя граница — вверх (ceil),
+  // потолок окупаемости — вниз (floor, не превышаем bid_cap), текущая — округляем. Шаги целые →
+  // все ветви возвращают целую ставку.
+  const lo = Math.ceil(minBid);
+  const hi = Math.max(lo, Math.floor(Math.min(cap, maxWbBid)));
+  const cur = clamp(Math.round(input.currentBid), lo, hi);
 
   // Нет позиции — не дёргаем ставку (R3: замораживаем как есть).
   if (input.position == null) return { bid: cur, reason: "frozen" };
 
   // Достигли топ-4 — спускаем по fineStep ₽ (ищем минимально достаточную ставку).
   if (input.position <= BID_TARGET_POSITION) {
-    if (cur <= minBid) return { bid: minBid, reason: "at_min" };
-    return { bid: clamp(cur - fineStep, minBid, hi), reason: "down" };
+    if (cur <= lo) return { bid: lo, reason: "at_min" };
+    return { bid: clamp(cur - fineStep, lo, hi), reason: "down" };
   }
 
   // Хуже цели — поднимаем на фикс-шаг = 10% от МИНИМАЛЬНОЙ ставки (минБид 370 → +37₽ за круг,
   // независимо от текущей). На потолке окупаемости стоим.
   if (cur >= hi) return { bid: hi, reason: "at_cap" };
   const coarseStep = Math.max(1, Math.round(minBid * coarsePct));
-  return { bid: clamp(cur + coarseStep, minBid, hi), reason: "up" };
+  return { bid: clamp(cur + coarseStep, lo, hi), reason: "up" };
 }
 
 /** Кластер убыточен даже на минимуме (bid_cap < minBid) → кандидат на отключение по конверсии. */
