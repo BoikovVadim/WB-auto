@@ -2,6 +2,18 @@ import { Injectable } from "@nestjs/common";
 
 import { WbClustersService } from "./wb-clusters.service";
 
+type DrrMatrixCompact = {
+  dates: string[];
+  products: {
+    nmId: number;
+    drr: (number | null)[];
+    spend: (number | null)[];
+    revenue: (number | null)[];
+  }[];
+  /** Полная выручка магазина по каждому дню (по ВСЕМ товарам) — знаменатель «Итого» столбца. */
+  revenueTotals: number[];
+};
+
 /**
  * ДРР (доля рекламных расходов) по товарам = расход на рекламу / выручка × 100.
  *
@@ -21,6 +33,14 @@ import { WbClustersService } from "./wb-clusters.service";
 @Injectable()
 export class ProductDrrService {
   constructor(private readonly wbClustersService: WbClustersService) {}
+
+  // TTL-кэш матрицы ДРР. Матрица — историческая (closed-day, «сегодня» не входит), меняется
+  // только ночным снапшотом % выкупа → 60с staleness безопасны и для дашборда, и для регулятора
+  // (getLatestDayDrrInputs). Снимает повторную сборку (2 матричных запроса + O(n·m) JS) при
+  // параллельных запросах/вкладках. inFlight гасит стампиду одновременных запросов.
+  private drrMatrixCache: { value: DrrMatrixCompact; expiresAt: number } | null = null;
+  private drrMatrixInFlight: Promise<DrrMatrixCompact> | null = null;
+  private readonly DRR_MATRIX_TTL_MS = 60_000;
 
   /**
    * Сегодняшний ДРР по товарам. Есть расход (>0) → есть значение: с выручкой —
@@ -74,17 +94,26 @@ export class ProductDrrService {
    * × 100 — доля рекламы в общей выручке, а не среднее % строк. «Сегодня» сюда не попадает
    * (нет снапшота % выкупа за сегодня) — фронт рисует его live.
    */
-  async getDrrMatrixCompact(): Promise<{
-    dates: string[];
-    products: {
-      nmId: number;
-      drr: (number | null)[];
-      spend: (number | null)[];
-      revenue: (number | null)[];
-    }[];
-    /** Полная выручка магазина по каждому дню (по ВСЕМ товарам) — знаменатель «Итого» столбца. */
-    revenueTotals: number[];
-  }> {
+  async getDrrMatrixCompact(): Promise<DrrMatrixCompact> {
+    const now = Date.now();
+    if (this.drrMatrixCache && now < this.drrMatrixCache.expiresAt) {
+      return this.drrMatrixCache.value;
+    }
+    if (this.drrMatrixInFlight) {
+      return this.drrMatrixInFlight;
+    }
+    this.drrMatrixInFlight = this.computeDrrMatrixCompact()
+      .then((value) => {
+        this.drrMatrixCache = { value, expiresAt: Date.now() + this.DRR_MATRIX_TTL_MS };
+        return value;
+      })
+      .finally(() => {
+        this.drrMatrixInFlight = null;
+      });
+    return this.drrMatrixInFlight;
+  }
+
+  private async computeDrrMatrixCompact(): Promise<DrrMatrixCompact> {
     const [adSpend, revenue] = await Promise.all([
       this.wbClustersService.getAdSpendMatrixCompact(),
       this.wbClustersService.getRevenueMatrixCompact(),

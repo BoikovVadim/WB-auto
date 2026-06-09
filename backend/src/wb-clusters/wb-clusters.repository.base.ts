@@ -123,9 +123,11 @@ export abstract class WbClustersRepositoryBase {
     }
 
     const sharedOptions: Partial<PoolConfig> = {
-      // 25 connections: covers sync phases + HTTP read handlers + warmup workers
-      // without exhausting the default pg max_connections (100).
-      max: 25,
+      // 40 connections: sync phases + параллельные HTTP read-handlers (Promise.all по
+      // кампаниям/матрицам) + warmup-воркеры. Подняли с 25 — под нагрузкой пул вставал в
+      // очередь (connectionTimeout 10с → 503). На проде max_connections=100 и базовая
+      // утилизация ~16, так что 40 + другие приложения остаются с большим запасом.
+      max: 40,
       // Release idle connections after 30 s to avoid holding server slots.
       idleTimeoutMillis: 30_000,
       // Fail fast if the pool is saturated; caller surfaces 503 to the user.
