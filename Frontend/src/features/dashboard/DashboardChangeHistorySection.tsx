@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from "react";
 
 import { fetchUnifiedChangeLog, type UnifiedChangeLogEntry } from "../../api/syncClientChangeLog";
-import { clusterStatusLabel } from "./changeLogLabels";
+import { bidReasonLabel, clusterStatusLabel } from "./changeLogLabels";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -45,6 +45,12 @@ function changeTypeLabel(changeType: string): string {
 function valueLabel(entityType: string, value: string | null): string | null {
   if (entityType === "cluster_status") return clusterStatusLabel(value);
   return value;
+}
+
+/** Замеренная позиция в выдаче на момент авто-смены ставки: «#N», «>100» или «—». */
+function positionLabel(position: number | null): string {
+  if (position === null) return "—";
+  return position > 100 ? ">100" : `#${String(position)}`;
 }
 
 /** Кто инициировал изменение: вручную пользователь или движок автоматизации по CPO. */
@@ -119,6 +125,16 @@ function ChangeRow({ entry }: { entry: UnifiedChangeLogEntry }) {
           <span className="wb-change-history-empty">—</span>
         )}
       </td>
+      <td className="wb-change-history-cell wb-change-history-cell--num">
+        {entry.position !== null ? (
+          positionLabel(entry.position)
+        ) : (
+          <span className="wb-change-history-empty">—</span>
+        )}
+      </td>
+      <td className="wb-change-history-cell wb-change-history-cell--num">
+        {bidReasonLabel(entry.reason) ?? <span className="wb-change-history-empty">—</span>}
+      </td>
       <td className="wb-change-history-cell">
         {entry.initiatedBy !== null ? (
           <span
@@ -179,6 +195,8 @@ export const DashboardChangeHistorySection = memo(function DashboardChangeHistor
                 <th style={{ minWidth: 130 }}>Действие</th>
                 <th style={{ minWidth: 100 }}>Было</th>
                 <th style={{ minWidth: 100 }}>Стало</th>
+                <th style={{ minWidth: 90, textAlign: "center" }}>Позиция</th>
+                <th style={{ minWidth: 120, textAlign: "center" }}>Причина</th>
                 <th style={{ minWidth: 130 }}>Инициатор</th>
               </tr>
             </thead>

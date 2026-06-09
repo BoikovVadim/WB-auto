@@ -8,6 +8,10 @@ export type UnifiedChangeLogEntry = {
   advertId: number | null;
   vendorCode: string | null;
   initiatedBy: "user" | "automation" | null;
+  /** Причина авто-смены ставки (up/down/at_cap/...); null у ручных/системных. */
+  reason: string | null;
+  /** Замеренная позиция в выдаче на момент авто-смены ставки; null у ручных/системных. */
+  position: number | null;
   entityLabel: string | null;
   changeType: string;
   oldValue: string | null;

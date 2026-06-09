@@ -207,6 +207,8 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
           cl.advert_id::text AS advert_id,
           pc.vendor_code AS vendor_code,
           cl.initiated_by AS initiated_by,
+          cl.reason AS reason,
+          cl.position AS position,
           cl.cluster_name AS entity_label,
           cl.change_type,
           cl.old_value,
@@ -226,6 +228,8 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
           pc.vendor_code AS vendor_code,
           -- Системный лог (себестоимость) — всегда ручное действие пользователя.
           'user' AS initiated_by,
+          NULL::text AS reason,
+          NULL::int AS position,
           sl.entity_label,
           sl.change_type,
           -- В истории показываем цену без «(база N)» — служебная база нужна только в
@@ -256,6 +260,8 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
         advert_id,
         vendor_code,
         initiated_by,
+        reason,
+        position,
         entity_label,
         change_type,
         old_value,
@@ -281,6 +287,8 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
       advertId: row.advert_id !== null ? Number(row.advert_id) : null,
       vendorCode: row.vendor_code,
       initiatedBy: (row.initiated_by as ChangeLogInitiator | null) ?? null,
+      reason: row.reason,
+      position: row.position !== null ? Number(row.position) : null,
       entityLabel: row.entity_label,
       changeType: row.change_type,
       oldValue: row.old_value,
@@ -298,6 +306,8 @@ type UnifiedChangeLogRow = {
   advert_id: string | null;
   vendor_code: string | null;
   initiated_by: string | null;
+  reason: string | null;
+  position: number | null;
   entity_label: string | null;
   change_type: string;
   old_value: string | null;
@@ -313,6 +323,8 @@ export type UnifiedChangeLogEntry = {
   advertId: number | null;
   vendorCode: string | null;
   initiatedBy: ChangeLogInitiator | null;
+  reason: string | null;
+  position: number | null;
   entityLabel: string | null;
   changeType: string;
   oldValue: string | null;
