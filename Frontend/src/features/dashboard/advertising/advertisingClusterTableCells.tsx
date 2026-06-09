@@ -21,6 +21,7 @@ import {
   getAdvertisingCpoOrSpend,
   getAdvertisingCpoOrderedItems,
   getAdvertisingOrderedItems,
+  isClusterPositionAutoMaintained,
 } from "./model";
 import { ratio } from "./advertisingClusterTableLayout";
 import { ClusterPositionCell } from "./ClusterPositionCell";
@@ -242,7 +243,12 @@ export function renderAdvertisingGroupCell(input: {
     case "accruedCr":
       return formatNullablePercent(row.accruedCr ?? null);
     case "productPosition":
-      return <ClusterPositionCell clusterName={row.clusterName} />;
+      return (
+        <ClusterPositionCell
+          clusterName={row.clusterName}
+          autoMaintained={isClusterPositionAutoMaintained(row)}
+        />
+      );
   }
 }
 

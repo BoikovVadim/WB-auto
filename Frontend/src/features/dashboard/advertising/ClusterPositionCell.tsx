@@ -85,13 +85,18 @@ function renderValue(position: ClusterPositionLatest | undefined, probing: boole
  * Ячейка колонки «Позиция товара»: место из последнего снапшота (или «—») + иконка
  * обновления, которая замеряет ИМЕННО этот кластер. Данные/обход — через контекст
  * useClusterPositions (стор позиций, общий для таблицы и глобальной кнопки пуска).
+ *
+ * Видимость места: у авто-обновляемых кластеров (активные заказные — движок зондирует их
+ * постоянно, `autoMaintained`) место показывается всегда и переживает перезаход. У остальных
+ * — эфемерно: только после ручного замера в этой сессии; при перезаходе/обновлении слетает.
  */
-export function ClusterPositionCell(props: { clusterName: string }) {
+export function ClusterPositionCell(props: { clusterName: string; autoMaintained: boolean }) {
   const ctx = usePositionContext();
   if (!ctx) return <span style={{ color: "var(--wb-text-muted, #888)" }}>—</span>;
 
-  const position = ctx.getPosition(props.clusterName);
   const probing = ctx.isProbing(props.clusterName);
+  const visible = props.autoMaintained || ctx.wasProbedThisSession(props.clusterName);
+  const position = visible ? ctx.getPosition(props.clusterName) : undefined;
 
   return (
     <span

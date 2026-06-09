@@ -52,7 +52,7 @@ function readConfig(): BidEngineConfig {
     scopeNmIds,
     minBid: numEnv("WB_CLUSTER_BID_MIN", 100),
     maxWbBid: numEnv("WB_CLUSTER_BID_MAX", 5000),
-    // Разгон до топ-4: +10% от текущей за круг. В топ-4: точный шаг вниз 10 ₽.
+    // Разгон до топ-4: +10% от МИНИМАЛЬНОЙ ставки за круг (мин 370 → +37₽). В топ-4: шаг вниз 10 ₽.
     coarsePct: numEnv("WB_CLUSTER_BID_COARSE_PCT", 0.1),
     fineStep: numEnv("WB_CLUSTER_BID_FINE_STEP", 10),
     minDeltaToApply: numEnv("WB_CLUSTER_BID_MIN_DELTA", 1),
@@ -287,7 +287,7 @@ export class ProductClusterBidEngineService {
             : null;
       const desired = computeDesiredBid({ position, currentBid, bidCap }, params);
       // Флаг «был в топ-4» — наблюдательный (на логику ставки не влияет): правило простое —
-      // P>4 поднимаем %, P≤4 спускаем по 10₽. Храним факт достижения топа для аналитики.
+      // P>4 поднимаем на 10% от мин. ставки, P≤4 спускаем по 10₽. Храним факт достижения топа.
       const reachedTop = prevReachedTop || (position !== null && position <= BID_TARGET_POSITION);
 
       await this.repository.updateClusterBidObservation(advertId, nmId, ncn, {

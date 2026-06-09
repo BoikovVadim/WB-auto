@@ -21,6 +21,7 @@ export {
   getAdvertisingCostPerThousand,
   getAdvertisingRatio,
   getAdvertisingOrderedItems,
+  isClusterPositionAutoMaintained,
   matchesAdvertisingStatusFilter,
   isClusterActive,
   isClusterExcluded,

@@ -36,6 +36,11 @@ const buildMap = (items: ClusterPositionLatest[]) => {
 export type ClusterPositionContextValue = {
   getPosition: (clusterName: string) => ClusterPositionLatest | undefined;
   isProbing: (clusterName: string) => boolean;
+  /**
+   * Замеряли ли этот кластер вручную в текущей сессии. Для НЕ авто-обновляемых кластеров
+   * место показывается только если true (эфемерно) — при перезаходе/обновлении сбрасывается.
+   */
+  wasProbedThisSession: (clusterName: string) => boolean;
   /** Замерить один кластер (по иконке в строке), fire-and-forget. */
   probeOne: (clusterName: string) => void;
   /** Глобальный обход в заданном порядке (текущая сортировка/экран). */
@@ -69,6 +74,9 @@ export function useClusterPositions(nmId: number | null): UseClusterPositionsRes
     new Map(),
   );
   const [probing, setProbing] = useState<Set<string>>(new Set());
+  // Кластеры, замеренные вручную в этой сессии (эфемерно). Для не авто-обновляемых кластеров
+  // только они показывают место — при смене товара/перезаходе сбрасывается.
+  const [probedSession, setProbedSession] = useState<Set<string>>(new Set());
   const [runningAll, setRunningAll] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const cancelRef = useRef(false);
@@ -81,6 +89,8 @@ export function useClusterPositions(nmId: number | null): UseClusterPositionsRes
   useEffect(() => {
     if (nmId === null) return;
     let alive = true;
+    // Смена товара/перезаход — ручные замеры прошлой сессии слетают (эфемерны).
+    setProbedSession(new Set());
     void fetchPositions(nmId)
       .then((items) => {
         if (!alive) return;
@@ -98,6 +108,8 @@ export function useClusterPositions(nmId: number | null): UseClusterPositionsRes
       if (nmId === null) return null;
       const key = keyOf(clusterName);
       const before = positionsRef.current.get(key)?.capturedAt ?? null;
+      // Помечаем сразу: ручной замер делает место видимым в этой сессии даже у не авто-кластеров.
+      setProbedSession((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
       setProbing((prev) => new Set(prev).add(key));
       try {
         await triggerClusterProbe(nmId, clusterName);
@@ -170,6 +182,19 @@ export function useClusterPositions(nmId: number | null): UseClusterPositionsRes
     (clusterName: string) => probing.has(keyOf(clusterName)),
     [probing],
   );
+  const wasProbedThisSession = useCallback(
+    (clusterName: string) => probedSession.has(keyOf(clusterName)),
+    [probedSession],
+  );
 
-  return { getPosition, isProbing, probeOne, runAll, cancelAll, runningAll, progress };
+  return {
+    getPosition,
+    isProbing,
+    wasProbedThisSession,
+    probeOne,
+    runAll,
+    cancelAll,
+    runningAll,
+    progress,
+  };
 }

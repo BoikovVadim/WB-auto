@@ -103,6 +103,26 @@ export function getAdvertisingCpoOrderedItems(input: {
   return Math.max(rk ?? 0, jam ?? 0);
 }
 
+/**
+ * Авто-обновляемый ли кластер по позиции в выдаче. Движок ставок постоянно зондирует место
+ * ТОЛЬКО для активных заказных кластеров: max(заказы РК, JAM) > 0 && sourceKind === "active"
+ * (см. product-cluster-bid-engine.service: фильтр `ordered`). Только у них место персистентно
+ * и переживает перезаход/обновление; у остальных позиция эфемерна — показывается лишь после
+ * ручного замера в текущей сессии и слетает при перезаходе. Зеркалит серверный критерий.
+ */
+export function isClusterPositionAutoMaintained(row: {
+  sourceKind: string | null;
+  orders: number | null;
+  shks?: number | null;
+  jamOrders: number | null;
+  accruedOrders?: number | null;
+}): boolean {
+  if (row.sourceKind !== "active") return false;
+  const periodOrders = getAdvertisingCpoOrderedItems(row) ?? 0; // max(РК, JAM)
+  const accruedOrders = row.accruedOrders ?? 0;
+  return Math.max(periodOrders, accruedOrders) > 0;
+}
+
 export function hasJamMetrics(query: AdvertisingClusterQueryRow) {
   return (
     query.jamFrequency !== null ||

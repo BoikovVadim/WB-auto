@@ -14,6 +14,7 @@ export {
   getAdvertisingOrderedItems,
   getAdvertisingRatio,
   hasJamMetrics,
+  isClusterPositionAutoMaintained,
   readAdvertisingNumericValue,
   sumAdvertisingValues,
 } from "./advertisingModelMetrics";

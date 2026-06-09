@@ -51,23 +51,23 @@ describe("computeBidCap", () => {
   });
 });
 
-describe("computeDesiredBid (P>4 → +10%, P≤4 → −10₽)", () => {
+describe("computeDesiredBid (P>4 → +10% от мин. ставки, P≤4 → −10₽)", () => {
   it("нет позиции → заморозка", () => {
     const r = computeDesiredBid({ position: null, currentBid: 800, bidCap: 5000 }, PARAMS);
     expect(r.reason).toBe("frozen");
     expect(r.bid).toBe(800);
   });
 
-  it("P=5 (хуже цели) → +10% от текущей", () => {
+  it("P=5 (хуже цели) → +фикс-шаг 10% от мин. ставки", () => {
     const r = computeDesiredBid({ position: 5, currentBid: 500, bidCap: 5000 }, PARAMS);
     expect(r.reason).toBe("up");
-    expect(r.bid).toBeCloseTo(550, 6); // 500 × 1.10
+    expect(r.bid).toBe(510); // 500 + round(100 × 0.10) = 500 + 10
   });
 
-  it("P=20 (далеко) → тоже +10%", () => {
+  it("P=20 (далеко) → тот же фикс-шаг от мин. ставки", () => {
     const r = computeDesiredBid({ position: 20, currentBid: 370, bidCap: 5000 }, PARAMS);
     expect(r.reason).toBe("up");
-    expect(r.bid).toBeCloseTo(407, 6);
+    expect(r.bid).toBe(380); // 370 + 10
   });
 
   it("P=4 (достигли топ-4) → −10₽", () => {
@@ -88,13 +88,13 @@ describe("computeDesiredBid (P>4 → +10%, P≤4 → −10₽)", () => {
     expect(r.bid).toBe(2000);
   });
 
-  it("подъём не прыгает на потолок — только +10% за круг", () => {
+  it("подъём не прыгает на потолок — только фикс-шаг за круг", () => {
     const r = computeDesiredBid({ position: 159, currentBid: 370, bidCap: 5000 }, PARAMS);
-    expect(r.bid).toBeCloseTo(407, 6);
+    expect(r.bid).toBe(380); // 370 + 10, не прыжок на потолок
   });
 
   it("подъём clamp по min(bidCap, maxWbBid)", () => {
-    const r = computeDesiredBid({ position: 8, currentBid: 4900, bidCap: 9000 }, PARAMS);
+    const r = computeDesiredBid({ position: 8, currentBid: 4995, bidCap: 9000 }, PARAMS);
     expect(r.bid).toBe(PARAMS.maxWbBid);
   });
 });
