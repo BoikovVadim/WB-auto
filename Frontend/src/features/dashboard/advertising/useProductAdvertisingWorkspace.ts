@@ -84,9 +84,8 @@ export function useProductAdvertisingWorkspace(input: {
     }
 
     const currentRequestInput = requestInputRef.current;
-    const refreshKey = input.refreshKey ?? 0;
-    const shouldForceRefresh = refreshKey !== lastRefreshKeyRef.current;
-    lastRefreshKeyRef.current = refreshKey;
+    // refreshKey в deps эффекта — его смена сама перезапускает фетч (форс-рефреш).
+    lastRefreshKeyRef.current = input.refreshKey ?? 0;
     const budgetKey = buildWorkspaceBudgetKey(
       input.nmId,
       currentRequestInput.startDate,
@@ -100,15 +99,10 @@ export function useProductAdvertisingWorkspace(input: {
     if (bootstrapWorkspace) {
       completeAdvertisingUxBudget(budgetKey);
     }
-    const canReuseCachedWorkspace =
-      cachedWorkspace &&
-      !shouldForceRefresh &&
-      !shouldBackgroundRefreshWorkspace(cachedWorkspace);
-    if (canReuseCachedWorkspace) {
-      setIsProductAdvertisingWorkspaceLoading(false);
-      return;
-    }
-
+    // SWR: кэш (если есть) уже показан мгновенно как bootstrap; фоновую ревалидацию
+    // запускаем ВСЕГДА, не пропуская по «свежести». Иначе F5/повторный вход в пределах
+    // окна свежести показывал кэш и не дёргал сеть — данные «не обновлялись». Фетч
+    // фоновый и не мигает (loading=false при наличии bootstrap), поэтому всегда свежо.
     let isCancelled = false;
     let retryTimerId: ReturnType<typeof setTimeout> | null = null;
     setIsProductAdvertisingWorkspaceLoading(bootstrapWorkspace === null);
@@ -176,21 +170,4 @@ export function useProductAdvertisingWorkspace(input: {
 
 function buildWorkspaceBudgetKey(nmId: number, startDate: string, endDate: string) {
   return `workspace:${String(nmId)}:${startDate}:${endDate}`;
-}
-
-function shouldBackgroundRefreshWorkspace(value: {
-  checkedAt: string;
-  snapshot: { status: string };
-  syncState: { refreshStatus: "idle" | "running" };
-}) {
-  if (value.syncState.refreshStatus === "running" || value.snapshot.status !== "ready") {
-    return true;
-  }
-
-  const checkedAtMs = Date.parse(value.checkedAt);
-  if (!Number.isFinite(checkedAtMs)) {
-    return true;
-  }
-
-  return Date.now() - checkedAtMs > 60_000;
 }
