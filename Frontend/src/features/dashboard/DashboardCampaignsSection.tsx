@@ -7,8 +7,12 @@ import {
   type RawCampaignProductRow,
 } from "../../api/syncClientCore";
 import { type ColumnDef } from "./RawTableSection";
-import { mutedStyle } from "./RawTableSection.styles";
+import { mutedStyle, tdStyle, thStyle } from "./RawTableSection.styles";
 import { cacheRawSection, getCachedRawSection } from "../../api/rawSectionCache";
+import { useVirtualRows } from "./useVirtualRows";
+
+const TABBED_ROW_H = 34;
+const TABBED_DEFAULT_COL_WIDTH = 100;
 
 type CampaignsTab = "campaigns" | "products";
 
@@ -169,8 +173,17 @@ export function TabbedInnerTable<T>({
     ? rows.filter((r) => filterRow(r, search.toLowerCase()))
     : rows;
 
-  const thS: React.CSSProperties = { padding: "8px 10px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "var(--color-text-muted, #888)", textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap", borderBottom: "1px solid var(--color-border, #2a2a3a)" };
-  const tdS: React.CSSProperties = { padding: "6px 10px", fontSize: 12, borderBottom: "1px solid rgba(255,255,255,0.04)", verticalAlign: "middle", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+  // Виртуализация строк (общий хук) — в DOM только видимое окно; bounded-скролл и sticky-шапку
+  // даёт глобальный CSS (.wb-table-wrap + .wb-data-table), как у RawTableSection.
+  const { scrollRef, items, paddingTop, paddingBottom } = useVirtualRows(
+    filtered.length,
+    TABBED_ROW_H,
+    search,
+  );
+  const totalColWidth = columns.reduce(
+    (sum, c) => sum + (typeof c.width === "number" ? c.width : TABBED_DEFAULT_COL_WIDTH),
+    0,
+  );
 
   return (
     <div>
@@ -188,23 +201,47 @@ export function TabbedInnerTable<T>({
         <p style={{ ...mutedStyle, padding: "24px 0" }}>Данных нет</p>
       )}
       {filtered.length > 0 && (
-        <div style={{ overflowX: "auto" }}>
-          <table className="wb-data-table" style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>{columns.map((c) => <th key={c.key} style={{ ...thS, width: c.width }}>{c.label}</th>)}</tr>
-            </thead>
-            <tbody>
-              {filtered.map((row) => (
-                <tr key={getRowKey(row)}>
-                  {columns.map((c) => <td key={c.key} style={tdS}>{c.render(row)}</td>)}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <>
+          <div ref={scrollRef} className="wb-table-wrap">
+            <table
+              className="wb-data-table"
+              style={{ width: "100%", minWidth: totalColWidth, tableLayout: "fixed" }}
+            >
+              <colgroup>
+                {columns.map((c) => (
+                  <col key={c.key} style={{ width: c.width ?? TABBED_DEFAULT_COL_WIDTH }} />
+                ))}
+              </colgroup>
+              <thead>
+                <tr>{columns.map((c) => <th key={c.key} style={thStyle}>{c.label}</th>)}</tr>
+              </thead>
+              <tbody>
+                {paddingTop > 0 && (
+                  <tr aria-hidden style={{ height: paddingTop }}>
+                    <td colSpan={columns.length} style={{ padding: 0, border: "none" }} />
+                  </tr>
+                )}
+                {items.map((vi) => {
+                  const row = filtered[vi.index];
+                  if (!row) return null;
+                  return (
+                    <tr key={getRowKey(row)} style={{ height: TABBED_ROW_H }}>
+                      {columns.map((c) => <td key={c.key} style={tdStyle}>{c.render(row)}</td>)}
+                    </tr>
+                  );
+                })}
+                {paddingBottom > 0 && (
+                  <tr aria-hidden style={{ height: paddingBottom }}>
+                    <td colSpan={columns.length} style={{ padding: 0, border: "none" }} />
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
           <p style={{ ...mutedStyle, fontSize: 11, padding: "8px 0 0" }}>
             Показано {filtered.length} из {rows.length} строк
           </p>
-        </div>
+        </>
       )}
     </div>
   );
