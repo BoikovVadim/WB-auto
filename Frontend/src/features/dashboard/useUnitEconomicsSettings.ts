@@ -8,6 +8,9 @@ import {
   type GlobalPercentMetric,
   type UnitEconomicsSettings,
 } from "../../api/syncClientUnitEconomics";
+import { cacheSessionJson, getCachedSessionJson } from "../../api/sessionJsonCache";
+
+const SETTINGS_CACHE_KEY = "unit-economics-settings";
 
 // Метрика → поле в settings (для оптимистичного обновления локального состояния).
 const GLOBAL_METRIC_FIELD: Record<
@@ -44,13 +47,16 @@ const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 export function useUnitEconomicsSettings(
   onSaved?: () => void,
 ): UseUnitEconomicsSettingsResult {
-  const [settings, setSettings] = useState<UnitEconomicsSettings>(EMPTY);
+  // Первый кадр из кэша (повторный заход/F5 — без ожидания сети), затем фоновая ревалидация.
+  const cached = getCachedSessionJson<UnitEconomicsSettings>(SETTINGS_CACHE_KEY);
+  const [settings, setSettings] = useState<UnitEconomicsSettings>(cached ?? EMPTY);
   const [isLoading, setIsLoading] = useState(false);
   const isMountedRef = useRef(true);
 
   const load = useCallback(() => {
     fetchUnitEconomicsSettings()
       .then((data) => {
+        cacheSessionJson(SETTINGS_CACHE_KEY, data);
         if (isMountedRef.current) setSettings(data);
       })
       .catch(() => {
@@ -63,7 +69,9 @@ export function useUnitEconomicsSettings(
 
   useEffect(() => {
     isMountedRef.current = true;
-    setIsLoading(true);
+    if (getCachedSessionJson<UnitEconomicsSettings>(SETTINGS_CACHE_KEY) === null) {
+      setIsLoading(true);
+    }
     load();
     const interval = setInterval(() => {
       if (!document.hidden) load();
