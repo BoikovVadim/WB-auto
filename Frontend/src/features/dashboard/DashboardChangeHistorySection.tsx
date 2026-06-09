@@ -1,7 +1,10 @@
 import { memo, useEffect, useState } from "react";
 
 import { fetchUnifiedChangeLog, type UnifiedChangeLogEntry } from "../../api/syncClientChangeLog";
+import { cacheChangeLog, getCachedChangeLog } from "../../api/changeLogCache";
 import { bidReasonLabel, clusterStatusLabel } from "./changeLogLabels";
+
+const CHANGE_LOG_LIMIT = 500;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -156,17 +159,30 @@ function ChangeRow({ entry }: { entry: UnifiedChangeLogEntry }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const DashboardChangeHistorySection = memo(function DashboardChangeHistorySection() {
-  const [entries, setEntries] = useState<UnifiedChangeLogEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Мгновенный первый кадр из кэша (повторный заход/F5 — без ожидания сети), затем фоновая
+  // ревалидация. Скелетон/«Загрузка» показываем только когда кэша ещё нет.
+  const cached = getCachedChangeLog(CHANGE_LOG_LIMIT);
+  const [entries, setEntries] = useState<UnifiedChangeLogEntry[]>(cached ?? []);
+  const [loading, setLoading] = useState(cached === null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-    fetchUnifiedChangeLog(500)
-      .then(setEntries)
-      .catch(() => { setError("Не удалось загрузить историю изменений"); })
-      .finally(() => { setLoading(false); });
+    let alive = true;
+    fetchUnifiedChangeLog(CHANGE_LOG_LIMIT)
+      .then((data) => {
+        if (!alive) return;
+        cacheChangeLog(CHANGE_LOG_LIMIT, data);
+        setEntries(data);
+        setError(null);
+      })
+      .catch(() => {
+        // Есть кэш — молча оставляем его; пусто — показываем ошибку.
+        if (alive && getCachedChangeLog(CHANGE_LOG_LIMIT) === null) {
+          setError("Не удалось загрузить историю изменений");
+        }
+      })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
   }, []);
 
   return (
