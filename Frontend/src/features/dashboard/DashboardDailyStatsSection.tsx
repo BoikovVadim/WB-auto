@@ -37,6 +37,7 @@ export function DashboardDailyStatsSection({ onBack }: { onBack: () => void }) {
       subtitle="{count} строк · wb_cluster_daily_stats"
       onBack={onBack}
       fetchData={fetchData}
+      cacheKey="daily-stats"
       columns={columns}
       getRowKey={(r) => r.dailyStatKey}
       filterRow={(r, q) =>

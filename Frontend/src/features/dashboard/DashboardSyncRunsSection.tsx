@@ -46,6 +46,7 @@ export function DashboardSyncRunsSection({ onBack }: { onBack: () => void }) {
       subtitle="{count} записей · история синхронизаций с WB"
       onBack={onBack}
       fetchData={fetchData}
+      cacheKey="sync-runs"
       columns={columns}
       getRowKey={(r) => r.id}
       filterRow={(r, q) => (r.trigger ?? "").includes(q) || (r.status ?? "").includes(q) || r.id.includes(q)}

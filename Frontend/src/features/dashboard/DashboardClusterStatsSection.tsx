@@ -34,6 +34,7 @@ export function DashboardClusterStatsSection({ onBack }: { onBack: () => void })
       subtitle="{count} кластеров · wb_clusters + wb_cluster_stats"
       onBack={onBack}
       fetchData={fetchData}
+      cacheKey="cluster-stats"
       columns={columns}
       getRowKey={(r) => r.clusterKey}
       filterRow={(r, q) =>

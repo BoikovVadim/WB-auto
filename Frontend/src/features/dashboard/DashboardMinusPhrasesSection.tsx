@@ -21,6 +21,7 @@ export function DashboardMinusPhrasesSection({ onBack }: { onBack: () => void })
       subtitle="{count} фраз · wb_campaign_minus_phrases"
       onBack={onBack}
       fetchData={fetchData}
+      cacheKey="minus-phrases"
       columns={columns}
       getRowKey={(r) => `${r.advertId}-${r.nmId}-${r.normalizedPhrase}`}
       filterRow={(r, q) =>

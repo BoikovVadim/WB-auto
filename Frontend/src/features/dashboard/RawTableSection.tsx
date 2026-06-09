@@ -1,6 +1,8 @@
 import React, { memo, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
+import { cacheRawSection, getCachedRawSection } from "../../api/rawSectionCache";
+
 import { mutedStyle, tdStyle, thStyle } from "./RawTableSection.styles";
 
 export type ColumnDef<T> = {
@@ -34,6 +36,11 @@ type RawTableSectionProps<T> = {
   filterRow?: (row: T, search: string) => boolean;
   extraControls?: React.ReactNode;
   refetchKey?: number;
+  /**
+   * Если задан — раздел кэширует строки (memory+sessionStorage) под этим ключом и при
+   * повторном заходе/F5 рисует первый кадр из кэша мгновенно, ревалидируя в фоне (без скелетона).
+   */
+  cacheKey?: string;
   /** Optional slot rendered above the table (after header), receives loaded rows. */
   headerSlot?: (rows: T[]) => React.ReactNode;
   /** Column key to sort by on first render. */
@@ -74,12 +81,15 @@ export function RawTableSection<T>({
   filterRow,
   extraControls,
   refetchKey = 0,
+  cacheKey,
   headerSlot,
   defaultSortKey,
   defaultSortDir = "desc",
 }: RawTableSectionProps<T>) {
-  const [rows, setRows] = useState<T[]>(() => initialData ?? []);
-  const [isLoading, setIsLoading] = useState(() => initialData == null);
+  // Первый кадр: initialData → кэш по cacheKey → пусто. При наличии данных скелетон не нужен.
+  const cachedRows = cacheKey ? getCachedRawSection<T>(cacheKey) : null;
+  const [rows, setRows] = useState<T[]>(() => initialData ?? cachedRows ?? []);
+  const [isLoading, setIsLoading] = useState(() => initialData == null && cachedRows == null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<string | null>(defaultSortKey ?? null);
@@ -91,15 +101,27 @@ export function RawTableSection<T>({
     if (initialData != null && refetchKey === 0) {
       return;
     }
-    setIsLoading(true);
+    // Есть кэш/данные на руках — ревалидируем в фоне, без переключения на скелетон.
+    const hasRows = (cacheKey ? getCachedRawSection<T>(cacheKey) : null) != null;
+    if (!hasRows) {
+      setIsLoading(true);
+    }
     setError(null);
     fetchData()
-      .then((data) => { setRows(data); })
+      .then((data) => {
+        setRows(data);
+        if (cacheKey) {
+          cacheRawSection(cacheKey, data);
+        }
+      })
       .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : "Ошибка загрузки");
+        // С кэшем на руках ошибку фона не показываем — оставляем кэш.
+        if (!hasRows) {
+          setError(err instanceof Error ? err.message : "Ошибка загрузки");
+        }
       })
       .finally(() => setIsLoading(false));
-  }, [fetchData, refetchKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fetchData, refetchKey, cacheKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(() => {
     let result = filterRow && search
