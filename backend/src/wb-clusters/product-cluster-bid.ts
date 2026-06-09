@@ -59,10 +59,11 @@ export interface BidEngineParams {
    */
   coarsePct: number;
   /**
-   * ТОЧНАЯ подстройка: в топ-4 снижаем на этот фикс-шаг (₽) за круг — ищем минимально
-   * достаточную ставку мелкими шагами.
+   * ТОЧНАЯ подстройка: в топ-4 снижаем на шаг = эта доля от МИНИМАЛЬНОЙ ставки кластера за круг
+   * (0.05 = −5% от мин). Напр. мин 370 → шаг −19₽ каждый круг, независимо от текущей ставки.
+   * Пропорционально минимуму (как разгон) — у дорогих кластеров спуск крупнее, у дешёвых мельче.
    */
-  fineStep: number;
+  finePct: number;
 }
 
 export interface DesiredBidInput {
@@ -88,8 +89,8 @@ function clamp(v: number, lo: number, hi: number): number {
 /**
  * Желаемая ставка по позиции С РЕКЛАМОЙ (этап 3):
  *  - нет позиции → заморозка (зонд не дал данных — R3);
- *  - P > 4 (хуже цели) → ПОДНИМАЕМ на фикс-шаг coarsePct×минБид ₽ (разгон к топ-4);
- *  - P ≤ 4 (достигли топ-4) → СПУСКАЕМ на fineStep ₽ за круг (ищем минимально достаточную);
+ *  - P > 4 (хуже цели) → ПОДНИМАЕМ на шаг coarsePct×минБид ₽ (разгон к топ-4);
+ *  - P ≤ 4 (достигли топ-4) → СПУСКАЕМ на шаг finePct×минБид ₽ за круг (ищем минимально достаточную);
  *  - на потолке окупаемости (cur ≥ hi, P > 4) → стоим на нём (выше платить нерентабельно).
  * Итог всегда clamp(minBid, min(bidCap, maxWbBid)).
  */
@@ -97,7 +98,7 @@ export function computeDesiredBid(
   input: DesiredBidInput,
   params: BidEngineParams,
 ): DesiredBidResult {
-  const { minBid, maxWbBid, coarsePct, fineStep } = params;
+  const { minBid, maxWbBid, coarsePct, finePct } = params;
   const cap = input.bidCap != null && input.bidCap > 0 ? input.bidCap : minBid;
   // WB Promotion API принимает ставку ТОЛЬКО целым числом (дробная → «incorrect request body»,
   // и WB отклоняет ВЕСЬ батч). Поэтому держим расчёт в целых: нижняя граница — вверх (ceil),
@@ -110,9 +111,10 @@ export function computeDesiredBid(
   // Нет позиции — не дёргаем ставку (R3: замораживаем как есть).
   if (input.position == null) return { bid: cur, reason: "frozen" };
 
-  // Достигли топ-4 — спускаем по fineStep ₽ (ищем минимально достаточную ставку).
+  // Достигли топ-4 — спускаем на шаг = finePct×минБид ₽ (ищем минимально достаточную ставку).
   if (input.position <= BID_TARGET_POSITION) {
     if (cur <= lo) return { bid: lo, reason: "at_min" };
+    const fineStep = Math.max(1, Math.round(minBid * finePct));
     return { bid: clamp(cur - fineStep, lo, hi), reason: "down" };
   }
 

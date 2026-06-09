@@ -52,9 +52,10 @@ function readConfig(): BidEngineConfig {
     scopeNmIds,
     minBid: numEnv("WB_CLUSTER_BID_MIN", 100),
     maxWbBid: numEnv("WB_CLUSTER_BID_MAX", 5000),
-    // Разгон до топ-4: +10% от МИНИМАЛЬНОЙ ставки за круг (мин 370 → +37₽). В топ-4: шаг вниз 10 ₽.
+    // Разгон до топ-4: +10% от МИНИМАЛЬНОЙ ставки за круг (мин 370 → +37₽).
+    // Спуск в топ-4: −5% от МИНИМАЛЬНОЙ ставки за круг (мин 370 → −19₽).
     coarsePct: numEnv("WB_CLUSTER_BID_COARSE_PCT", 0.1),
-    fineStep: numEnv("WB_CLUSTER_BID_FINE_STEP", 10),
+    finePct: numEnv("WB_CLUSTER_BID_FINE_PCT", 0.05),
     minDeltaToApply: numEnv("WB_CLUSTER_BID_MIN_DELTA", 1),
   };
 }
@@ -226,7 +227,7 @@ export class ProductClusterBidEngineService {
       minBid,
       maxWbBid: cfg.maxWbBid,
       coarsePct: cfg.coarsePct,
-      fineStep: cfg.fineStep,
+      finePct: cfg.finePct,
     };
 
     // CR и bid_cap считаем из ЖИВОГО накопителя (отстоявшаяся корзина + сегодняшний overlay) —

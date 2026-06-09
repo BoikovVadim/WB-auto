@@ -10,7 +10,7 @@ import {
   CR_VIEWS_FLOOR,
 } from "./product-cluster-bid";
 
-const PARAMS: BidEngineParams = { minBid: 100, maxWbBid: 5000, coarsePct: 0.1, fineStep: 10 };
+const PARAMS: BidEngineParams = { minBid: 100, maxWbBid: 5000, coarsePct: 0.1, finePct: 0.05 };
 
 describe("computeClusterCr (max(РК,JAM), пол 100 показов)", () => {
   it("CR = max(РК,JAM) / показы при показах выше пола", () => {
@@ -70,10 +70,10 @@ describe("computeDesiredBid (P>4 → +10% от мин. ставки, P≤4 → �
     expect(r.bid).toBe(380); // 370 + 10
   });
 
-  it("P=4 (достигли топ-4) → −10₽", () => {
+  it("P=4 (достигли топ-4) → спуск на 5% от мин (мин 100 → −5₽)", () => {
     const r = computeDesiredBid({ position: 4, currentBid: 800, bidCap: 5000 }, PARAMS);
     expect(r.reason).toBe("down");
-    expect(r.bid).toBe(790);
+    expect(r.bid).toBe(795);
   });
 
   it("P=2 на минимуме → at_min", () => {
