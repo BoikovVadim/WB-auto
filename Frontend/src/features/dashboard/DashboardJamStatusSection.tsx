@@ -13,9 +13,11 @@ import {
 } from "./advertising/date";
 import { mutedStyle, tdStyle, thStyle } from "./RawTableSection.styles";
 import { cacheRawSection, getCachedRawSection } from "../../api/rawSectionCache";
+import { useVirtualRows } from "./useVirtualRows";
 
 // Кэшируем только дефолтный (без фильтров) вид JAM — самый частый первый кадр.
 const JAM_DEFAULT_CACHE_KEY = "raw-jam-default";
+const JAM_ROW_H = 34;
 
 type JamTab = "data" | "progress";
 
@@ -196,6 +198,14 @@ function JamDataTab() {
     );
   });
 
+  // Виртуализация строк (до 2000) — в DOM только видимое окно. Контейнер уже bounded (maxHeight),
+  // sticky-шапку даёт глобальный .wb-data-table. Сброс к началу при смене поиска/набора данных.
+  const { scrollRef, items, paddingTop, paddingBottom } = useVirtualRows(
+    filtered.length,
+    JAM_ROW_H,
+    `${search}|${String(rows.length)}`,
+  );
+
   const nmIdInvalid = nmIdFilter.trim() !== "" && !/^\d+$/.test(nmIdFilter.trim());
 
   return (
@@ -248,7 +258,7 @@ function JamDataTab() {
       )}
 
       {filtered.length > 0 && (
-        <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 320px)" }}>
+        <div ref={scrollRef} style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 320px)" }}>
           <table className="wb-data-table" style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
@@ -265,8 +275,17 @@ function JamDataTab() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r, i) => (
-                <tr key={`${r.snapshotKey}-${r.normalizedQueryText}-${i}`}>
+              {paddingTop > 0 && (
+                <tr aria-hidden style={{ height: paddingTop }}>
+                  <td colSpan={12} style={{ padding: 0, border: "none" }} />
+                </tr>
+              )}
+              {items.map((vi) => {
+                const r = filtered[vi.index];
+                if (!r) return null;
+                const i = vi.index;
+                return (
+                <tr key={`${r.snapshotKey}-${r.normalizedQueryText}-${i}`} style={{ height: JAM_ROW_H }}>
                   <td style={{ ...tdStyle, fontVariantNumeric: "tabular-nums", fontFamily: "monospace" }}>
                     {r.nmId}
                   </td>
@@ -291,7 +310,13 @@ function JamDataTab() {
                     {r.syncedAt ? r.syncedAt.slice(0, 16).replace("T", " ") : "—"}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
+              {paddingBottom > 0 && (
+                <tr aria-hidden style={{ height: paddingBottom }}>
+                  <td colSpan={12} style={{ padding: 0, border: "none" }} />
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
