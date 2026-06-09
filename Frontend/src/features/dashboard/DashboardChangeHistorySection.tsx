@@ -2,7 +2,12 @@ import { memo, useEffect, useState } from "react";
 
 import { fetchUnifiedChangeLog, type UnifiedChangeLogEntry } from "../../api/syncClientChangeLog";
 import { cacheChangeLog, getCachedChangeLog } from "../../api/changeLogCache";
-import { bidReasonLabel, clusterStatusLabel, reasonToneClass } from "./changeLogLabels";
+import {
+  automationModeLabel,
+  bidReasonLabel,
+  clusterStatusLabel,
+  reasonToneClass,
+} from "./changeLogLabels";
 
 const CHANGE_LOG_LIMIT = 500;
 
@@ -27,26 +32,29 @@ function formatDateTime(iso: string): string {
 
 function entityTypeLabel(entityType: string): string {
   switch (entityType) {
-    case "cost_price":     return "Себестоимость";
-    case "cluster_bid":    return "Ставка кластера";
-    case "cluster_status": return "Статус кластера";
-    default:               return entityType;
+    case "cost_price":      return "Себестоимость";
+    case "cluster_bid":     return "Ставка кластера";
+    case "cluster_status":  return "Статус кластера";
+    case "automation_mode": return "Автоматизация";
+    default:                return entityType;
   }
 }
 
 function changeTypeLabel(changeType: string): string {
   switch (changeType) {
-    case "set":           return "Установлена";
-    case "clear":         return "Очищена";
-    case "bid_change":    return "Изменена ставка";
-    case "status_change": return "Изменён статус";
-    default:              return changeType;
+    case "set":             return "Установлена";
+    case "clear":           return "Очищена";
+    case "bid_change":      return "Изменена ставка";
+    case "status_change":   return "Изменён статус";
+    case "automation_mode": return "Переключение";
+    default:                return changeType;
   }
 }
 
-/** Значение для колонок «Было»/«Стало». У статуса кластера enum active/excluded → русское слово. */
+/** Значение для колонок «Было»/«Стало». Enum'ы статуса/режима → русское слово. */
 function valueLabel(entityType: string, value: string | null): string | null {
   if (entityType === "cluster_status") return clusterStatusLabel(value);
+  if (entityType === "automation_mode") return automationModeLabel(value);
   return value;
 }
 
@@ -69,10 +77,11 @@ type BadgeColor = "blue" | "red" | "green" | "orange" | "gray";
 
 function entityTypeBadgeColor(entityType: string): BadgeColor {
   switch (entityType) {
-    case "cost_price":     return "orange";
-    case "cluster_bid":    return "blue";
-    case "cluster_status": return "green";
-    default:               return "gray";
+    case "cost_price":      return "orange";
+    case "cluster_bid":     return "blue";
+    case "cluster_status":  return "green";
+    case "automation_mode": return "red";
+    default:                return "gray";
   }
 }
 

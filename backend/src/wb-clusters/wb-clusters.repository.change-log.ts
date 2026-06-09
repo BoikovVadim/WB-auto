@@ -6,7 +6,7 @@ export type ChangeLogEntryInput = {
   nmId: number;
   advertId: number;
   clusterName: string;
-  changeType: "status_change" | "bid_change";
+  changeType: "status_change" | "bid_change" | "automation_mode";
   oldValue: string | null;
   newValue: string;
   jobId: string | null;
@@ -38,7 +38,7 @@ export type ChangeLogEntry = {
   nmId: number;
   advertId: number;
   clusterName: string;
-  changeType: "status_change" | "bid_change";
+  changeType: "status_change" | "bid_change" | "automation_mode";
   oldValue: string | null;
   newValue: string;
   jobId: string | null;
@@ -146,7 +146,7 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
       nmId: Number(row.nm_id),
       advertId: Number(row.advert_id),
       clusterName: row.cluster_name,
-      changeType: row.change_type as "status_change" | "bid_change",
+      changeType: row.change_type as "status_change" | "bid_change" | "automation_mode",
       oldValue: row.old_value,
       newValue: row.new_value,
       jobId: row.job_id,

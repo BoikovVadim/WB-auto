@@ -51,3 +51,21 @@ export function reasonToneClass(value: string | null | undefined): string {
   const tone = bidReasonTone(value);
   return tone ? `wb-bid-reason wb-bid-reason--${tone}` : "";
 }
+
+/**
+ * Человекочитаемый режим автоматизации для Истории изменений (вкл/выкл автоматики).
+ * off → «выключена», preview → «предпросмотр», live → «включена». Единый источник для
+ * личной и общей истории.
+ */
+export function automationModeLabel(value: string | null | undefined): string {
+  switch (value) {
+    case "off":
+      return "выключена";
+    case "preview":
+      return "предпросмотр";
+    case "live":
+      return "включена";
+    default:
+      return value ?? "—";
+  }
+}

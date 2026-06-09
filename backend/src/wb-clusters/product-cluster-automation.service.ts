@@ -78,7 +78,32 @@ export class ProductClusterAutomationService {
    * первый показ цифр в панели моментальным. На off / без порога — обычное чтение getStatus.
    */
   async setMode(advertId: number, nmId: number, mode: AutomationMode): Promise<ClusterAutomationStatusResult> {
+    // Фиксируем смену режима в Историю изменений (вкл/выкл — ручное действие пользователя),
+    // чтобы было видно, КТО и КОГДА выключил/включил автоматизацию (раньше следа не оставалось,
+    // отсюда ощущение «само отключилось»). Пишем только при реальном изменении режима.
+    const prevMode = await this.repository.getAutomationMode(advertId, nmId);
     await this.repository.setAutomationMode(advertId, nmId, mode);
+    if (mode !== prevMode) {
+      await this.repository
+        .saveChangeLogEntries([
+          {
+            nmId,
+            advertId,
+            clusterName: "Автоматизация",
+            changeType: "automation_mode",
+            oldValue: prevMode,
+            newValue: mode,
+            jobId: null,
+            initiatedBy: "user",
+            reason: null,
+            position: null,
+          },
+        ])
+        .catch((e: unknown) => {
+          // История — вспомогательная; её сбой не должен валить смену режима.
+          this.logger.warn(`change-log automation_mode ${advertId}/${nmId}: ${String(e)}`);
+        });
+    }
     if (mode === "off") {
       return { mode: "off", maxCpo: null, pendingCount: 0, clusters: [] };
     }

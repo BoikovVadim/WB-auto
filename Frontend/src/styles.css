@@ -3946,6 +3946,32 @@ input {
   white-space: nowrap;
 }
 
+/* Кнопки диалога подтверждения выключения автоматизации. */
+.wb-automation-confirm__btn {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--wb-border, #e5e7eb);
+  background: #fff;
+  color: var(--wb-text-main, #111);
+  cursor: pointer;
+}
+
+.wb-automation-confirm__btn:hover {
+  background: var(--wb-bg-muted, #f5f5f5);
+}
+
+.wb-automation-confirm__btn--danger {
+  background: #c0392b;
+  border-color: #c0392b;
+  color: #fff;
+}
+
+.wb-automation-confirm__btn--danger:hover {
+  background: #a93226;
+}
+
 /* Подсветка причины авто-смены ставки в Истории изменений (личной и общей):
    повышаем → красный (тратим больше), понижаем → зелёный (экономим). */
 .wb-bid-reason {

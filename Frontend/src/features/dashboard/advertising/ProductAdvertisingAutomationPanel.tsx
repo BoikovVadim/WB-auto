@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import type { ClusterAutomationState } from "../../../api/syncClientClusterAutomation";
+import { Modal } from "../../../components/Modal";
 
 export interface AutomationPanelCounts {
   active: number;
@@ -35,6 +36,16 @@ export function ProductAdvertisingAutomationPanel(props: {
 }) {
   const isOn = props.mode !== "off";
   const countsVisible = props.alwaysShowCounts || isOn;
+  // Выключение автоматики — только через подтверждение (раньше один случайный клик молча
+  // отключал её, отсюда жалобы «само отключилось»). Включение — сразу, без диалога.
+  const [confirmOff, setConfirmOff] = useState(false);
+  const handleToggle = (enabled: boolean) => {
+    if (enabled) {
+      props.onToggle(true);
+    } else {
+      setConfirmOff(true);
+    }
+  };
   // Пока идёт запрос (включение/пересчёт) показываем «…», а НЕ предыдущие числа: при
   // переключении оптимистичный апдейт держит старые (устаревшие с прошлого прогона)
   // счётчики, и без этого они мелькали как настоящие до прихода свежего ответа сервера.
@@ -64,7 +75,7 @@ export function ProductAdvertisingAutomationPanel(props: {
           type="checkbox"
           checked={isOn}
           disabled={props.busy}
-          onChange={(e) => props.onToggle(e.target.checked)}
+          onChange={(e) => handleToggle(e.target.checked)}
         />
         <span>Автоматизация</span>
       </label>
@@ -100,6 +111,43 @@ export function ProductAdvertisingAutomationPanel(props: {
           )}
           {props.actions}
         </div>
+      )}
+
+      {confirmOff && (
+        <Modal
+          title="Выключить автоматизацию?"
+          width={420}
+          onClose={() => setConfirmOff(false)}
+          footer={
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button
+                type="button"
+                className="wb-automation-confirm__btn"
+                onClick={() => setConfirmOff(false)}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="wb-automation-confirm__btn wb-automation-confirm__btn--danger"
+                onClick={() => {
+                  setConfirmOff(false);
+                  props.onToggle(false);
+                }}
+              >
+                Выключить
+              </button>
+            </div>
+          }
+        >
+          <p style={{ margin: 0, fontSize: 13, color: "var(--wb-text-main)" }}>
+            Автоматика перестанет управлять ставками и составом кластеров. Боевые кампании
+            останутся в текущем состоянии, пока вы не включите автоматизацию снова.
+          </p>
+          <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--wb-text-muted)" }}>
+            Действие запишется в Историю изменений.
+          </p>
+        </Modal>
       )}
     </div>
   );

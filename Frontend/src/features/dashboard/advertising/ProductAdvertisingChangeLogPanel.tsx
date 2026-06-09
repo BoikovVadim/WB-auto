@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClusterChangeLogEntry } from "../../../api/syncClientAdvertisingRead";
 import { fetchClusterChangeLog } from "../../../api/syncClientAdvertisingRead";
-import { bidReasonLabel, clusterStatusLabel, reasonToneClass } from "../changeLogLabels";
+import {
+  automationModeLabel,
+  bidReasonLabel,
+  clusterStatusLabel,
+  reasonToneClass,
+} from "../changeLogLabels";
 
 type Props = {
   nmId: number;
@@ -10,6 +15,7 @@ type Props = {
 };
 
 function formatChangeType(entry: ClusterChangeLogEntry): string {
+  if (entry.changeType === "automation_mode") return "Автоматизация";
   if (entry.changeType === "bid_change") {
     return "Смена ставки";
   }
@@ -19,6 +25,9 @@ function formatChangeType(entry: ClusterChangeLogEntry): string {
 }
 
 function formatChangeValue(entry: ClusterChangeLogEntry): string {
+  if (entry.changeType === "automation_mode") {
+    return `${automationModeLabel(entry.oldValue)} → ${automationModeLabel(entry.newValue)}`;
+  }
   if (entry.changeType === "bid_change") {
     if (entry.oldValue !== null) {
       return `${entry.oldValue} → ${entry.newValue} ₽`;
@@ -40,6 +49,12 @@ function formatDate(isoString: string): string {
 
 function getChangeToneClass(entry: ClusterChangeLogEntry): string {
   if (entry.changeType === "bid_change") return "wb-change-log-badge--bid";
+  // Автоматизация: выключение (off) — красный тон, включение (preview/live) — зелёный.
+  if (entry.changeType === "automation_mode") {
+    return entry.newValue === "off"
+      ? "wb-change-log-badge--exclude"
+      : "wb-change-log-badge--include";
+  }
   if (entry.newValue === "active") return "wb-change-log-badge--include";
   return "wb-change-log-badge--exclude";
 }

@@ -125,7 +125,7 @@ export type ClusterChangeLogEntry = {
   nmId: number;
   advertId: number;
   clusterName: string;
-  changeType: "status_change" | "bid_change";
+  changeType: "status_change" | "bid_change" | "automation_mode";
   oldValue: string | null;
   newValue: string;
   jobId: string | null;
