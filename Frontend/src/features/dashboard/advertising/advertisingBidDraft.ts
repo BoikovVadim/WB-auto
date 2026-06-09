@@ -10,12 +10,13 @@ export function canEditAdvertisingClusterBid(row: ProductAdvertisingWorkspaceClu
   );
 }
 
+// WB принимает CPM только целыми числами — ставка везде целая, без дробной части.
 export function normalizeDisplayedBid(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
     return null;
   }
 
-  return Math.round(value * 100) / 100;
+  return Math.round(value);
 }
 
 export function formatBidDraftValue(value: number) {
@@ -24,7 +25,7 @@ export function formatBidDraftValue(value: number) {
     return "";
   }
 
-  return Number.isInteger(normalized) ? String(normalized) : normalized.toFixed(2);
+  return String(normalized);
 }
 
 export function parseBidDraftValue(value: string) {
@@ -38,5 +39,5 @@ export function parseBidDraftValue(value: string) {
     return null;
   }
 
-  return Math.round(parsed * 100) / 100;
+  return Math.round(parsed);
 }

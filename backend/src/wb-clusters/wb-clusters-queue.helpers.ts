@@ -177,10 +177,13 @@ export function getRecoverableActionSyncStatus(error: unknown) {
   return getPromotionRetryDelayMs(error) !== null ? "throttled" : "queued";
 }
 
+// WB Promotion API принимает CPM только целыми числами — дробная ставка
+// отвергается с "incorrect request body". Округляем до целого на самой границе,
+// чтобы корректность не зависела от источника (движок, ручной ввод, legacy в БД).
 export function normalizeBidForWb(value: number) {
-  return Math.round(value * 100) / 100;
+  return Math.round(value);
 }
 
 export function normalizeBidFromWb(value: number) {
-  return Math.round(value * 100) / 100;
+  return Math.round(value);
 }

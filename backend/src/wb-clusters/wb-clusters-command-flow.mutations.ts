@@ -199,7 +199,8 @@ export async function applyProductClusterBids(
       bids
         .map((item) => ({
           clusterName: item.clusterName.trim(),
-          bid: item.bid,
+          // WB принимает CPM только целым — храним и отправляем целую ставку.
+          bid: Math.round(item.bid),
           reason: item.reason ?? null,
           position: item.position ?? null,
         }))
