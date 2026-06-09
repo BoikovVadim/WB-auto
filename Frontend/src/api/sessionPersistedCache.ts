@@ -28,6 +28,50 @@ interface Envelope {
   d: unknown;
 }
 
+/** Маркер версионированных записей всех наших кэшей (любой namespace): `…:v{N}:…`. */
+const VERSIONED_KEY_MARKER = `:v${CACHE_SCHEMA_VERSION}:`;
+
+/**
+ * При QuotaExceeded освобождает место ГЛОБАЛЬНО по всем нашим версионированным кэшам,
+ * удаляя самые старые записи первыми (по метке времени конверта), и после каждой пачки
+ * пробует записать целевое значение. Это устраняет «голодание» маленького писателя
+ * (workspace) рядом с большим (бандлы таблиц РК): без глобального эвикта запись workspace
+ * тихо проваливалась, и первый кадр после F5 показывал скелетон вместо данных.
+ * Возвращает true, если запись в итоге удалась.
+ */
+function evictOldestForSpace(store: Storage, targetKey: string, serialized: string): boolean {
+  const entries: { key: string; t: number }[] = [];
+  for (let i = 0; i < store.length; i += 1) {
+    const k = store.key(i);
+    if (!k || !k.includes(VERSIONED_KEY_MARKER) || k === targetKey) continue;
+    let t = 0;
+    try {
+      const parsed = JSON.parse(store.getItem(k) ?? "") as Envelope;
+      t = typeof parsed?.t === "number" ? parsed.t : 0;
+    } catch {
+      t = 0; // нечитаемое — кандидат на удаление в первую очередь
+    }
+    entries.push({ key: k, t });
+  }
+  // Старые первыми (нечитаемые с t=0 — в самом начале).
+  entries.sort((a, b) => a.t - b.t);
+
+  for (const { key } of entries) {
+    try {
+      store.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+    try {
+      store.setItem(targetKey, serialized);
+      return true;
+    } catch {
+      // ещё не влезло — удаляем следующую самую старую запись
+    }
+  }
+  return false;
+}
+
 /**
  * @param namespace короткий префикс хранилища (например "wbws").
  * @param ttlMs срок годности записи; старше — игнор.
@@ -91,21 +135,6 @@ export function createSessionPersistedCache<T>(options: {
     }
   }
 
-  function evictNamespace(store: Storage): void {
-    const toRemove: string[] = [];
-    for (let i = 0; i < store.length; i += 1) {
-      const k = store.key(i);
-      if (k && k.startsWith(`${namespace}:`)) toRemove.push(k);
-    }
-    for (const k of toRemove) {
-      try {
-        store.removeItem(k);
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-
   function write(key: string, value: T): void {
     const store = getStore();
     if (!store) return;
@@ -119,14 +148,14 @@ export function createSessionPersistedCache<T>(options: {
     try {
       store.setItem(storageKey(key), serialized);
     } catch {
-      // Скорее всего QuotaExceeded — чистим свой namespace и пробуем один раз. Персист
-      // не критичен (есть сеть), поэтому при повторной неудаче просто пропускаем.
-      try {
-        evictNamespace(store);
-        store.setItem(storageKey(key), serialized);
-      } catch {
-        /* give up silently */
+      // Скорее всего QuotaExceeded. Чистим ГЛОБАЛЬНО по всем версионированным кэшам
+      // (не только свой namespace), начиная с самых старых записей, и повторяем — иначе
+      // маленький писатель (workspace) не может освободить место, занятое большим соседом
+      // (бандлы таблиц РК), его запись тихо проваливается, и на F5 первый кадр — скелетон.
+      if (evictOldestForSpace(store, storageKey(key), serialized)) {
+        return;
       }
+      // Совсем не влезло — персист не критичен (есть сеть), пропускаем тихо.
     }
   }
 
