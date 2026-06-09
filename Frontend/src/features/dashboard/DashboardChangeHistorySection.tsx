@@ -97,6 +97,9 @@ function ChangeRow({ entry }: { entry: UnifiedChangeLogEntry }) {
       <td className="wb-change-history-cell wb-change-history-cell--date">
         {formatDateTime(entry.createdAt)}
       </td>
+      <td className="wb-change-history-cell wb-change-history-cell--label">
+        {entry.vendorCode ?? (entry.nmId !== null ? `#${String(entry.nmId)}` : "—")}
+      </td>
       <td className="wb-change-history-cell">
         <span className="wb-change-history-badge" style={badgeStyle}>
           {entityTypeLabel(entry.entityType)}
@@ -107,9 +110,6 @@ function ChangeRow({ entry }: { entry: UnifiedChangeLogEntry }) {
       </td>
       <td className="wb-change-history-cell wb-change-history-cell--num">
         {entry.advertId !== null ? String(entry.advertId) : <span className="wb-change-history-empty">—</span>}
-      </td>
-      <td className="wb-change-history-cell wb-change-history-cell--label">
-        {entry.vendorCode ?? (entry.nmId !== null ? `#${String(entry.nmId)}` : "—")}
       </td>
       <td className="wb-change-history-cell">
         {changeTypeLabel(entry.changeType)}
@@ -204,10 +204,10 @@ export const DashboardChangeHistorySection = memo(function DashboardChangeHistor
             <thead>
               <tr>
                 <th style={{ minWidth: 130 }}>Дата и время</th>
+                <th style={{ minWidth: 200 }}>Товар</th>
                 <th style={{ minWidth: 130 }}>Тип</th>
                 <th style={{ minWidth: 200 }}>Объект</th>
                 <th style={{ minWidth: 110, textAlign: "center" }}>ID РК</th>
-                <th style={{ minWidth: 200 }}>Товар</th>
                 <th style={{ minWidth: 130 }}>Действие</th>
                 <th style={{ minWidth: 100 }}>Было</th>
                 <th style={{ minWidth: 100 }}>Стало</th>
