@@ -34,3 +34,20 @@ export function bidReasonLabel(value: string | null | undefined): string | null 
       return value ?? null;
   }
 }
+
+/**
+ * Тон причины авто-смены ставки для подсветки в Истории изменений (личной и общей):
+ * повышаем (up) → "up" (красный — тратим больше), понижаем (down) → "down" (зелёный — экономим).
+ * Остальные причины (на потолке/минимуме/заморозка/убыточно) — нейтральны (null).
+ */
+export function bidReasonTone(value: string | null | undefined): "up" | "down" | null {
+  if (value === "up") return "up";
+  if (value === "down") return "down";
+  return null;
+}
+
+/** CSS-класс подсветки причины: up → красный, down → зелёный, иначе — без подсветки. */
+export function reasonToneClass(value: string | null | undefined): string {
+  const tone = bidReasonTone(value);
+  return tone ? `wb-bid-reason wb-bid-reason--${tone}` : "";
+}

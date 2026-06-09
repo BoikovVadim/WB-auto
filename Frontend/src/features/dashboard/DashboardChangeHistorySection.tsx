@@ -2,7 +2,7 @@ import { memo, useEffect, useState } from "react";
 
 import { fetchUnifiedChangeLog, type UnifiedChangeLogEntry } from "../../api/syncClientChangeLog";
 import { cacheChangeLog, getCachedChangeLog } from "../../api/changeLogCache";
-import { bidReasonLabel, clusterStatusLabel } from "./changeLogLabels";
+import { bidReasonLabel, clusterStatusLabel, reasonToneClass } from "./changeLogLabels";
 
 const CHANGE_LOG_LIMIT = 500;
 
@@ -136,7 +136,11 @@ function ChangeRow({ entry }: { entry: UnifiedChangeLogEntry }) {
         )}
       </td>
       <td className="wb-change-history-cell wb-change-history-cell--num">
-        {bidReasonLabel(entry.reason) ?? <span className="wb-change-history-empty">—</span>}
+        {bidReasonLabel(entry.reason) ? (
+          <span className={reasonToneClass(entry.reason)}>{bidReasonLabel(entry.reason)}</span>
+        ) : (
+          <span className="wb-change-history-empty">—</span>
+        )}
       </td>
       <td className="wb-change-history-cell">
         {entry.initiatedBy !== null ? (

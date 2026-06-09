@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClusterChangeLogEntry } from "../../../api/syncClientAdvertisingRead";
 import { fetchClusterChangeLog } from "../../../api/syncClientAdvertisingRead";
-import { bidReasonLabel, clusterStatusLabel } from "../changeLogLabels";
+import { bidReasonLabel, clusterStatusLabel, reasonToneClass } from "../changeLogLabels";
 
 type Props = {
   nmId: number;
@@ -156,7 +156,13 @@ export function ProductAdvertisingChangeLogPanel({ nmId, advertId, onClose }: Pr
                       {formatPosition(entry.position)}
                     </td>
                     <td className="wb-change-log-td wb-change-log-td--center">
-                      {bidReasonLabel(entry.reason) ?? "—"}
+                      {bidReasonLabel(entry.reason) ? (
+                        <span className={reasonToneClass(entry.reason)}>
+                          {bidReasonLabel(entry.reason)}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td className="wb-change-log-td wb-change-log-td--center">
                       {formatInitiator(entry)}

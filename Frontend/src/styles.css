@@ -3946,6 +3946,20 @@ input {
   white-space: nowrap;
 }
 
+/* Подсветка причины авто-смены ставки в Истории изменений (личной и общей):
+   повышаем → красный (тратим больше), понижаем → зелёный (экономим). */
+.wb-bid-reason {
+  font-weight: 600;
+}
+
+.wb-bid-reason--up {
+  color: #c0392b;
+}
+
+.wb-bid-reason--down {
+  color: #16a34a;
+}
+
 .wb-change-history-old {
   font-size: 12px;
   color: #b71c1c;
