@@ -537,6 +537,12 @@ export type ClusterChangeLogEntry = {
   oldValue: string | null;
   newValue: string;
   jobId: string | null;
+  /** Кто инициировал смену: 'user' (вручную) / 'automation' (движок) / null (старые записи). */
+  initiatedBy: "user" | "automation" | null;
+  /** Причина авто-смены ставки (up/down/at_cap/...); null у ручных/статусных. */
+  reason: string | null;
+  /** Замеренная позиция в выдаче на момент авто-смены ставки; null у ручных/статусных. */
+  position: number | null;
   appliedAt: string;
 };
 

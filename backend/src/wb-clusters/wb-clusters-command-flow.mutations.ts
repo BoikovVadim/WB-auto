@@ -127,6 +127,8 @@ export async function applyProductClusterAction(
         newValue: item.desiredIsActive ? "active" : "excluded",
         jobId: queuedJob.jobId,
         initiatedBy,
+        reason: null,
+        position: null,
       })),
     );
   } catch (err: unknown) {
@@ -167,7 +169,16 @@ export async function applyProductClusterBids(
   self: WbClustersService,
   nmId: number,
   advertId: number,
-  bids: Array<{ clusterName: string; bid: number }>,
+  bids: Array<{
+    clusterName: string;
+    bid: number;
+    /** Причина авто-смены (up/down/at_cap/...) — только для движка; ручные не передают. */
+    reason?: string | null;
+    /** Замеренная позиция на момент авто-смены — только для движка. */
+    position?: number | null;
+  }>,
+  /** Кто инициировал: 'user' (ручной ввод, дефолт) или 'automation' (ставочный движок). */
+  initiatedBy: "user" | "automation" = "user",
 ) {
   if (!self.wbClustersRepository.isConfigured()) {
     throw new ServiceUnavailableException(
@@ -189,6 +200,8 @@ export async function applyProductClusterBids(
         .map((item) => ({
           clusterName: item.clusterName.trim(),
           bid: item.bid,
+          reason: item.reason ?? null,
+          position: item.position ?? null,
         }))
         .filter(
           (item) => item.clusterName.length > 0 && Number.isFinite(item.bid) && item.bid > 0,
@@ -247,6 +260,8 @@ export async function applyProductClusterBids(
     return {
       clusterName: cluster.canonicalNormQuery,
       bid: item.bid,
+      reason: item.reason,
+      position: item.position,
     };
   });
 
@@ -329,7 +344,9 @@ export async function applyProductClusterBids(
           oldValue: oldBid !== null ? String(oldBid) : null,
           newValue: String(item.bid),
           jobId: queuedJob.jobId,
-          initiatedBy: "user" as const,
+          initiatedBy,
+          reason: item.reason ?? null,
+          position: item.position ?? null,
         };
       }),
     );

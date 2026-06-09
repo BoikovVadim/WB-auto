@@ -3285,6 +3285,13 @@ input {
   white-space: nowrap;
 }
 
+/* Числовые/коротко-категориальные ячейки истории (позиция/причина/инициатор) — по центру. */
+.wb-change-log-td--center,
+.wb-change-log-th--center {
+  text-align: center;
+  white-space: nowrap;
+}
+
 .wb-change-log-badge {
   display: inline-block;
   padding: 2px 7px;

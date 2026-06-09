@@ -10,8 +10,12 @@ export type ChangeLogEntryInput = {
   oldValue: string | null;
   newValue: string;
   jobId: string | null;
-  /** Кто инициировал: 'user' (вручную) или 'automation' (движок CPO). */
+  /** Кто инициировал: 'user' (вручную) или 'automation' (движок). */
   initiatedBy: ChangeLogInitiator;
+  /** Причина авто-смены ставки (up/down/at_cap/at_min/...); null для ручных/статусных. */
+  reason: string | null;
+  /** Замеренная позиция в выдаче на момент авто-смены ставки; null для ручных/статусных. */
+  position: number | null;
 };
 
 type ChangeLogEntryRow = {
@@ -23,6 +27,9 @@ type ChangeLogEntryRow = {
   old_value: string | null;
   new_value: string;
   job_id: string | null;
+  initiated_by: string | null;
+  reason: string | null;
+  position: number | null;
   applied_at: string;
 };
 
@@ -35,6 +42,9 @@ export type ChangeLogEntry = {
   oldValue: string | null;
   newValue: string;
   jobId: string | null;
+  initiatedBy: ChangeLogInitiator | null;
+  reason: string | null;
+  position: number | null;
   appliedAt: string;
 };
 
@@ -79,12 +89,13 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
     if (entries.length === 0) return;
     const pool = this.getPool();
 
-    const cols = 8;
+    const cols = 10;
     const placeholders = entries
-      .map(
-        (_, i) =>
-          `($${i * cols + 1}, $${i * cols + 2}, $${i * cols + 3}, $${i * cols + 4}, $${i * cols + 5}, $${i * cols + 6}, $${i * cols + 7}, $${i * cols + 8})`,
-      )
+      .map((_, i) => {
+        const base = i * cols;
+        const slots = Array.from({ length: cols }, (_unused, c) => `$${base + c + 1}`);
+        return `(${slots.join(", ")})`;
+      })
       .join(", ");
 
     const values = entries.flatMap((e) => [
@@ -96,12 +107,15 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
       e.newValue,
       e.jobId,
       e.initiatedBy,
+      e.reason,
+      e.position,
     ]);
 
     await pool.query(
       `
       INSERT INTO ${this.tableName("wb_cluster_change_log")}
-        (nm_id, advert_id, cluster_name, change_type, old_value, new_value, job_id, initiated_by)
+        (nm_id, advert_id, cluster_name, change_type, old_value, new_value, job_id,
+         initiated_by, reason, position)
       VALUES ${placeholders}
       `,
       values,
@@ -117,6 +131,7 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
     const result = await pool.query<ChangeLogEntryRow>(
       `
       SELECT id, nm_id, advert_id, cluster_name, change_type, old_value, new_value, job_id,
+             initiated_by, reason, position,
              TO_CHAR(applied_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS applied_at
       FROM ${this.tableName("wb_cluster_change_log")}
       WHERE nm_id = $1 AND advert_id = $2
@@ -135,6 +150,9 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
       oldValue: row.old_value,
       newValue: row.new_value,
       jobId: row.job_id,
+      initiatedBy: (row.initiated_by as ChangeLogInitiator | null) ?? null,
+      reason: row.reason,
+      position: row.position !== null ? Number(row.position) : null,
       appliedAt: row.applied_at,
     }));
   }

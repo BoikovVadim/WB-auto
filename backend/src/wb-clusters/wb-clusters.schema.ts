@@ -5,6 +5,14 @@ import {
   getCampaignAlterStatements,
   getCampaignProductAlterStatements,
   getCatalogAlterStatements,
+  getClusterKeyMigrationStatements,
+  getClusterStatsAlterStatements,
+  getClusterWriteAlterStatements,
+  getClusterWriteBackfillStatements,
+  getSnapshotAlterStatements,
+  getSyncRunAlterStatements,
+} from "./wb-clusters.schema.alter-backfill";
+import {
   getChangeLogCreateStatements,
   getCostPriceCreateStatements,
   getProductBuyoutDailySnapshotAlterStatements,
@@ -17,14 +25,8 @@ import {
   getProductSppDailyCreateStatements,
   getProductDailyStocksCreateStatements,
   getSystemChangeLogCreateStatements,
-  getClusterKeyMigrationStatements,
-  getClusterStatsAlterStatements,
-  getClusterWriteAlterStatements,
-  getClusterWriteBackfillStatements,
   getMonthlyFrequencyAlterStatements,
-  getSnapshotAlterStatements,
-  getSyncRunAlterStatements,
-} from "./wb-clusters.schema.alter-backfill";
+} from "./wb-clusters.schema.product-tables";
 import {
   getArchiveCreateStatements,
   getClusterCoreCreateStatements,

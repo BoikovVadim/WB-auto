@@ -22,23 +22,23 @@ module.exports = {
         WB_CLUSTER_DECISION_V2: "1",
         WB_CLUSTER_DECISION_V2_LIVE: "1",
         WB_CLUSTER_DRR_REGULATOR: "1",
-        // Ставочный движок (этап 3) — сейчас ТОЧЕЧНЫЙ ТЕСТ на 1 товаре в DRY-RUN: зондирует
-        // кластеры товара 198676662 и считает желаемые ставки в БД (last_desired_bid), но на WB
-        // НЕ пишет (DRY_RUN=1). См. product-cluster-bid-engine.service.
+        // Ставочный движок (этап 3) — БОЕВОЙ ТОЧЕЧНО на 1 товаре: зондирует кластеры товара
+        // 198676662 и РЕАЛЬНО пишет ставки на WB (DRY_RUN снят). Каждая авто-смена попадает в
+        // «Историю изменений» с причиной и позицией (initiated_by='automation', reason, position).
+        // См. product-cluster-bid-engine.service.
         //
-        // ВЫХОД В БОЙ — «одним переключателем», всё остальное уже готово и включится само:
-        //   1) WB_CLUSTER_BID_DRY_RUN убрать (или "0")  → движок начинает реально писать ставки;
-        //   2) WB_CLUSTER_BID_NMIDS: "all"               → на все товары с включённой автоматикой
-        //      (или оставить CSV nmId для поэтапного расширения);
-        //   3) pm2 reload ecosystem.config.js.
-        // При снятии DRY_RUN АВТОМАТИЧЕСКИ включается read-back ставок (WB_CLUSTER_BID_READBACK,
+        // РАСШИРЕНИЕ на все товары — одним переключателем:
+        //   1) WB_CLUSTER_BID_NMIDS: "all"  → на все товары с включённой автоматикой (mode live);
+        //   2) pm2 reload ecosystem.config.js.
+        // Откат в наблюдение: вернуть WB_CLUSTER_BID_DRY_RUN: "1" (движок считает, но не пишет).
+        // При снятом DRY_RUN АВТОМАТИЧЕСКИ работает read-back ставок (WB_CLUSTER_BID_READBACK,
         // дефолт "observe": расхождение желаемой/фактической ставки пишется в raw-archive, запись
         // подтверждается). Когда по архиву убедимся, что нормализация WB совпадает с нашей —
         // поставить WB_CLUSTER_BID_READBACK: "enforce" (расхождение уводит ставку в ретрай, а не
         // в ложный confirmed). То же для действий вкл/выкл: WB_CLUSTER_ACTION_READBACK (уже observe).
         WB_CLUSTER_BID_ENGINE: "1",
         WB_CLUSTER_BID_NMIDS: "198676662",
-        WB_CLUSTER_BID_DRY_RUN: "1",
+        WB_CLUSTER_BID_DRY_RUN: "0",
       },
       instances: 1,
       exec_mode: "fork",

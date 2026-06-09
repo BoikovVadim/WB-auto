@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Modal } from "../../../components/Modal";
 import { formatMoney } from "../../../formatters";
+import { bidReasonLabel } from "../changeLogLabels";
 import {
   fetchBidSuggestions,
   type BidSuggestionRow,
@@ -13,14 +14,14 @@ type Props = {
   onClose: () => void;
 };
 
-/** Человекочитаемая подпись + класс по причине решения движка. */
-const REASON_LABEL: Record<string, { text: string; cls: string }> = {
-  up: { text: "повышаем ↑", cls: "wb-review-row__over" },
-  down: { text: "понижаем ↓", cls: "wb-review-row__within" },
-  at_cap: { text: "на потолке", cls: "wb-review-row__over" },
-  at_min: { text: "на минимуме", cls: "wb-review-row__within" },
-  frozen: { text: "замер не удался (повтор)", cls: "" },
-  unprofitable: { text: "убыточно (CR низкая)", cls: "wb-review-row__over" },
+/** Тоновый класс по причине решения движка (подпись — общий bidReasonLabel). */
+const REASON_CLASS: Record<string, string> = {
+  up: "wb-review-row__over",
+  down: "wb-review-row__within",
+  at_cap: "wb-review-row__over",
+  at_min: "wb-review-row__within",
+  frozen: "",
+  unprofitable: "wb-review-row__over",
 };
 
 function bid(v: number | null): string {
@@ -76,7 +77,8 @@ export function ProductAdvertisingBidSuggestionsModal({ nmId, advertId, onClose 
       ) : (
         <div className="wb-review-list">
           {rows.map((c) => {
-            const reason = c.reason ? REASON_LABEL[c.reason] : undefined;
+            const reasonText = bidReasonLabel(c.reason);
+            const reasonCls = c.reason ? (REASON_CLASS[c.reason] ?? "") : "";
             return (
               <div key={c.normalizedClusterName} className="wb-review-row">
                 <div className="wb-review-row__info">
@@ -89,8 +91,8 @@ export function ProductAdvertisingBidSuggestionsModal({ nmId, advertId, onClose 
                       ставка: {bid(c.currentBid)} → <strong>{bid(c.desiredBid)}</strong>
                     </span>
                     <span>потолок: {bid(c.bidCap)}</span>
-                    {reason ? (
-                      <span className={reason.cls}>{reason.text}</span>
+                    {reasonText ? (
+                      <span className={reasonCls}>{reasonText}</span>
                     ) : null}
                   </span>
                 </div>

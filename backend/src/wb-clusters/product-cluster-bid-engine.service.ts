@@ -245,7 +245,12 @@ export class ProductClusterBidEngineService {
     const names = ordered.map((i) => i.normalizedClusterName);
     const currentBids = await this.repository.getCurrentClusterBids(nmId, advertId, names);
 
-    const toApply: { clusterName: string; bid: number }[] = [];
+    const toApply: {
+      clusterName: string;
+      bid: number;
+      reason: string;
+      position: number | null;
+    }[] = [];
     let processed = 0;
     for (const input of ordered) {
       const ncn = input.normalizedClusterName;
@@ -299,7 +304,9 @@ export class ProductClusterBidEngineService {
       processed++;
 
       if (Math.abs(desired.bid - currentBid) >= cfg.minDeltaToApply) {
-        toApply.push({ clusterName, bid: desired.bid });
+        // Причина + позиция едут в историю изменений вместе со ставкой — чтобы в «Истории»
+        // было видно «ставка X→Y, потому что место P (повышаем/понижаем)».
+        toApply.push({ clusterName, bid: desired.bid, reason: desired.reason, position });
       }
     }
 
@@ -308,7 +315,7 @@ export class ProductClusterBidEngineService {
     let applied = 0;
     if (cfg.applyToWb && toApply.length > 0) {
       try {
-        await this.wbClustersService.applyProductClusterBids(nmId, advertId, toApply);
+        await this.wbClustersService.applyProductClusterBids(nmId, advertId, toApply, "automation");
         applied = toApply.length;
         this.logger.log(`применено ставок ${applied} для ${advertId}/${nmId}`);
       } catch (err) {

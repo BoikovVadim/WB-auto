@@ -1328,13 +1328,17 @@ export class WbClustersService extends WbClustersServiceSyncInternals {
     bids: Array<{
       clusterName: string;
       bid: number;
+      reason?: string | null;
+      position?: number | null;
     }>,
+    initiatedBy: "user" | "automation" = "user",
   ): Promise<ProductAdvertisingClusterBidUpdateResponse> {
     return wb_clusters_command_flow.applyProductClusterBids(
       this,
       nmId,
       advertId,
       bids,
+      initiatedBy,
     ) as Promise<ProductAdvertisingClusterBidUpdateResponse>;
   }
 

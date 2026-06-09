@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClusterChangeLogEntry } from "../../../api/syncClientAdvertisingRead";
 import { fetchClusterChangeLog } from "../../../api/syncClientAdvertisingRead";
-import { clusterStatusLabel } from "../changeLogLabels";
+import { bidReasonLabel, clusterStatusLabel } from "../changeLogLabels";
 
 type Props = {
   nmId: number;
@@ -42,6 +42,19 @@ function getChangeToneClass(entry: ClusterChangeLogEntry): string {
   if (entry.changeType === "bid_change") return "wb-change-log-badge--bid";
   if (entry.newValue === "active") return "wb-change-log-badge--include";
   return "wb-change-log-badge--exclude";
+}
+
+/** Кто инициировал смену: вручную или движок (старые записи без метки → «—»). */
+function formatInitiator(entry: ClusterChangeLogEntry): string {
+  if (entry.initiatedBy === "automation") return "Авто";
+  if (entry.initiatedBy === "user") return "Вы";
+  return "—";
+}
+
+/** Замеренная позиция на момент авто-смены ставки: «#N», «>100» или «—». */
+function formatPosition(position: number | null): string {
+  if (position === null) return "—";
+  return position > 100 ? ">100" : `#${String(position)}`;
 }
 
 export function ProductAdvertisingChangeLogPanel({ nmId, advertId, onClose }: Props) {
@@ -117,6 +130,9 @@ export function ProductAdvertisingChangeLogPanel({ nmId, advertId, onClose }: Pr
                   <th>Кластер</th>
                   <th>Тип</th>
                   <th>Значение</th>
+                  <th className="wb-change-log-th--center">Позиция</th>
+                  <th className="wb-change-log-th--center">Причина</th>
+                  <th className="wb-change-log-th--center">Инициатор</th>
                 </tr>
               </thead>
               <tbody>
@@ -135,6 +151,15 @@ export function ProductAdvertisingChangeLogPanel({ nmId, advertId, onClose }: Pr
                     </td>
                     <td className="wb-change-log-td wb-change-log-td--value">
                       {formatChangeValue(entry)}
+                    </td>
+                    <td className="wb-change-log-td wb-change-log-td--center">
+                      {formatPosition(entry.position)}
+                    </td>
+                    <td className="wb-change-log-td wb-change-log-td--center">
+                      {bidReasonLabel(entry.reason) ?? "—"}
+                    </td>
+                    <td className="wb-change-log-td wb-change-log-td--center">
+                      {formatInitiator(entry)}
                     </td>
                   </tr>
                 ))}
