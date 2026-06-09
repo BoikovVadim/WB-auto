@@ -159,7 +159,15 @@ export async function initializeWbClustersSchema(input: {
     const s = statement.trimStart().toUpperCase();
     return s.startsWith("CREATE TABLE") || (s.startsWith("ALTER TABLE") && s.includes("ADD COLUMN"));
   };
-  await executeSchemaStatements(context, allStatements.filter(isFastDdl));
+  // lock_timeout + толерантность: «быстрый» ADD COLUMN по hot-таблице (напр.
+  // wb_search_query_frequencies во время импорта частот) требует ACCESS EXCLUSIVE и под
+  // параллельным INSERT'ом ждёт лок до statement_timeout (5 мин), вешая ensureSchema и все
+  // запросы за ним. Фейл-фаст за 4с и пропуск идемпотентного IF NOT EXISTS безопасны:
+  // применится на следующем старте без контенции, в норме объект уже существует.
+  await executeSchemaStatements(context, allStatements.filter(isFastDdl), {
+    lockTimeoutMs: 4000,
+    tolerateLockTimeout: true,
+  });
 
   // Version-gate: тяжёлые миграции (backfill `WHERE col IS NULL` по млн строк, CREATE INDEX)
   // прогоняем только при смене версии — иначе каждый старт давал ~90с seq-сканов, а read-пути
