@@ -12,6 +12,10 @@ import {
   type AdvertisingDateRange,
 } from "./advertising/date";
 import { mutedStyle, tdStyle, thStyle } from "./RawTableSection.styles";
+import { cacheRawSection, getCachedRawSection } from "../../api/rawSectionCache";
+
+// Кэшируем только дефолтный (без фильтров) вид JAM — самый частый первый кадр.
+const JAM_DEFAULT_CACHE_KEY = "raw-jam-default";
 
 type JamTab = "data" | "progress";
 
@@ -96,8 +100,10 @@ function Delta({ v }: { v: number | null }) {
 }
 
 function JamDataTab() {
-  const [rows, setRows] = useState<RawJamRow[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Первый кадр дефолтного вида из кэша — без ожидания сети; скелетон только когда нечего показать.
+  const cachedDefault = getCachedRawSection<RawJamRow>(JAM_DEFAULT_CACHE_KEY);
+  const [rows, setRows] = useState<RawJamRow[]>(cachedDefault ?? []);
+  const [isLoading, setIsLoading] = useState(cachedDefault == null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [nmIdFilter, setNmIdFilter] = useState("");
@@ -129,6 +135,10 @@ function JamDataTab() {
 
   // Ref to the in-flight AbortController so we can cancel stale requests.
   const abortRef = useRef<AbortController | null>(null);
+  // Зеркало rows для стабильного load: скелетон показываем только когда показывать нечего
+  // (пусто и нет кэша); при наличии данных ревалидируем «тихо», без мигания.
+  const rowsRef = useRef(rows);
+  useEffect(() => { rowsRef.current = rows; });
 
   // Stable load — never re-created, always cancels the previous request first.
   const load = useCallback(() => {
@@ -137,16 +147,24 @@ function JamDataTab() {
     abortRef.current = controller;
 
     const { parsedNmId: nmId, dateFrom: from, dateTo: to } = queryRef.current;
+    const isDefaultQuery = nmId === undefined && from === undefined && to === undefined;
 
-    setIsLoading(true);
+    if (rowsRef.current.length === 0) setIsLoading(true);
     setError(null);
     // When nmId is provided the backend returns ALL rows for that product (no cap).
     // Without nmId the backend caps at 2000 rows to avoid overloading the browser.
     fetchRawJamRows({ nmId, dateFrom: from, dateTo: to, signal: controller.signal })
-      .then((data) => { if (!controller.signal.aborted) setRows(data); })
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        setRows(data);
+        // Кэшируем только дефолтный вид — он и грузится при заходе/F5.
+        if (isDefaultQuery) cacheRawSection(JAM_DEFAULT_CACHE_KEY, data);
+      })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return; // cancelled — ignore
-        setError(err instanceof Error ? err.message : "Ошибка загрузки");
+        if (rowsRef.current.length === 0) {
+          setError(err instanceof Error ? err.message : "Ошибка загрузки");
+        }
       })
       .finally(() => { if (!controller.signal.aborted) setIsLoading(false); });
   }, []); // empty deps — stable; reads latest values via queryRef

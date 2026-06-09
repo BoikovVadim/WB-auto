@@ -1,12 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   fetchQueryFrequenciesPage,
   type RawQueryFrequencyRow,
 } from "../../api/syncClientCore";
 import { mutedStyle } from "./RawTableSection.styles";
+import { cacheSessionJson, getCachedSessionJson } from "../../api/sessionJsonCache";
 
 const PAGE_SIZE = 100;
+// Кэшируем только дефолтную первую страницу (частота↓, без поиска) — она грузится при заходе/F5.
+const FREQ_DEFAULT_CACHE_KEY = "raw-query-frequencies-default";
+type CachedFreqPage = { rows: RawQueryFrequencyRow[]; total: number };
 
 type SortKey = "monthly_frequency" | "query_text" | "subject_name";
 type SortDir = "asc" | "desc";
@@ -17,13 +21,19 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
 }
 
 export function DashboardQueryFrequenciesSection({ onBack }: { onBack: () => void }) {
-  const [rows, setRows] = useState<RawQueryFrequencyRow[]>([]);
-  const [total, setTotal] = useState<number>(0);
-  const [isLoading, setIsLoading] = useState(true);
+  // Первый кадр дефолтной страницы из кэша — без ожидания сети; скелетон только без кэша.
+  const cachedDefault = getCachedSessionJson<CachedFreqPage>(FREQ_DEFAULT_CACHE_KEY);
+  const [rows, setRows] = useState<RawQueryFrequencyRow[]>(cachedDefault?.rows ?? []);
+  const [total, setTotal] = useState<number>(cachedDefault?.total ?? 0);
+  const [isLoading, setIsLoading] = useState(cachedDefault == null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("monthly_frequency");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  // Зеркало rows: скелетон/сброс показываем только когда показывать нечего (тихая ревалидация).
+  const rowsRef = useRef(rows);
+  useEffect(() => { rowsRef.current = rows; });
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
@@ -31,7 +41,8 @@ export function DashboardQueryFrequenciesSection({ onBack }: { onBack: () => voi
 
   const loadFirstPage = useCallback(
     async (sk: SortKey, sd: SortDir, q: string, signal?: AbortSignal) => {
-      setIsLoading(true);
+      const isDefault = sk === "monthly_frequency" && sd === "desc" && !q;
+      if (rowsRef.current.length === 0) setIsLoading(true);
       try {
         const page = await fetchQueryFrequenciesPage({
           limit: PAGE_SIZE,
@@ -43,8 +54,11 @@ export function DashboardQueryFrequenciesSection({ onBack }: { onBack: () => voi
         if (signal?.aborted) return;
         setRows(page.rows);
         setTotal(page.total);
+        if (isDefault) {
+          cacheSessionJson<CachedFreqPage>(FREQ_DEFAULT_CACHE_KEY, { rows: page.rows, total: page.total });
+        }
       } catch {
-        if (!signal?.aborted) { setRows([]); setTotal(0); }
+        if (!signal?.aborted && rowsRef.current.length === 0) { setRows([]); setTotal(0); }
       } finally {
         if (!signal?.aborted) setIsLoading(false);
       }

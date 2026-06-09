@@ -8,6 +8,7 @@ import {
 } from "../../api/syncClientCore";
 import { type ColumnDef } from "./RawTableSection";
 import { mutedStyle } from "./RawTableSection.styles";
+import { cacheRawSection, getCachedRawSection } from "../../api/rawSectionCache";
 
 type CampaignsTab = "campaigns" | "products";
 
@@ -101,6 +102,7 @@ export function DashboardCampaignsSection({ onBack }: { onBack: () => void }) {
         {tab === "campaigns" ? (
           <TabbedInnerTable
             fetchData={fetchCampaigns}
+            cacheKey="raw-campaigns"
             columns={campaignCols}
             getRowKey={(r) => String(r.advertId)}
             filterRow={(r, q) => (r.name ?? "").toLowerCase().includes(q) || String(r.advertId).includes(q)}
@@ -108,6 +110,7 @@ export function DashboardCampaignsSection({ onBack }: { onBack: () => void }) {
         ) : (
           <TabbedInnerTable
             fetchData={fetchProducts}
+            cacheKey="raw-campaign-products"
             columns={productCols}
             getRowKey={(r) => `${r.advertId}-${r.nmId}`}
             filterRow={(r, q) => String(r.nmId).includes(q) || String(r.advertId).includes(q) || (r.campaignName ?? "").toLowerCase().includes(q)}
@@ -123,28 +126,44 @@ import { useEffect } from "react";
 
 export function TabbedInnerTable<T>({
   fetchData,
+  cacheKey,
   columns,
   getRowKey,
   filterRow,
 }: {
   fetchData: () => Promise<T[]>;
+  /** Кэш-ключ: первый кадр из rawSectionCache мгновенно, ревалидация в фоне без скелетона. */
+  cacheKey?: string;
   columns: ColumnDef<T>[];
   getRowKey: (row: T) => string;
   filterRow?: (row: T, search: string) => boolean;
 }) {
-  const [rows, setRows] = useState<T[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const cachedRows = cacheKey ? getCachedRawSection<T>(cacheKey) : null;
+  const [rows, setRows] = useState<T[]>(cachedRows ?? []);
+  const [isLoading, setIsLoading] = useState(cachedRows == null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    setIsLoading(true);
+    const hasRows = (cacheKey ? getCachedRawSection<T>(cacheKey) : null) != null;
+    if (!hasRows) {
+      setIsLoading(true);
+    }
     setError(null);
     fetchData()
-      .then(setRows)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Ошибка"))
+      .then((data) => {
+        setRows(data);
+        if (cacheKey) {
+          cacheRawSection(cacheKey, data);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!hasRows) {
+          setError(err instanceof Error ? err.message : "Ошибка");
+        }
+      })
       .finally(() => setIsLoading(false));
-  }, [fetchData]);
+  }, [fetchData, cacheKey]);
 
   const filtered = filterRow && search
     ? rows.filter((r) => filterRow(r, search.toLowerCase()))
