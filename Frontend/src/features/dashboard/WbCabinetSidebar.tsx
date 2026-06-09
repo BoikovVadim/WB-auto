@@ -13,8 +13,10 @@ type WbCabinetSidebarProps = Pick<
   | "onOpenCatalogProductsSection"
   | "onPrefetchCatalogProductsSection"
   | "onOpenUnitEconomicsSection"
+  | "onPrefetchUnitEconomicsSettingsSection"
   | "onOpenUnitEconomicsSettingsSection"
   | "onOpenDashboardSection"
+  | "onPrefetchChangeHistorySection"
   | "onOpenChangeHistorySection"
 >;
 
@@ -26,8 +28,10 @@ export function WbCabinetSidebar({
   onOpenCatalogProductsSection,
   onPrefetchCatalogProductsSection,
   onOpenUnitEconomicsSection,
+  onPrefetchUnitEconomicsSettingsSection,
   onOpenUnitEconomicsSettingsSection,
   onOpenDashboardSection,
+  onPrefetchChangeHistorySection,
   onOpenChangeHistorySection,
 }: WbCabinetSidebarProps) {
   // «Юнит Экономика» открывает всплывающий столбик-поповер (не модалка) с двумя
@@ -124,6 +128,8 @@ export function WbCabinetSidebar({
         <button
           className={`wb-cabinet-menu-item ${activeSection === "change-history" ? "active" : ""}`}
           onClick={onOpenChangeHistorySection}
+          onMouseEnter={onPrefetchChangeHistorySection}
+          onFocus={onPrefetchChangeHistorySection}
         >
           <span className="wb-cabinet-menu-icon">И</span>
           <span className="wb-cabinet-menu-label">История</span>
@@ -154,6 +160,8 @@ export function WbCabinetSidebar({
               className={`wb-cabinet-flyout-item ${activeSection === "unit-economics-settings" ? "active" : ""}`}
               type="button"
               role="menuitem"
+              onMouseEnter={onPrefetchUnitEconomicsSettingsSection}
+              onFocus={onPrefetchUnitEconomicsSettingsSection}
               onClick={() => {
                 onOpenUnitEconomicsSettingsSection();
                 closeFlyout();

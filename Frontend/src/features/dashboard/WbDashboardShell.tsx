@@ -79,11 +79,13 @@ export function WbDashboardShell({
   onOpenCatalogProductsSection,
   onPrefetchCatalogProductsSection,
   onOpenUnitEconomicsSection,
+  onPrefetchUnitEconomicsSettingsSection,
   onOpenUnitEconomicsSettingsSection,
   onUnitEconomicsChargesInvalidate,
   onOpenDashboardSection,
   onOpenDashboardTechSection,
   onOpenDashboardCabinetSection,
+  onPrefetchChangeHistorySection,
   onOpenChangeHistorySection,
   isCostPriceSheetOpen,
   isCostPricesLoading,
@@ -192,8 +194,10 @@ export function WbDashboardShell({
         onOpenCatalogProductsSection={onOpenCatalogProductsSection}
         onPrefetchCatalogProductsSection={onPrefetchCatalogProductsSection}
         onOpenUnitEconomicsSection={onOpenUnitEconomicsSection}
+        onPrefetchUnitEconomicsSettingsSection={onPrefetchUnitEconomicsSettingsSection}
         onOpenUnitEconomicsSettingsSection={onOpenUnitEconomicsSettingsSection}
         onOpenDashboardSection={onOpenDashboardSection}
+        onPrefetchChangeHistorySection={onPrefetchChangeHistorySection}
         onOpenChangeHistorySection={onOpenChangeHistorySection}
       />
 

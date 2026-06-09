@@ -64,11 +64,13 @@ export type WbDashboardShellProps = {
   onOpenCatalogProductsSection: () => void;
   onPrefetchCatalogProductsSection: () => void;
   onOpenUnitEconomicsSection: () => void;
+  onPrefetchUnitEconomicsSettingsSection: () => void;
   onOpenUnitEconomicsSettingsSection: () => void;
   onUnitEconomicsChargesInvalidate: () => void;
   onOpenDashboardSection: () => void;
   onOpenDashboardTechSection: () => void;
   onOpenDashboardCabinetSection: () => void;
+  onPrefetchChangeHistorySection: () => void;
   onOpenChangeHistorySection: () => void;
   isCostPriceSheetOpen: boolean;
   isCostPricesLoading: boolean;

@@ -1,5 +1,6 @@
 import type { SyncEntity } from "../../api/syncClient";
 import type { ActiveSheet, DashboardSection } from "./persistence/dashboardViewState";
+import { prefetchChangeHistory, prefetchUnitEconomicsSettings } from "./sectionPrefetch";
 
 type Input = {
   setActiveSection: (section: DashboardSection) => void;
@@ -64,6 +65,7 @@ export function useDashboardShellHandlers(input: Input) {
     },
     onOpenCatalogProductsSection: () => openProductsWorkspaceSection("catalog-products"),
     onOpenUnitEconomicsSection: () => openProductsWorkspaceSection("unit-economics"),
+    onPrefetchUnitEconomicsSettingsSection: prefetchUnitEconomicsSettings,
     onOpenUnitEconomicsSettingsSection: () => {
       setActiveSheet("none");
       setActiveSection("unit-economics-settings");
@@ -72,6 +74,7 @@ export function useDashboardShellHandlers(input: Input) {
     onOpenDashboardSection: () => setActiveSection("dashboard"),
     onOpenDashboardTechSection: () => setActiveSection("dashboard-tech"),
     onOpenDashboardCabinetSection: () => setActiveSection("dashboard-cabinet"),
+    onPrefetchChangeHistorySection: prefetchChangeHistory,
     onOpenChangeHistorySection: () => setActiveSection("change-history"),
     onBackToMethods: () => setSelectedMethodEntity(null),
     // Ретро-листы метрик товаров.
