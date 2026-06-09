@@ -10,13 +10,14 @@ export function canEditAdvertisingClusterBid(row: ProductAdvertisingWorkspaceClu
   );
 }
 
-// WB принимает CPM только целыми числами — ставка везде целая, без дробной части.
+// WB принимает CPM только целыми числами — ставка везде целая, округляем вниз (floor),
+// чтобы не перепрыгнуть потолок окупаемости.
 export function normalizeDisplayedBid(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
     return null;
   }
 
-  return Math.round(value);
+  return Math.floor(value);
 }
 
 export function formatBidDraftValue(value: number) {
@@ -39,5 +40,5 @@ export function parseBidDraftValue(value: string) {
     return null;
   }
 
-  return Math.round(parsed);
+  return Math.floor(parsed);
 }

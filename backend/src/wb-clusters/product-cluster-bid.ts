@@ -37,7 +37,9 @@ export function computeClusterCr(input: {
  */
 export function computeBidCap(maxCpo: number | null, cr: number): number | null {
   if (maxCpo == null || maxCpo <= 0) return null;
-  return maxCpo * 1000 * cr;
+  // WB принимает CPM только целым. Потолок — это максимум, который нельзя превышать,
+  // поэтому округляем ВНИЗ (floor): целый bid_cap, и ставка никогда не перепрыгнет его.
+  return Math.floor(maxCpo * 1000 * cr);
 }
 
 // ── Этап 3: позиционный регулятор ставки ───────────────────────────────────────
@@ -99,11 +101,11 @@ export function computeDesiredBid(
   const cap = input.bidCap != null && input.bidCap > 0 ? input.bidCap : minBid;
   // WB Promotion API принимает ставку ТОЛЬКО целым числом (дробная → «incorrect request body»,
   // и WB отклоняет ВЕСЬ батч). Поэтому держим расчёт в целых: нижняя граница — вверх (ceil),
-  // потолок окупаемости — вниз (floor, не превышаем bid_cap), текущая — округляем. Шаги целые →
-  // все ветви возвращают целую ставку.
+  // потолок окупаемости — вниз (floor, не превышаем bid_cap), текущая — вниз (floor, не задираем
+  // выше потолка). Шаги целые → все ветви возвращают целую ставку.
   const lo = Math.ceil(minBid);
   const hi = Math.max(lo, Math.floor(Math.min(cap, maxWbBid)));
-  const cur = clamp(Math.round(input.currentBid), lo, hi);
+  const cur = clamp(Math.floor(input.currentBid), lo, hi);
 
   // Нет позиции — не дёргаем ставку (R3: замораживаем как есть).
   if (input.position == null) return { bid: cur, reason: "frozen" };

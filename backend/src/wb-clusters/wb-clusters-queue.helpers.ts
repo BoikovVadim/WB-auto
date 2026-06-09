@@ -178,12 +178,13 @@ export function getRecoverableActionSyncStatus(error: unknown) {
 }
 
 // WB Promotion API принимает CPM только целыми числами — дробная ставка
-// отвергается с "incorrect request body". Округляем до целого на самой границе,
-// чтобы корректность не зависела от источника (движок, ручной ввод, legacy в БД).
+// отвергается с "incorrect request body". Округляем ВНИЗ (floor) на самой границе,
+// чтобы корректность не зависела от источника (движок, ручной ввод, legacy в БД) и
+// ставка никогда не перепрыгнула потолок окупаемости из-за округления вверх.
 export function normalizeBidForWb(value: number) {
-  return Math.round(value);
+  return Math.floor(value);
 }
 
 export function normalizeBidFromWb(value: number) {
-  return Math.round(value);
+  return Math.floor(value);
 }
