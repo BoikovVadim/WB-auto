@@ -2,7 +2,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
-  IsNumber,
+  IsInt,
   IsString,
   MaxLength,
   Min,
@@ -15,8 +15,10 @@ class ProductClusterBidChangeDto {
   @MaxLength(255)
   clusterName!: string;
 
+  // WB принимает CPM только целым — дробная ставка отвергается ("incorrect request
+  // body") и роняет весь батч. Не пропускаем дробное даже на входе контракта.
   @Type(() => Number)
-  @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 2 })
+  @IsInt()
   @Min(1)
   bid!: number;
 }
