@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 
 import { fetchUnifiedChangeLog, type UnifiedChangeLogEntry } from "../../api/syncClientChangeLog";
 import { cacheChangeLog, getCachedChangeLog } from "../../api/changeLogCache";
@@ -9,7 +9,10 @@ import {
   reasonToneClass,
 } from "./changeLogLabels";
 
-const CHANGE_LOG_LIMIT = 500;
+// Размер порции. История бывает «забита» массовыми авто-изменениями (один прогон ДРР-регулятора
+// пишет сотни записей одного товара в одну секунду), поэтому грузим страницами по курсору и
+// подгружаем по кнопке «Показать ещё» — иначе один прогон занимал бы весь экран.
+const PAGE_SIZE = 100;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -174,23 +177,31 @@ function ChangeRow({ entry }: { entry: UnifiedChangeLogEntry }) {
 export const DashboardChangeHistorySection = memo(function DashboardChangeHistorySection() {
   // Мгновенный первый кадр из кэша (повторный заход/F5 — без ожидания сети), затем фоновая
   // ревалидация. Скелетон/«Загрузка» показываем только когда кэша ещё нет.
-  const cached = getCachedChangeLog(CHANGE_LOG_LIMIT);
+  const cached = getCachedChangeLog(PAGE_SIZE);
   const [entries, setEntries] = useState<UnifiedChangeLogEntry[]>(cached ?? []);
   const [loading, setLoading] = useState(cached === null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState((cached?.length ?? 0) >= PAGE_SIZE);
   const [error, setError] = useState<string | null>(null);
+  // Пользователь уже нажимал «Показать ещё» → фоновая ревалидация первой страницы НЕ должна
+  // затирать подгруженные записи (иначе листание схлопнулось бы к первой порции).
+  const appendedRef = useRef(false);
 
   useEffect(() => {
     let alive = true;
-    fetchUnifiedChangeLog(CHANGE_LOG_LIMIT)
+    fetchUnifiedChangeLog(PAGE_SIZE)
       .then((data) => {
         if (!alive) return;
-        cacheChangeLog(CHANGE_LOG_LIMIT, data);
-        setEntries(data);
+        cacheChangeLog(PAGE_SIZE, data);
+        if (!appendedRef.current) {
+          setEntries(data);
+          setHasMore(data.length >= PAGE_SIZE);
+        }
         setError(null);
       })
       .catch(() => {
         // Есть кэш — молча оставляем его; пусто — показываем ошибку.
-        if (alive && getCachedChangeLog(CHANGE_LOG_LIMIT) === null) {
+        if (alive && getCachedChangeLog(PAGE_SIZE) === null) {
           setError("Не удалось загрузить историю изменений");
         }
       })
@@ -198,15 +209,37 @@ export const DashboardChangeHistorySection = memo(function DashboardChangeHistor
     return () => { alive = false; };
   }, []);
 
+  const loadMore = () => {
+    const last = entries[entries.length - 1];
+    if (!last || loadingMore) return;
+    setLoadingMore(true);
+    appendedRef.current = true;
+    fetchUnifiedChangeLog(PAGE_SIZE, last.cursor)
+      .then((data) => {
+        setEntries((prev) => [...prev, ...data]);
+        setHasMore(data.length >= PAGE_SIZE);
+        setError(null);
+      })
+      .catch(() => setError("Не удалось подгрузить историю изменений"))
+      .finally(() => setLoadingMore(false));
+  };
+
   return (
     <section className="wb-card wb-card--wide wb-change-history-section">
       <div className="wb-workspace-header wb-workspace-header--products-list">
         <h2>История изменений</h2>
-        {loading && <span style={{ fontSize: 12, color: "var(--wb-text-muted)" }}>Загрузка…</span>}
+        {loading ? (
+          <span style={{ fontSize: 12, color: "var(--wb-text-muted)" }}>Загрузка…</span>
+        ) : entries.length > 0 ? (
+          <span style={{ fontSize: 12, color: "var(--wb-text-muted)" }}>
+            показано {entries.length}
+            {hasMore ? "+" : ""}
+          </span>
+        ) : null}
       </div>
 
       <div className="wb-change-history-scroll">
-        {error ? (
+        {error && entries.length === 0 ? (
           <p className="wb-empty-copy" style={{ padding: 24 }}>{error}</p>
         ) : !loading && entries.length === 0 ? (
           <p className="wb-empty-copy" style={{ padding: 24 }}>
@@ -235,6 +268,19 @@ export const DashboardChangeHistorySection = memo(function DashboardChangeHistor
           </table>
         )}
       </div>
+
+      {!loading && entries.length > 0 && hasMore && (
+        <div className="wb-change-history-more">
+          <button
+            type="button"
+            className="wb-change-history-more__btn"
+            onClick={loadMore}
+            disabled={loadingMore}
+          >
+            {loadingMore ? "Загрузка…" : "Показать ещё"}
+          </button>
+        </div>
+      )}
     </section>
   );
 });

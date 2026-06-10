@@ -17,11 +17,18 @@ export type UnifiedChangeLogEntry = {
   oldValue: string | null;
   newValue: string | null;
   createdAt: string;
+  /** Курсор для подгрузки «показать ещё»: передать как cursor для следующей порции. */
+  cursor: string;
 };
 
-export async function fetchUnifiedChangeLog(limit = 500): Promise<UnifiedChangeLogEntry[]> {
+export async function fetchUnifiedChangeLog(
+  limit = 500,
+  cursor?: string | null,
+): Promise<UnifiedChangeLogEntry[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set("cursor", cursor);
   const response = await apiClient.get<{ entries: UnifiedChangeLogEntry[] }>(
-    `/wb-clusters/change-log?limit=${String(limit)}`,
+    `/wb-clusters/change-log?${params.toString()}`,
   );
   return response.data?.entries ?? [];
 }

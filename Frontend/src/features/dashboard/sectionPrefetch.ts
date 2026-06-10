@@ -8,10 +8,10 @@ import type { UnitEconomicsSettings } from "../../api/syncClientUnitEconomics";
  * Прогрев данных холодных разделов на hover/focus пункта меню — чтобы ПЕРВЫЙ заход тоже был
  * без ожидания сети (повторный/F5 уже мгновенны из кэша). Дедуп по наличию кэша: греем один
  * раз, повторные наведения — no-op; сам раздел при открытии всё равно ревалидирует в фоне.
- * Должно совпадать с кэш-ключами/лимитами разделов: DashboardChangeHistorySection (500),
- * useUnitEconomicsSettings.
+ * Должно совпадать с кэш-ключами/лимитами разделов: DashboardChangeHistorySection (PAGE_SIZE=100,
+ * первая порция курсорной пагинации), useUnitEconomicsSettings.
  */
-const CHANGE_LOG_LIMIT = 500;
+const CHANGE_LOG_LIMIT = 100;
 const UNIT_ECONOMICS_SETTINGS_CACHE_KEY = "unit-economics-settings";
 
 export function prefetchChangeHistory(): void {

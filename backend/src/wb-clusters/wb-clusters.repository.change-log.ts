@@ -190,7 +190,13 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
    * состояния, не новое изменение. Реальные переходы (A→B→A) не трогаются: соседние
    * записи у них различаются. Сырые строки в таблицах остаются — режем только на чтении.
    */
-  async getUnifiedChangeLog(limit = 500): Promise<UnifiedChangeLogEntry[]> {
+  /**
+   * @param cursor курсор для подгрузки «показать ещё»: строка "<eventAtISO.us>|<id>" из
+   *   поля `cursor` последней показанной записи. Возвращает строго более старые записи.
+   *   Микросекундная точность обязательна: один прогон ДРР-регулятора пишет сотни записей
+   *   в одну секунду — посекундный курсор склеил бы/потерял их.
+   */
+  async getUnifiedChangeLog(limit = 500, cursor?: string | null): Promise<UnifiedChangeLogEntry[]> {
     const pool = this.getPool();
     const result = await pool.query<UnifiedChangeLogRow>(
       `
@@ -266,17 +272,23 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
         change_type,
         old_value,
         new_value,
-        TO_CHAR(event_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+        TO_CHAR(event_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+        TO_CHAR(event_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') || '|' || id AS cursor
       FROM flagged
       WHERE NOT (
         change_type IS NOT DISTINCT FROM prev_change_type
         AND old_value IS NOT DISTINCT FROM prev_old_value
         AND new_value IS NOT DISTINCT FROM prev_new_value
       )
+        -- Курсорная пагинация: строго более старые (event_at, id) последнего показанного.
+        AND (
+          $2::text IS NULL
+          OR (event_at, id) < (split_part($2, '|', 1)::timestamptz, split_part($2, '|', 2))
+        )
       ORDER BY event_at DESC, id DESC
       LIMIT $1
       `,
-      [limit],
+      [limit, cursor ?? null],
     );
 
     return result.rows.map((row) => ({
@@ -294,6 +306,7 @@ export abstract class WbClustersRepositoryChangeLog extends WbClustersRepository
       oldValue: row.old_value,
       newValue: row.new_value,
       createdAt: row.created_at,
+      cursor: row.cursor,
     }));
   }
 }
@@ -313,6 +326,7 @@ type UnifiedChangeLogRow = {
   old_value: string | null;
   new_value: string | null;
   created_at: string;
+  cursor: string;
 };
 
 export type UnifiedChangeLogEntry = {
@@ -330,4 +344,6 @@ export type UnifiedChangeLogEntry = {
   oldValue: string | null;
   newValue: string | null;
   createdAt: string;
+  /** Курсор для подгрузки «показать ещё» (передать как ?cursor= для следующей порции). */
+  cursor: string;
 };

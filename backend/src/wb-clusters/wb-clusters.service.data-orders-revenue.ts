@@ -125,12 +125,12 @@ export abstract class WbClustersServiceDataOrdersRevenue extends WbClustersServi
     return { dates, products };
   }
 
-  async getUnifiedChangeLog(limit = 500) {
+  async getUnifiedChangeLog(limit = 500, cursor?: string | null) {
     if (!this.wbClustersRepository.isConfigured()) {
       return { entries: [] };
     }
     await this.wbClustersRepository.ensureSchema();
-    const entries = await this.wbClustersRepository.getUnifiedChangeLog(limit);
+    const entries = await this.wbClustersRepository.getUnifiedChangeLog(limit, cursor);
     return { entries };
   }
 

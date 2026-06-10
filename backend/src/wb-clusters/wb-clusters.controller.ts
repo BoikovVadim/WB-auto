@@ -418,9 +418,13 @@ export class WbClustersController {
   }
 
   @Get("change-log")
-  getUnifiedChangeLog(@Query("limit") limit?: string) {
+  getUnifiedChangeLog(@Query("limit") limit?: string, @Query("cursor") cursor?: string) {
     // Clamp to a sane cap and coerce NaN/0/negative back to the default.
-    return this.wbClustersService.getUnifiedChangeLog(Math.min(Number(limit) || 500, 2000));
+    // cursor (опц.) — для подгрузки «показать ещё» более старых записей.
+    return this.wbClustersService.getUnifiedChangeLog(
+      Math.min(Number(limit) || 500, 2000),
+      cursor && cursor.length > 0 ? cursor : null,
+    );
   }
 
   @Get("products/orders-today")

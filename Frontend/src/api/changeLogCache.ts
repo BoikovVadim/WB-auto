@@ -9,7 +9,8 @@ import type { UnifiedChangeLogEntry } from "./syncClientChangeLog";
  * переживать закрытие вкладки; схема ответа может меняться между деплоями.
  */
 const memoryCache = new Map<number, UnifiedChangeLogEntry[]>();
-const storageKey = (limit: number) => `wb-change-history:v1:${String(limit)}`;
+// v2: ответ обзавёлся полем `cursor` (курсорная пагинация) — старый кэш без него непригоден.
+const storageKey = (limit: number) => `wb-change-history:v2:${String(limit)}`;
 
 function isWindowAvailable() {
   return typeof window !== "undefined";
