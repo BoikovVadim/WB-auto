@@ -47,10 +47,14 @@ import { useDashboardLifecycle } from "./useDashboardLifecycle";
 import { sortExportHistoryNewestFirst } from "./dashboardExportHistory";
 import { useDashboardProductsWorkspace } from "./useDashboardProductsWorkspace";
 import { useDashboardWorkspaceActions } from "./useDashboardWorkspaceActions";
+import { useIdleSectionChunkWarmup } from "./useIdleSectionChunkWarmup";
 import type { DashboardStatusNotice } from "./useDashboardWorkspaceActionTypes";
 const primaryEntityType: SyncEntity = "product_search_texts";
 
 export function WbDashboard() {
+  // P0/P1: после первого кадра прогреваем ленивые чанки секций в idle → первый клик в раздел
+  // открывается без ожидания загрузки чанка.
+  useIdleSectionChunkWarmup();
   const {
     persistedViewState,
     cachedExportMethods,

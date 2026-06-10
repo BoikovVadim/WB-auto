@@ -94,6 +94,44 @@ export const DashboardSyncRunsSection = lazy(() =>
   import("./DashboardSyncRunsSection").then((m) => ({ default: m.DashboardSyncRunsSection })),
 );
 
+/**
+ * Прогрев ВСЕХ чанков секций (вызывается в idle после первого кадра — см. useIdleSectionChunkWarmup).
+ * Initial paint не блокируется (секции ленивые), но к моменту клика пользователя чанки уже в кэше
+ * браузера → открытие без Suspense-fallback. import() дедуплицируется (повторный вызов — no-op).
+ */
+export function warmAllSectionChunks(): void {
+  const loaders = [
+    () => import("./DashboardProductsSection"),
+    () => import("./DashboardCampaignsSection"),
+    () => import("./DashboardCatalogSection"),
+    () => import("./DashboardClusterStatsSection"),
+    () => import("./DashboardDailyStatsSection"),
+    () => import("./DashboardExportsOverviewSection"),
+    () => import("./DashboardJamStatusSection"),
+    () => import("./DashboardMethodWorkspaceSection"),
+    () => import("./DashboardMinusPhrasesSection"),
+    () => import("./DashboardCatalogProductDetailSection"),
+    () => import("./DashboardOrdersDetailSection"),
+    () => import("./DashboardOrdersSumDetailSection"),
+    () => import("./DashboardRevenueDetailSection"),
+    () => import("./DashboardCostSumDetailSection"),
+    () => import("./DashboardAdSpendDetailSection"),
+    () => import("./DashboardDrrPercentDetailSection"),
+    () => import("./DashboardCpoDetailSection"),
+    () => import("./DashboardSppDetailSection"),
+    () => import("./DashboardAcquiringDetailSection"),
+    () => import("./DashboardMarginDetailSection"),
+    () => import("./DashboardPricesDetailSection"),
+    () => import("./DashboardStocksDetailSection"),
+    () => import("./DashboardBuyoutDetailSection"),
+    () => import("./DashboardChangeHistorySection"),
+    () => import("./DashboardUnitEconomicsSettingsSection"),
+    () => import("./DashboardQueryFrequenciesSection"),
+    () => import("./DashboardSyncRunsSection"),
+  ];
+  for (const load of loaders) void load().catch(() => undefined);
+}
+
 /** Заглушка на время загрузки чанка секции (мелькает только при ПЕРВОМ открытии раздела). */
 export function SectionFallback() {
   return (
