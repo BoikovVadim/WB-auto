@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 
+import { appEnv } from "../common/env";
 import { ProductCpoService } from "./product-cpo.service";
 import { ProductPositionService } from "./product-position.service";
 import {
@@ -47,7 +48,9 @@ function readConfig(): BidEngineConfig {
   );
   return {
     engine: process.env.WB_CLUSTER_BID_ENGINE === "1",
-    applyToWb: process.env.WB_CLUSTER_BID_DRY_RUN !== "1",
+    // Глобальный read-only рубильник перебивает локальный DRY_RUN: при WB_AUTOMATION_READ_ONLY
+    // движок считает ставки, но в WB их не пишет (защита от двух писателей при миграции в Oqqi).
+    applyToWb: process.env.WB_CLUSTER_BID_DRY_RUN !== "1" && !appEnv.wbAutomationReadOnly,
     scopeAll,
     scopeNmIds,
     minBid: numEnv("WB_CLUSTER_BID_MIN", 100),

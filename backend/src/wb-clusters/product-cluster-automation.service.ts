@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 
+import { appEnv } from "../common/env";
 import { ProductCpoService } from "./product-cpo.service";
 import { ProductClusterAccrualService } from "./product-cluster-accrual.service";
 import { ProductClusterRelevanceService } from "./product-cluster-relevance.service";
@@ -12,32 +13,18 @@ import { decideForCluster, type ClusterDecision } from "./product-cluster-decisi
 import { decideForClusterV2 } from "./product-cluster-decision.v2";
 import type {
   AutomationMode,
-  ClusterAutomationStateValue,
   ClusterOverrideItem,
   ClusterOverridePickerRow,
   ClusterReviewStatus,
 } from "./wb-clusters.repository.automation";
 import { WbClustersRepository } from "./wb-clusters.repository";
 import { WbClustersService } from "./wb-clusters.service";
+import type { ClusterAutomationStatusResult } from "./product-cluster-automation.types";
+
+export type { ClusterAutomationStatusResult };
 
 /** Доля кластеров, выше которой массовое авто-исключение блокируется (защита от обнуления РК). */
 const MAX_EXCLUDE_SHARE = 0.8;
-
-/** Статус автоматизации кампании для UI (режим + порог + счётчик ревью + per-cluster решения). */
-export interface ClusterAutomationStatusResult {
-  mode: AutomationMode;
-  maxCpo: number | null;
-  /** Сколько новых кластеров ждёт ручной модерации (review_status=pending). */
-  pendingCount: number;
-  clusters: {
-    normalizedClusterName: string;
-    state: ClusterAutomationStateValue;
-    manualProtected: boolean;
-    lastCpo: number | null;
-    lastDecision: string | null;
-    reviewStatus: ClusterReviewStatus;
-  }[];
-}
 
 /**
  * Автоматизация управления кластерами по CPO. Каждые 10 минут для кампаний с включённой
@@ -247,11 +234,16 @@ export class ProductClusterAutomationService {
         };
       }),
     );
-    const mode: AutomationMode = perCampaign.some((c) => c.mode === "live")
+    const resolvedMode: AutomationMode = perCampaign.some((c) => c.mode === "live")
       ? "live"
       : perCampaign.some((c) => c.mode === "preview")
         ? "preview"
         : "off";
+    // Глобальный read-only рубильник: live понижаем до preview — решения считаются и
+    // состояние пишется в нашу БД, но в WB ничего не применяется (mode==="live" — единственный
+    // путь к applyProductClusterAction ниже). Защита от двух писателей при миграции в Oqqi.
+    const mode: AutomationMode =
+      appEnv.wbAutomationReadOnly && resolvedMode === "live" ? "preview" : resolvedMode;
     const counts = perCampaign.reduce(
       (acc, c) => ({
         active: acc.active + c.active,

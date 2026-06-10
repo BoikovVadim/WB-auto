@@ -132,6 +132,12 @@ function resolvePostgresConfig() {
 export const appEnv = {
   nodeEnv: getOptionalEnv("NODE_ENV", "development"),
   port: parsePort(getOptionalEnv("BACKEND_PORT", "3000")),
+  // ГЛОБАЛЬНЫЙ РУБИЛЬНИК «только чтение»: при WB_AUTOMATION_READ_ONLY=true ни один
+  // автоматический движок НЕ пишет в кабинет WB (вкл/выкл кластеров, DRR-регулятор,
+  // ставки) — синки/расчёты/накопители работают как обычно. Нужен, чтобы поднять
+  // ВТОРОЙ экземпляр (миграция в Oqqi) рядом с боевым без двух одновременных писателей
+  // в один кабинет (rate-limit/конфликт действий). Дефолт false — боевой пишет.
+  wbAutomationReadOnly: parseBooleanEnv("WB_AUTOMATION_READ_ONLY", "false"),
   frontendOrigin: getOptionalUrlEnv(
     "FRONTEND_ORIGIN",
     "http://localhost:5173",
