@@ -11,7 +11,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LOG_PREFIX="[wb-headless-freq]"
 TUNNEL_PORT=15432
-REMOTE_HOST="root@95.163.226.154"
+# SSH-хост БД, к которой агент туннелирует и пишет результат. Дефолт — боевой прод; на
+# cutover перенаправляется на Oqqi одной env-переменной (WB_HEADLESS_DB_SSH_HOST в корневом
+# .env) + сменой DATABASE_URL на креды Oqqi — без правки кода под давлением переключения.
+REMOTE_HOST="${WB_HEADLESS_DB_SSH_HOST:-root@95.163.226.154}"
 TUNNEL_PID_FILE="/tmp/wb-headless-freq-ssh-tunnel.pid"
 
 # DATABASE_URL — из gitignored .env в корне проекта (НЕ коммитится).
