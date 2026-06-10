@@ -1,0 +1,232 @@
+/* Колонка/инпут себестоимости + модалка изменения цены. Часть глобальных стилей; порядок @import в styles.css = каскад, не менять. */
+
+/* Cost price column header link */
+.wb-cost-header-link {
+  color: var(--wb-gold-mid, #e8c547);
+  text-decoration: none;
+  cursor: pointer;
+  font-weight: 600;
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.wb-cost-header-link:hover {
+  text-decoration: underline;
+  opacity: 0.85;
+}
+
+/* Cost price display button (non-edit state) */
+/* Cost price display span — fixed height so editing never expands the row */
+.wb-cost-price-display {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  /* Height = row content height = font * line-height + 2 * vertical padding.
+     This ensures the cost cell is exactly the same height as every other td. */
+  height: calc(
+    var(--wb-table-font-size) * var(--wb-table-line-height) +
+    2 * var(--wb-table-cell-padding-v)
+  );
+  box-sizing: border-box;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: var(--wb-table-font-size);
+  font-family: inherit;
+  font-weight: 500;
+  color: var(--wb-text-main);
+  white-space: nowrap;
+  user-select: none;
+  cursor: default;
+}
+
+/* Карандаш-аффорданс слева от значения. Клик по нему или по цифре открывает
+   редактирование. Видим всегда с постоянной прозрачностью — без реакции на hover,
+   чтобы при движении курсора по ячейкам ничего не «дёргалось». */
+/* Карандаш прижат к левому краю ячейки (вне потока), чтобы цифра центрировалась
+   по всей ячейке, а не вместе с иконкой. */
+.wb-cost-price-edit-icon {
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px;
+  border: none;
+  background: transparent;
+  color: var(--wb-gold-dark);
+  cursor: pointer;
+  opacity: 0.65;
+}
+
+.wb-cost-price-value {
+  display: inline-flex;
+  align-items: center;
+}
+
+.wb-cost-price-empty {
+  opacity: 0.35;
+  font-weight: 400;
+}
+
+/* Индикатор статуса записи цены (•/✓/!) — ВНЕ потока (absolute), чтобы появление
+   или смена статуса не сдвигали число и соседние ячейки. Карандаш тоже absolute,
+   поэтому при наведении/смене статуса раскладка колонки не «дёргается». */
+.wb-price-status {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-weight: 700;
+  font-size: var(--wb-table-font-size);
+  pointer-events: none;
+}
+
+/* Модалка подтверждения изменения цены */
+.wb-price-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wb-price-confirm {
+  width: 360px;
+  max-width: 92vw;
+  background: var(--wb-surface, #fff);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+  padding: 20px;
+}
+.wb-price-confirm-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--wb-text-main);
+}
+.wb-price-confirm-body {
+  margin: 14px 0 18px;
+}
+.wb-price-confirm-product {
+  font-size: 13px;
+  color: var(--wb-text-muted);
+  margin-bottom: 10px;
+  word-break: break-word;
+}
+.wb-price-confirm-prices {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 700;
+}
+.wb-price-confirm-old {
+  color: var(--wb-text-muted);
+  text-decoration: line-through;
+  font-weight: 500;
+  font-size: 16px;
+}
+.wb-price-confirm-arrow {
+  color: var(--wb-text-muted);
+}
+.wb-price-confirm-new {
+  color: var(--wb-text-main);
+}
+.wb-price-confirm-note {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--wb-text-muted);
+}
+.wb-price-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.wb-btn-primary,
+.wb-btn-secondary {
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.wb-btn-primary {
+  background: var(--wb-gold-dark, #b8860b);
+  color: #fff;
+}
+.wb-btn-primary:hover {
+  filter: brightness(1.06);
+}
+.wb-btn-primary:focus-visible {
+  outline: 2px solid var(--wb-gold-dark, #b8860b);
+  outline-offset: 2px;
+}
+.wb-btn-secondary {
+  background: transparent;
+  border-color: var(--wb-border, #e5e7eb);
+  color: var(--wb-text-main);
+}
+.wb-btn-secondary:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* Cost price td — zero vertical padding: height is owned by the child element.
+   Must use .wb-data-table td.wb-table-cell--cost (specificity 0,1,2) to beat
+   the global .wb-data-table td rule (specificity 0,1,1). */
+.wb-data-table td.wb-table-cell--cost {
+  padding: 0 var(--wb-table-cell-padding-h);
+  vertical-align: middle;
+  cursor: default;
+  user-select: none;
+}
+
+.wb-table-cell--cost-selected {
+  background: rgba(66, 133, 244, 0.08) !important;
+}
+
+/* Cost price input — same height formula as .wb-cost-price-display */
+.wb-cost-price-input {
+  display: block;
+  width: 100%;
+  height: calc(
+    var(--wb-table-font-size) * var(--wb-table-line-height) +
+    2 * var(--wb-table-cell-padding-v)
+  );
+  box-sizing: border-box;
+  padding: 0 8px;
+  /* Без рамки: редактируемость уже обозначена карандашом, обводка инпута лишняя. */
+  border: none;
+  border-radius: 6px;
+  font-size: var(--wb-table-font-size);
+  font-family: inherit;
+  color: var(--wb-text-main);
+  background: rgba(232, 197, 71, 0.06);
+  text-align: center;
+  outline: none;
+  line-height: calc(
+    var(--wb-table-font-size) * var(--wb-table-line-height) +
+    2 * var(--wb-table-cell-padding-v)
+  );
+  transition: background 0.12s;
+}
+
+.wb-cost-price-input:focus {
+  background: rgba(232, 197, 71, 0.10);
+}
+
+.wb-cost-price-input::placeholder {
+  color: var(--wb-text-muted);
+  opacity: 0.5;
+  text-align: center;
+}
+
+.wb-cost-price-input--saving {
+  opacity: 0.5;
+  pointer-events: none;
+}
+

@@ -1,0 +1,408 @@
+/* Страница настроек юнит-экономики. Часть глобальных стилей; порядок @import в styles.css = каскад, не менять. */
+
+/* ── Страница настроек юнит-экономики ─────────────────────────────────────── */
+.wb-unit-econ-blocks {
+  display: flex;
+  gap: 40px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.wb-unit-econ-block {
+  margin-top: 18px;
+}
+
+.wb-unit-econ-block-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.wb-unit-econ-table {
+  max-width: 520px;
+  font-size: var(--wb-table-font-size);
+}
+
+.wb-unit-econ-table th,
+.wb-unit-econ-table td {
+  padding: 4px 10px;
+}
+
+.wb-unit-econ-percent {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+/* Компактный инпут — как ячейки таблицы товаров (.wb-cost-price-input), не крупный .wb-input. */
+.wb-unit-econ-percent-input {
+  width: 72px;
+  box-sizing: border-box;
+  padding: 2px 6px;
+  border: 1.5px solid var(--wb-gold-mid);
+  border-radius: 6px;
+  font-size: var(--wb-table-font-size);
+  font-family: inherit;
+  color: var(--wb-text-main);
+  background: rgba(232, 197, 71, 0.06);
+  text-align: right;
+  outline: none;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.wb-unit-econ-percent-input:focus {
+  border-color: var(--wb-gold-dark);
+  background: rgba(232, 197, 71, 0.12);
+}
+
+.wb-unit-econ-percent-suffix {
+  color: var(--wb-text-muted);
+  font-size: 12px;
+}
+
+.wb-cabinet-main-wrap {
+  margin-left: clamp(72px, 3vw + 36px, 88px);
+  width: calc(100% - clamp(72px, 3vw + 36px, 88px));
+  min-width: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.wb-cabinet-header-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.wb-header-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 249, 230, 0.95) 0%,
+    rgba(248, 234, 176, 0.78) 100%
+  );
+  box-shadow: 0 8px 18px rgba(201, 162, 39, 0.12);
+}
+
+.wb-header-pill-label {
+  font-size: 11px;
+  color: var(--wb-text-muted);
+}
+
+.wb-header-pill-value {
+  font-size: 11px;
+  color: #181818;
+}
+
+.wb-header-button,
+.wb-primary-button,
+.wb-secondary-button,
+.wb-toggle-pill {
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+
+.wb-header-button,
+.wb-primary-button {
+  background: var(--wb-gold-gradient);
+  color: #2b2100;
+  font-weight: 700;
+}
+
+.wb-header-button {
+  padding: 8px 12px;
+}
+
+.wb-primary-button,
+.wb-secondary-button {
+  padding: 9px 13px;
+}
+
+.wb-primary-button:hover,
+.wb-secondary-button:hover,
+.wb-header-button:hover,
+.wb-toggle-pill:hover {
+  transform: translateY(-1px);
+}
+
+.wb-primary-button:hover,
+.wb-header-button:hover {
+  box-shadow: 0 10px 20px rgba(201, 162, 39, 0.22);
+}
+
+.wb-secondary-button {
+  background: #fff;
+  border: 1px solid rgba(201, 162, 39, 0.24);
+  color: var(--wb-gold-dark);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.06);
+}
+
+.wb-secondary-button--accent {
+  background: linear-gradient(180deg, #fff 0%, #fbf7eb 100%);
+}
+
+.wb-secondary-button--small {
+  padding: 5px 8px;
+  border-radius: 9px;
+  font-size: 10px;
+  line-height: 1.1;
+}
+
+.wb-primary-button:disabled,
+.wb-secondary-button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+  transform: none;
+}
+
+.wb-cabinet-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 10px 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.wb-exports-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 24px;
+}
+
+.wb-method-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 260px));
+  align-items: stretch;
+}
+
+.wb-method-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 11px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbf9f3 100%);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  max-width: 260px;
+}
+
+.wb-method-card h3 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.wb-method-card .wb-card-meta {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.wb-method-card .wb-card-header {
+  margin-bottom: 0;
+  gap: 8px;
+}
+
+.wb-method-card .wb-chip {
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
+.wb-method-card-details {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+  align-content: start;
+}
+
+.wb-method-card-row {
+  display: grid;
+  gap: 2px;
+  padding: 8px 9px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.wb-method-card-label {
+  color: var(--wb-text-muted);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.wb-method-card-value {
+  color: var(--wb-text-main);
+  font-size: 11px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.wb-workspace-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  margin-bottom: 12px;
+}
+
+.wb-workspace-header--products-detail {
+  flex-direction: row !important;
+  align-items: center !important;
+  flex-wrap: nowrap;
+}
+
+.wb-workspace-header--products-list {
+  flex-direction: row !important;
+  align-items: center !important;
+  flex-wrap: nowrap;
+  padding: 0 clamp(8px, 0.8vw + 6px, 14px);
+}
+
+.wb-products-list-title {
+  margin: 0;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.wb-workspace-header--products-detail h2 {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wb-workspace-header--products-detail .wb-secondary-button {
+  flex: 0 0 auto;
+  width: auto !important;
+}
+
+.wb-workspace-shell {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  align-items: start;
+  margin-top: 12px;
+}
+
+.wb-method-overview {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin-bottom: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbf9f3 100%);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.wb-method-overview-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.wb-method-overview-metrics {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.wb-method-overview-metrics .wb-metric-card {
+  padding: 8px 9px;
+  border-radius: 10px;
+}
+
+.wb-method-overview-archive {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  min-width: 0;
+}
+
+.wb-main-card--method {
+  padding-top: 12px;
+}
+
+.wb-side-card,
+.wb-main-card {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbf9f3 100%);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.wb-table-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wb-products-page > .wb-table-section {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.wb-table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wb-table-search {
+  width: min(420px, 100%);
+  min-width: 0;
+}
+
+.wb-table-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  min-width: 0;
+  max-height: min(72vh, 720px);
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: #fff;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  contain: paint;
+  will-change: scroll-position;
+}
+
+.wb-table-wrap--windowed {
+  flex: 1;
+  max-height: none;
+  will-change: scroll-position;
+}
+

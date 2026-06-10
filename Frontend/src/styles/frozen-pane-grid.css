@@ -1,0 +1,123 @@
+/* Frozen-pane grid таблицы Товары/Юнит-Экономика. Часть глобальных стилей; порядок @import в styles.css = каскад, не менять. */
+
+/* ── Frozen-pane grid таблицы «Товары» / «Юнит Экономика» ───────────────────────
+   Тот же приём, что в VirtualMatrixTable (ретроспективы), но под разнородные колонки
+   с редактируемыми ячейками и выделением строк. Закреплённые слева колонки — отдельная
+   зона на GPU-transform вместо position:sticky (нет paint каждый кадр). Строки
+   виртуализированы с фиксированной высотой → зоны идеально совпадают. ──────────── */
+.wb-pg-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #fff;
+  outline: none;
+}
+
+.wb-pg-region {
+  overflow: hidden;
+  position: relative;
+  background: #fff;
+}
+
+.wb-pg-region--pinned {
+  border-right: 2px solid var(--wb-gold-mid);
+}
+
+.wb-pg-region--body {
+  overflow: auto;
+  overscroll-behavior: contain;
+  will-change: scroll-position;
+}
+
+/* Тело-ячейка */
+.wb-pg-cell {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 var(--wb-table-cell-padding-h);
+  font-size: var(--wb-table-font-size);
+  color: var(--wb-text-main);
+  background: var(--wb-table-body-bg);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.wb-pg-cell--num {
+  justify-content: center;
+}
+
+.wb-pg-cell--cost {
+  cursor: default;
+  user-select: none;
+}
+
+/* Выделенная ячейка (выделение диапазона как в Google Sheets): синий фон + рамка. */
+.wb-pg-cell--cell-selected {
+  background: rgba(66, 133, 244, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(66, 133, 244, 0.45);
+}
+
+.wb-pg-ellipsis {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Шапка-ячейка */
+.wb-pg-head {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  font-size: var(--wb-table-font-size);
+  font-weight: 700;
+  color: var(--wb-text-muted);
+  background: var(--wb-table-header-bg);
+  border-bottom: 1px solid rgba(201, 162, 39, 0.3);
+  border-right: 1px solid rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Итого-ячейка (вторая строка шапки) */
+.wb-pg-total {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.6);
+  background: var(--wb-table-totals-bg);
+  border-bottom: 1px solid rgba(201, 162, 39, 0.3);
+  border-right: 1px solid rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.wb-pg-total--label {
+  justify-content: flex-start;
+  padding-left: 12px;
+  color: rgba(15, 23, 42, 0.45);
+}
+
+.wb-pg-empty {
+  position: absolute;
+  top: 24px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: var(--wb-text-muted);
+  font-size: var(--wb-table-font-size);
+  pointer-events: none;
+}
+

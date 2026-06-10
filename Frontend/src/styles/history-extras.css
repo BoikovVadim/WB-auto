@@ -1,0 +1,164 @@
+/* История: показать ещё, кнопки подтверждения, подсветка причины. Часть глобальных стилей; порядок @import в styles.css = каскад, не менять. */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Change History Section
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.wb-change-history-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.wb-change-history-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.wb-change-history-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.wb-change-history-table th {
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.wb-change-history-cell {
+  font-size: 12px;
+  color: var(--wb-text-main);
+  padding: 7px 11px;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  vertical-align: middle;
+}
+
+.wb-change-history-cell--date {
+  white-space: nowrap;
+  color: var(--wb-text-muted);
+  font-size: 11px;
+}
+
+.wb-change-history-cell--label {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-change-history-cell--value {
+  text-align: center;
+}
+
+.wb-change-history-cell--num {
+  text-align: center;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.wb-change-history-row:hover td {
+  background: rgba(0,0,0,0.02);
+}
+
+.wb-change-history-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* «Показать ещё» под таблицей Истории изменений — подгрузка следующей порции. */
+.wb-change-history-more {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0 4px;
+}
+
+.wb-change-history-more__btn {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 20px;
+  border-radius: 8px;
+  border: 1px solid var(--wb-border, #e5e7eb);
+  background: #fff;
+  color: var(--wb-text-main, #111);
+  cursor: pointer;
+}
+
+.wb-change-history-more__btn:hover:not(:disabled) {
+  background: var(--wb-bg-muted, #f5f5f5);
+}
+
+.wb-change-history-more__btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Кнопки диалога подтверждения выключения автоматизации. */
+.wb-automation-confirm__btn {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--wb-border, #e5e7eb);
+  background: #fff;
+  color: var(--wb-text-main, #111);
+  cursor: pointer;
+}
+
+.wb-automation-confirm__btn:hover {
+  background: var(--wb-bg-muted, #f5f5f5);
+}
+
+.wb-automation-confirm__btn--danger {
+  background: #c0392b;
+  border-color: #c0392b;
+  color: #fff;
+}
+
+.wb-automation-confirm__btn--danger:hover {
+  background: #a93226;
+}
+
+/* Подсветка причины авто-смены ставки в Истории изменений (личной и общей):
+   повышаем → красный (тратим больше), понижаем → зелёный (экономим). */
+.wb-bid-reason {
+  font-weight: 600;
+}
+
+.wb-bid-reason--up {
+  color: #c0392b;
+}
+
+.wb-bid-reason--down {
+  color: #16a34a;
+}
+
+.wb-change-history-old {
+  font-size: 12px;
+  color: #b71c1c;
+  background: #fce4ec;
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.wb-change-history-new {
+  font-size: 12px;
+  color: #1b5e20;
+  background: #e8f5e9;
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.wb-change-history-empty {
+  color: var(--wb-text-muted);
+  font-size: 12px;
+}
+

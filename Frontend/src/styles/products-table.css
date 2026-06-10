@@ -1,0 +1,1244 @@
+/* Таблица Товары/Юнит-Экономика: sheet, sticky, drag-reorder, resize. Часть глобальных стилей; порядок @import в styles.css = каскад, не менять. */
+
+/* Catalog products / cost price sheet — fills the flex chain to the bottom of the viewport.
+   Does NOT use wb-table-wrap base class to avoid max-height: min(72vh, 720px) override. */
+.wb-table-wrap--catalog-restricted {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-x: auto;
+  overflow-y: auto;
+  min-width: 0;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: #fff;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-gutter: stable both-edges;
+  will-change: scroll-position;
+  padding-bottom: 12px;
+}
+
+.wb-table-wrap--products {
+  flex: 1;
+  max-height: none;
+  overflow-x: auto;
+  overflow-y: auto;
+  min-width: 0;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: #fff;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  contain: paint;
+  will-change: scroll-position;
+}
+
+.wb-data-table {
+  width: 100%;
+  min-width: 920px;
+  /* separate + border-spacing:0 looks identical to collapse visually but
+     does NOT break position:sticky backgrounds — collapse is a known browser
+     bug that makes th/td backgrounds invisible when position:sticky is used. */
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.wb-data-table--compact {
+  min-width: 520px;
+}
+
+
+.wb-data-table th,
+.wb-data-table td {
+  padding: var(--wb-table-cell-padding);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  text-align: left;
+  vertical-align: middle;
+  font-size: var(--wb-table-font-size);
+  line-height: var(--wb-table-line-height);
+}
+
+.wb-data-table th {
+  background: var(--wb-table-header-bg);
+  color: var(--wb-text-muted);
+  font-weight: 700;
+  white-space: nowrap;
+  text-align: center;
+  vertical-align: middle;
+  position: sticky;
+  top: 0;
+  z-index: var(--wb-table-sticky-z-header);
+  /* Exact height ensures the second sticky row's `top` offset is always correct
+     and there is never a gap between two stacked sticky header rows. */
+  height: var(--wb-table-header-row-height);
+  box-sizing: border-box;
+}
+
+/* ── Second sticky header row (Итого / filters) ───────────────────────────────
+   When <thead> has two rows (column headers + totals/filters), the second row
+   MUST stick at exactly `top: --wb-table-header-row-height` so there is no gap
+   between the two rows.  Apply this class to the <tr> element.
+   ──────────────────────────────────────────────────────────────────────────── */
+.wb-data-table .wb-thead-row--second th {
+  top: var(--wb-table-header-row-height);
+  z-index: var(--wb-table-sticky-z-header);
+  background: var(--wb-table-totals-bg);
+}
+
+/* ── Sticky column utility ────────────────────────────────────────────────────
+   Apply .wb-table-cell--sticky-left to ANY th or td that is position:sticky
+   on the horizontal axis.  This guarantees the cell is always opaque —
+   content scrolling behind it will never bleed through.
+   ──────────────────────────────────────────────────────────────────────────── */
+.wb-data-table .wb-table-cell--sticky-left {
+  position: sticky;
+  /* Body-row sticky columns use z-index=1 so they are always BELOW sticky header
+     rows (z-index 3+).  This prevents body cells from bleeding through the header
+     when both have position:sticky. */
+  z-index: var(--wb-table-sticky-z-body-col);
+  background: var(--wb-table-body-bg);
+}
+
+.wb-data-table thead .wb-table-cell--sticky-left,
+.wb-data-table th.wb-table-cell--sticky-left {
+  background: var(--wb-table-header-bg);
+  z-index: calc(var(--wb-table-sticky-z-header) + 1);
+}
+
+/* Totals row uses a warmer background to stand out, but still opaque.
+   z-index подняли до header+1: иначе правило .wb-products-totals-row th ниже по
+   тексту (та же специфичность) сбрасывает закреплённую ячейку до z-index header,
+   и скроллящиеся ячейки тоталов (Комиссия и т.п.), будучи позже в DOM, рисуются
+   ПОВЕРХ закреплённой колонки — total «просвечивает» за границу закрепления. */
+.wb-data-table .wb-products-totals-row .wb-table-cell--sticky-left,
+.wb-data-table .wb-products-totals-row th.wb-table-cell--sticky-left {
+  background: var(--wb-table-totals-bg);
+  z-index: calc(var(--wb-table-sticky-z-header) + 1);
+}
+
+.wb-table-cell--numeric {
+  text-align: center !important;
+  vertical-align: middle !important;
+}
+
+.wb-data-table--compact th,
+.wb-data-table--compact td {
+  padding: 3px 4px;
+  font-size: 9px;
+  line-height: 1.05;
+}
+
+.wb-data-table--compact th {
+  white-space: normal;
+  min-width: 78px;
+  top: 0;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.06);
+  cursor: grab;
+}
+
+.wb-data-table--compact th:hover {
+  background: #f2e3b6;
+}
+
+.wb-data-table--compact th:active {
+  cursor: grabbing;
+}
+
+.wb-raw-cell {
+  display: block;
+  max-width: 88px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.wb-raw-table-header {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.wb-raw-table-drag-handle {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 1px;
+  width: 8px;
+  padding: 0;
+  justify-items: center;
+}
+
+.wb-raw-table-drag-line {
+  display: block;
+  width: 6px;
+  height: 1px;
+  border-radius: 999px;
+  background: rgba(125, 97, 0, 0.85);
+}
+
+.wb-raw-table-header-label {
+  display: block;
+  min-width: 0;
+  text-align: center;
+}
+
+.wb-raw-table-column--sticky-first,
+.wb-raw-table-column--sticky-second {
+  position: sticky;
+  background: #fffdf7;
+  z-index: var(--wb-table-sticky-z-body-col);
+}
+
+.wb-raw-table-column--dragging {
+  opacity: 0.72;
+  box-shadow: inset 0 0 0 1px rgba(201, 162, 39, 0.35);
+}
+
+.wb-data-table thead .wb-raw-table-column--sticky-first,
+.wb-data-table thead .wb-raw-table-column--sticky-second {
+  z-index: 4;
+  background: #f7edd0;
+}
+
+.wb-raw-table-column--sticky-first {
+  left: 0;
+  min-width: 96px;
+  max-width: 96px;
+}
+
+.wb-raw-table-column--sticky-second {
+  left: 96px;
+  min-width: 128px;
+  max-width: 128px;
+}
+
+.wb-raw-table-column--sticky-first .wb-raw-cell,
+.wb-raw-table-column--sticky-second .wb-raw-cell {
+  max-width: none;
+}
+
+.wb-data-table tbody tr {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.wb-data-table tbody tr:hover {
+  background: rgba(232, 197, 71, 0.08);
+}
+
+.wb-data-table tbody tr.active {
+  background: rgba(232, 197, 71, 0.16);
+}
+
+.wb-virtual-spacer-row,
+.wb-virtual-spacer-row:hover,
+.wb-virtual-spacer-row.active {
+  background: transparent !important;
+  cursor: default !important;
+}
+
+.wb-virtual-spacer-row td {
+  padding: 0 !important;
+  border: none !important;
+  height: 0;
+}
+
+.wb-hero,
+.wb-card,
+.wb-alert {
+  background: var(--wb-surface);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: var(--wb-radius-lg);
+  box-shadow: var(--wb-shadow);
+}
+
+.wb-hero {
+  padding: clamp(14px, 1.5vw, 18px);
+  background:
+    radial-gradient(circle at top right, rgba(232, 197, 71, 0.2), transparent 28%),
+    linear-gradient(180deg, #fff 0%, #fbf9f3 100%);
+}
+
+.wb-hero h1,
+.wb-card h2,
+.wb-product-card h3 {
+  margin: 0;
+}
+
+.wb-hero-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: rgba(232, 197, 71, 0.12);
+  color: var(--wb-gold-dark);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.wb-hero p,
+.wb-card-meta,
+.wb-empty-copy,
+.wb-note-box,
+.wb-list,
+.wb-archive-item-meta,
+.wb-metric-card-label {
+  color: var(--wb-text-muted);
+}
+
+.wb-hero p {
+  margin: 10px 0 0;
+  max-width: 860px;
+  line-height: 1.45;
+  font-size: 13px;
+}
+
+.wb-hero-stats {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.wb-hero-stat {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.wb-hero-stat-value {
+  display: block;
+  font-size: clamp(16px, 1.2vw, 22px);
+  line-height: 1;
+  font-weight: 700;
+  color: #161616;
+}
+
+.wb-hero-stat-label {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.wb-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.wb-grid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.wb-card {
+  min-width: 0;
+  padding: clamp(12px, 1vw, 16px);
+}
+
+.wb-card--wide {
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.wb-card--accent {
+  background: linear-gradient(180deg, #ffffff 0%, #fbf7eb 100%);
+}
+
+.wb-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.wb-inline-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wb-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(232, 197, 71, 0.1);
+  border: 1px solid rgba(201, 162, 39, 0.2);
+  color: var(--wb-gold-dark);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.wb-form-row {
+  display: grid;
+  gap: 8px;
+}
+
+.wb-input {
+  width: 100%;
+  border: 1px solid rgba(17, 17, 17, 0.12);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbf7eb 100%);
+  color: #1b2230;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.wb-input:focus {
+  outline: none;
+  border-color: var(--wb-gold-dark);
+  box-shadow: 0 0 0 4px rgba(232, 197, 71, 0.14);
+}
+
+.wb-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.wb-method-card .wb-action-row {
+  margin-top: 2px;
+}
+
+.wb-method-card .wb-primary-button {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 12px;
+  border-radius: 10px;
+}
+
+.wb-mini-grid {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.wb-metric-card {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbf9f3 100%);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  min-width: 0;
+}
+
+.wb-metric-card-value {
+  overflow-wrap: anywhere;
+  color: var(--wb-text-main);
+  font-size: 12px;
+}
+
+.wb-metric-card-label {
+  font-size: 10px;
+}
+
+.wb-note-box {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #faf7ea;
+  border: 1px solid rgba(201, 162, 39, 0.16);
+}
+
+.wb-note-box-title {
+  margin: 0 0 10px;
+  color: var(--wb-gold-dark);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.wb-list {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.45;
+  font-size: 12px;
+}
+
+.wb-archive-list {
+  display: grid;
+  gap: 8px;
+}
+
+.wb-archive-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: linear-gradient(180deg, #ffffff 0%, #fbf9f3 100%);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.wb-archive-item:hover,
+.wb-archive-item.active {
+  transform: translateY(-1px);
+  border-color: rgba(201, 162, 39, 0.28);
+  box-shadow: 0 10px 20px rgba(201, 162, 39, 0.12);
+}
+
+.wb-archive-item-title,
+.wb-query-card-title {
+  color: var(--wb-text-main);
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.wb-toggle-pill {
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(232, 197, 71, 0.1);
+  color: var(--wb-gold-dark);
+  font-weight: 600;
+}
+
+.wb-toggle-pill.active {
+  background: var(--wb-gold-gradient);
+  color: #2b2100;
+}
+
+.wb-export-details,
+.wb-products-list,
+.wb-query-grid,
+.wb-query-section {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.wb-products-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.wb-products-toolbar {
+  width: min(720px, 100%);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.wb-products-toolbar--detail {
+  width: auto;
+  max-width: none;
+  flex: 0 0 auto;
+  margin-left: auto;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.wb-products-search {
+  min-width: 0;
+}
+
+.wb-data-table--products {
+  min-width: 0;
+}
+
+.wb-data-table--products td,
+.wb-data-table--products th {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-data-table--products th:nth-child(3),
+.wb-data-table--products td:nth-child(3) {
+  white-space: nowrap;
+}
+
+/* Вертикальный sticky двух строк шапки (заголовки + Итого). Горизонтальное
+   закрепление левых колонок (№/ID/Название) включается отдельно — классом
+   .wb-table-cell--sticky-left + инлайновым left-офсетом (см. withPin в
+   DashboardCatalogProductsSection); фоны для header/totals/body уже заданы выше. */
+.wb-data-table--products thead th {
+  position: sticky;
+  top: 0;
+  z-index: var(--wb-table-sticky-z-header);
+  background: var(--wb-table-header-bg);
+}
+
+.wb-data-table--products .wb-products-totals-row th {
+  position: sticky;
+  top: var(--wb-table-header-row-height);
+  background: var(--wb-table-totals-bg);
+  border-bottom: 1px solid rgba(201, 162, 39, 0.3);
+  z-index: var(--wb-table-sticky-z-header);
+}
+
+/* Закреплённые ячейки тела подхватывают подсветку строки при hover, иначе остаются
+   белыми пятнами на затенённой строке. #fdfaf0 = rgba(232,197,71,0.08) поверх белого. */
+.wb-data-table--products tbody tr:hover .wb-table-cell--sticky-left {
+  background: #fdfaf0;
+}
+
+/* Граница справа у последней закреплённой колонки — чёткая золотая линия, как
+   разделитель закреплённой зоны в ретроспективах (VirtualMatrixTable:
+   borderRight 2px solid var(--wb-gold-mid)). box-shadow вместо border — не влияет
+   на layout фиксированной table и рисуется поверх скроллящихся ячеек. */
+.wb-data-table--products .wb-table-cell--sticky-left-last {
+  box-shadow: 2px 0 0 var(--wb-gold-mid);
+}
+
+.wb-products-campaign-count-th,
+.wb-products-campaign-count-td {
+  width: 52px;
+  min-width: 48px;
+  font-size: 12px;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.wb-products-totals-row th {
+  position: sticky;
+  top: var(--wb-table-header-row-height);
+  background: var(--wb-table-totals-bg);
+  border-bottom: 1px solid rgba(201, 162, 39, 0.3);
+  z-index: var(--wb-table-sticky-z-header);
+}
+
+.wb-products-campaign-active-th,
+.wb-products-campaign-active-td {
+  color: rgba(21, 128, 61, 0.9);
+}
+
+.wb-products-campaign-paused-th,
+.wb-products-campaign-paused-td {
+  color: rgba(161, 98, 7, 0.9);
+}
+
+.wb-products-campaign-disabled-th,
+.wb-products-campaign-disabled-td {
+  color: rgba(100, 116, 139, 0.8);
+}
+
+.wb-data-table--products th:first-child,
+.wb-data-table--products td:first-child {
+  width: 72px;
+  min-width: 72px;
+}
+
+.wb-data-table--products th:nth-child(2),
+.wb-data-table--products td:nth-child(2) {
+  width: 120px;
+  min-width: 120px;
+}
+
+/* ── Products table drag-to-reorder ───────────────────────────────────────── */
+
+.wb-data-table--products th[draggable="true"] {
+  cursor: grab;
+}
+
+.wb-data-table--products th[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.wb-products-column--dragging {
+  opacity: 0.72;
+  box-shadow: inset 0 0 0 1px rgba(201, 162, 39, 0.35);
+}
+
+/* Split header: main sort button + small ↗ sheet-link */
+.wb-products-col-header-split {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 2px;
+}
+
+/* Retrospective sort button */
+.wb-retro-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.wb-products-sort-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Заголовок-метка без сортировки (колонки-вводы калькулятора). */
+.wb-products-plain-header {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  font: inherit;
+  font-weight: 700;
+}
+
+/* Заголовок столбца с ретроспективой: название = ссылка на лист, стрелка = сортировка */
+.wb-products-header-sheet-btn {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.wb-products-header-sheet-btn:hover {
+  color: var(--wb-gold-dark);
+  text-decoration: underline;
+}
+
+.wb-products-header-sort-btn {
+  flex-shrink: 0;
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  line-height: 1;
+}
+
+/* Resize handles use position:absolute — containing block provided by position:sticky on th */
+
+.wb-col-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 10;
+  user-select: none;
+}
+
+.wb-col-resize-handle::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: rgba(0, 0, 0, 0.15);
+  transition: background 0.1s ease;
+}
+
+.wb-col-resize-handle:hover::after,
+.wb-col-resize-handle:active::after {
+  background: rgba(201, 162, 39, 0.7);
+  width: 2px;
+}
+
+.wb-sort-arrow--active {
+  opacity: 1;
+}
+
+.wb-sort-arrow--inactive {
+  opacity: 0.3;
+  font-weight: 400;
+}
+
+.wb-products-link {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--wb-gold-dark);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wb-products-link:hover,
+.wb-products-link:focus-visible {
+  color: #7a4f00;
+  text-decoration: underline;
+}
+
+.wb-products-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wb-product-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbf9f3 100%);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.wb-product-workspace {
+  min-width: 0;
+  flex: 1;
+  min-height: 0;
+  /* Section is the outer scroll container for campaign cards.
+     The toolbar (sticky top:0) anchors when campaigns scroll away.
+     The table-wrap below is its own inner scroll container (overflow-y:auto)
+     with JS-measured height — so it never over-scrolls under the toolbar.
+     padding-top:0 so the toolbar sticks flush with the bottom of the last
+     campaign card with no extra gap. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  overflow-anchor: none;
+  padding: 0 8px 24px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.05);
+}
+
+.wb-product-workspace-placeholder {
+  min-height: 520px;
+}
+
+.wb-product-workspace-state {
+  min-height: 520px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+}
+
+.wb-product-workspace-state h3 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.2;
+  color: var(--wb-text-main);
+}
+
+.wb-product-workspace-state .wb-empty-copy {
+  margin: 0;
+  max-width: 560px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.wb-product-workspace-table-wrap {
+  width: 100%;
+  /* Height is set precisely via ResizeObserver in ProductAdvertisingClusterDataTable.tsx
+     so the section's scroll range equals exactly the campaigns area height — no
+     over-scroll, the table can never drift under the toolbar.
+     CSS fallback keeps the element visible before JS fires. */
+  height: calc(100vh - 112px);
+  max-height: calc(100vh - 112px);
+  position: relative;
+  overflow-y: auto;
+  overflow-x: auto;
+  border-radius: 14px;
+  scrollbar-gutter: stable both-edges;
+  overflow-anchor: none;
+  /* contain:paint (from .wb-table-wrap base) breaks sticky on descendant TDs —
+     override to layout+style which is safe. */
+  contain: layout style;
+  will-change: scroll-position;
+}
+
+.wb-advertising-sticky-header-block {
+  position: sticky;
+  /* Sticks at top of the table-wrap scroll container (top:0). The table-wrap
+     already sits below the toolbar so no additional offset is needed. */
+  top: 0;
+  z-index: 18;
+  width: max-content;
+  min-width: max-content;
+  background: #fff;
+}
+
+.wb-advertising-sticky-header-table {
+  width: max-content;
+  min-width: max-content;
+  max-width: none;
+}
+
+.wb-advertising-toolbar {
+  /* Sticky within .wb-product-workspace (the section scroll container).
+     Campaign cards are above this in the DOM; they scroll away first.
+     The section's scroll range is calculated to equal exactly the height of the
+     content above this toolbar, so after campaigns disappear the section has zero
+     remaining scroll — the table-wrap below can never drift under this toolbar. */
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  background: #fff;
+  margin-top: 0;
+  padding-top: 8px;
+  margin-bottom: 0;
+  padding-bottom: 8px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.wb-advertising-section-header {
+  margin-top: 16px;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.wb-advertising-section-header h3 {
+  margin: 0;
+}
+
+.wb-advertising-section-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.wb-advertising-refresh-button {
+  white-space: nowrap;
+}
+
+.wb-advertising-campaign-grid {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.wb-advertising-campaign-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  text-align: left;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+  cursor: pointer;
+  width: fit-content;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+
+.wb-advertising-campaign-card:hover {
+  border-color: rgba(201, 162, 39, 0.3);
+  box-shadow: 0 4px 12px rgba(201, 162, 39, 0.12);
+  transform: translateY(-1px);
+}
+
+.wb-advertising-campaign-card--active {
+  border-color: rgba(201, 162, 39, 0.45);
+  background: linear-gradient(180deg, #fffdf7 0%, #fff5d8 100%);
+  box-shadow: 0 4px 14px rgba(201, 162, 39, 0.16);
+}
+
+.wb-advertising-campaign-card-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wb-advertising-campaign-wb-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: rgba(15, 23, 42, 0.35);
+  border-radius: 3px;
+  transition: color 0.15s, background 0.15s;
+  text-decoration: none;
+}
+
+.wb-advertising-campaign-wb-link:hover {
+  color: rgba(100, 116, 139, 0.9);
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.wb-advertising-search {
+  max-width: 280px;
+  min-height: 18px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  font-size: 10px;
+}
+
+.wb-advertising-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wb-toggle-pill--compact {
+  padding: 5px 10px;
+  font-size: 10px;
+  line-height: 1;
+  min-height: 18px;
+}
+
+.wb-data-table--product-sheet {
+  width: max-content;
+  min-width: 0;
+}
+
+.wb-data-table--advertising {
+  width: max-content;
+  min-width: max-content;
+  max-width: none;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  --wb-advertising-header-row-top: 0px;
+  --wb-advertising-header-row-height: 30px;
+  --wb-advertising-filter-row-height: 40px;
+  --wb-advertising-totals-row-height: 20px;
+  --wb-advertising-filter-row-top: var(--wb-advertising-header-row-height);
+  --wb-advertising-totals-row-top: calc(
+    var(--wb-advertising-header-row-height) + var(--wb-advertising-filter-row-height)
+  );
+  --wb-advertising-sticky-header-total: calc(
+    var(--wb-advertising-header-row-height) + var(--wb-advertising-filter-row-height) + var(--wb-advertising-totals-row-height)
+  );
+}
+
+.wb-data-table--product-sheet th,
+.wb-data-table--product-sheet td {
+  padding: 2px 4px;
+  font-size: 7px;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.wb-data-table--product-sheet th {
+  background: #f8f6ef;
+}
+
+.wb-data-table__header-cell {
+  text-align: center;
+}
+
+.wb-data-table__header-filter-row th {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  vertical-align: top;
+}
+
+.wb-data-table__sort-button {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.wb-data-table__sort-button:hover,
+.wb-data-table__sort-button:focus-visible,
+.wb-data-table__header-cell.is-sorted .wb-data-table__sort-button {
+  color: #2b2100;
+  outline: none;
+}
+
+.wb-data-table__sort-arrow {
+  min-width: 12px;
+  font-size: 11px;
+  line-height: 1;
+  color: rgba(43, 33, 0, 0.42);
+}
+
+.wb-data-table__sort-arrow.is-active {
+  color: #2b2100;
+}
+
+.wb-data-table__column-filter {
+  width: 100%;
+  min-width: 0;
+  padding: 3px 5px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 8px;
+  background: #fff;
+  color: #111827;
+  font-size: 9px;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.wb-data-table__column-filter::placeholder {
+  color: rgba(17, 24, 39, 0.5);
+  text-align: center;
+}
+
+.wb-data-table__column-filter-dual-search {
+  display: grid;
+  gap: 4px;
+}
+
+.wb-data-table__column-filter-range {
+  display: grid;
+  gap: 4px;
+  min-width: 58px;
+}
+
+.wb-data-table--product-sheet tbody tr,
+.wb-data-table--product-sheet tbody tr:hover,
+.wb-data-table--product-sheet tbody tr.active {
+  cursor: default;
+  background: transparent;
+}
+
+.wb-data-table--advertising th,
+.wb-data-table--advertising td {
+  vertical-align: middle;
+}
+
+.wb-data-table--advertising .wb-advertising-column--sticky {
+  position: sticky;
+  isolation: isolate;
+  border-right: none;
+  box-shadow: inset -1px 0 0 rgba(15, 23, 42, 0.08);
+  background: #fff;
+  background-image: none;
+  background-clip: padding-box;
+}
+
+.wb-data-table--advertising tbody .wb-advertising-column--sticky {
+  z-index: var(--wb-table-sticky-z-body-col);
+}
+
+.wb-data-table--advertising thead tr:first-child .wb-advertising-column--sticky {
+  z-index: 16;
+}
+
+.wb-data-table--advertising .wb-data-table__header-filter-row .wb-advertising-column--sticky {
+  z-index: 15;
+}
+
+.wb-advertising-sticky-header-table .wb-advertising-totals-row .wb-advertising-column--sticky {
+  z-index: 14;
+}
+
+.wb-data-table--advertising .wb-advertising-column-cell--cluster {
+  text-align: left;
+  overflow: hidden;
+}
+
+.wb-data-table--advertising th[draggable="true"] {
+  cursor: grab;
+}
+
+.wb-data-table--advertising th[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.wb-advertising-column--dragging {
+  opacity: 0.72;
+  box-shadow: inset 0 0 0 1px rgba(201, 162, 39, 0.35);
+}
+
+.wb-data-table--advertising thead tr:first-child th {
+  top: var(--wb-advertising-header-row-top);
+  z-index: 12;
+  height: var(--wb-advertising-header-row-height);
+  background: #f8f6ef;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.05);
+}
+
+.wb-data-table--advertising .wb-data-table__header-filter-row th {
+  top: var(--wb-advertising-filter-row-top);
+  z-index: 11;
+  min-height: var(--wb-advertising-filter-row-height);
+  background: #fbf7eb;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.05);
+}
+
+.wb-data-table--advertising td:first-child .wb-advertising-status-chip,
+.wb-data-table--advertising-query td:first-child .wb-advertising-status-chip,
+.wb-data-table--advertising td:first-child .wb-advertising-status-dot,
+.wb-data-table--advertising-query td:first-child .wb-advertising-status-dot {
+  margin-inline: auto;
+}
+
+.wb-data-table--advertising-query th,
+.wb-data-table--advertising-query td {
+  vertical-align: middle;
+}
+
+.wb-advertising-query--placeholder td {
+  color: #6b7280;
+}
+
+.wb-advertising-query--placeholder.is-error td {
+  color: #b42318;
+}
+
+.wb-advertising-query--placeholder.is-loading td {
+  color: transparent;
+  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+  background-size: 200% 100%;
+  animation: wb-skeleton-shimmer 1.2s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+@keyframes wb-skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+

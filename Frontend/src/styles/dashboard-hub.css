@@ -1,0 +1,324 @@
+/* Дашборд-хаб, легенда, таймлайн, таск-доска. Часть глобальных стилей; порядок @import в styles.css = каскад, не менять. */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Dashboard Hub
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.wb-dashboard-hub {
+  padding: 32px 24px;
+  max-width: 720px;
+}
+
+.wb-dashboard-hub__title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--wb-text-main);
+  margin: 0 0 24px;
+}
+
+.wb-dashboard-hub__cards {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.wb-dashboard-hub__card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: 280px;
+  padding: 20px 20px 18px;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 14px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  cursor: pointer;
+  text-align: left;
+  transition: box-shadow 0.14s, border-color 0.14s, transform 0.1s;
+}
+
+.wb-dashboard-hub__card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+  border-color: rgba(0,0,0,0.14);
+  transform: translateY(-1px);
+}
+
+.wb-dashboard-hub__card-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.wb-dashboard-hub__card-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--wb-text-main);
+}
+
+.wb-dashboard-hub__card-desc {
+  font-size: 12px;
+  color: var(--wb-text-muted);
+  line-height: 1.5;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Technical Dashboard
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.wb-tech-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.wb-tech-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Legend */
+.wb-tech-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 0 4px;
+}
+
+.wb-tech-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--wb-text-muted);
+}
+
+.wb-tech-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Block container */
+.wb-tech-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.wb-tech-block__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--wb-text-main);
+  margin: 0;
+}
+
+.wb-tech-block__subtitle {
+  font-size: 11px;
+  color: var(--wb-text-muted);
+  margin: -6px 0 0;
+  line-height: 1.5;
+}
+
+/* Badge */
+.wb-tech-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+/* Task card */
+.wb-tech-task-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.wb-tech-task-card {
+  background: #fff;
+  border: 1px solid rgba(0,0,0,0.07);
+  border-left: 3px solid;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.wb-tech-task-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wb-tech-task-card__name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--wb-text-main);
+  flex: 1;
+  min-width: 0;
+}
+
+.wb-tech-task-card__badges {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.wb-tech-task-card__schedule {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--wb-text-main);
+}
+
+.wb-tech-task-card__desc {
+  font-size: 11px;
+  color: var(--wb-text-muted);
+  line-height: 1.45;
+}
+
+/* ── Weekly timeline ──────────────────────────────────────────────────────── */
+
+.wb-tech-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(0,0,0,0.02);
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 10px;
+  padding: 6px 4px;
+}
+
+.wb-tech-timeline-hour-labels {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  padding: 0 4px 4px;
+}
+
+.wb-tech-timeline-track--labels {
+  position: relative;
+  height: 16px;
+  flex: 1;
+}
+
+.wb-tech-timeline-hour-label {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 9px;
+  color: var(--wb-text-muted);
+  white-space: nowrap;
+}
+
+.wb-tech-timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 32px;
+  padding: 0 4px;
+  border-radius: 6px;
+  transition: background 0.1s;
+}
+
+.wb-tech-timeline-row:hover {
+  background: rgba(0,0,0,0.03);
+}
+
+.wb-tech-timeline-row.is-today {
+  background: rgba(232, 197, 71, 0.08);
+}
+
+.wb-tech-timeline-day-label {
+  width: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wb-tech-timeline-day-short {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--wb-text-muted);
+}
+
+.is-today .wb-tech-timeline-day-short {
+  color: var(--wb-gold-dark);
+}
+
+.wb-tech-timeline-today-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wb-gold-mid);
+  flex-shrink: 0;
+}
+
+.wb-tech-timeline-track {
+  position: relative;
+  flex: 1;
+  height: 24px;
+}
+
+.wb-tech-timeline-gridline {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 1px;
+  background: rgba(0,0,0,0.07);
+  pointer-events: none;
+}
+
+/* Task marker on timeline */
+.wb-tech-timeline-marker {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.1s;
+  z-index: 1;
+}
+
+.wb-tech-timeline-marker:hover {
+  transform: translateY(-50%) scale(1.6);
+  z-index: 2;
+}
+
+/* Time label that appears on hover */
+.wb-tech-timeline-marker-time {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.75);
+  color: #fff;
+  font-size: 9px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.wb-tech-timeline-marker:hover .wb-tech-timeline-marker-time {
+  opacity: 1;
+}
+
