@@ -57,6 +57,10 @@ export class WbClustersScheduler implements OnModuleInit {
   // bid/action latency and cuts idle CPU by ~3×.
   @Cron("*/5 * * * * *")
   async handleQueuePass() {
+    // Глобальный read-only рубильник: в shadow-режиме НЕ флашим очереди действий/ставок в WB.
+    // Критично при первом запуске второго экземпляра: если в восстановленном дампе остались
+    // pending-элементы очереди, без этого гарда они бы ушли в кабинет WB (два писателя).
+    if (appEnv.wbAutomationReadOnly) return;
     await this.wbClustersService.handleClusterBidQueue().catch((err: Error) => {
       this.logger.warn(`handleClusterBidQueue error: ${err.message}`);
     });
