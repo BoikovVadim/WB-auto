@@ -2,11 +2,12 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig(({ command, mode }) => {
-  // base пути берём из env (envDir = корень монорепо), чтобы один и тот же код
-  // собирался и под корень нового домена (sales.oqqi.io → "/"), и под legacy-подпуть
-  // старого прода (legendgames.space/wb → VITE_BASE_PATH=/wb/). dev всегда "/".
+  // base пути берём из env (envDir = корень монорепо). ВАЖНО: дефолт прод-сборки = "/wb/"
+  // (так работает текущий прод legendgames.space/wb). Новый домен в корне (sales.oqqi.io)
+  // ОПТ-ИН явно через VITE_BASE_PATH=/ . Fail-safe: если переменная не доехала до сборки —
+  // остаётся рабочий "/wb/", а не битый корень. dev всегда "/".
   const env = loadEnv(mode, "..", "");
-  const basePath = command === "serve" ? "/" : env.VITE_BASE_PATH || "/";
+  const basePath = command === "serve" ? "/" : env.VITE_BASE_PATH || "/wb/";
   return {
   base: basePath,
   // Read .env from the monorepo root (one level up from Frontend/).
