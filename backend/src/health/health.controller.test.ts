@@ -18,6 +18,7 @@ describe("HealthController", () => {
       wbPromotionApiConfigured: expect.any(Boolean),
       postgresConfigured: expect.any(Boolean),
       writeGuardConfigured: expect.any(Boolean),
+      automationReadOnly: expect.any(Boolean),
     });
     expect(Number.isNaN(Date.parse(health.timestamp))).toBe(false);
   });
