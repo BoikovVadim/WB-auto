@@ -1,34 +1,44 @@
-import { DashboardCampaignsSection } from "./DashboardCampaignsSection";
-import { DashboardCatalogSection } from "./DashboardCatalogSection";
-import { DashboardClusterStatsSection } from "./DashboardClusterStatsSection";
-import { DashboardDailyStatsSection } from "./DashboardDailyStatsSection";
-import { DashboardExportsOverviewSection } from "./DashboardExportsOverviewSection";
-import { DashboardJamStatusSection } from "./DashboardJamStatusSection";
-import { DashboardMethodWorkspaceSection } from "./DashboardMethodWorkspaceSection";
-import { DashboardMinusPhrasesSection } from "./DashboardMinusPhrasesSection";
-import { DashboardCatalogProductDetailSection } from "./DashboardCatalogProductDetailSection";
+import { Suspense } from "react";
+
+// Eager: главная таблица товаров/юнит-экономики (самый частый дефолтный экран, prefetch на
+// hover уже есть) + лёгкие Hub/Tech. Их держим в основном бандле, чтобы первый экран не ждал
+// отдельный чанк.
 import { DashboardCatalogProductsSection } from "./DashboardCatalogProductsSection";
-import { DashboardOrdersDetailSection } from "./DashboardOrdersDetailSection";
-import { DashboardOrdersSumDetailSection } from "./DashboardOrdersSumDetailSection";
-import { DashboardRevenueDetailSection } from "./DashboardRevenueDetailSection";
-import { DashboardCostSumDetailSection } from "./DashboardCostSumDetailSection";
-import { DashboardAdSpendDetailSection } from "./DashboardAdSpendDetailSection";
-import { DashboardDrrPercentDetailSection } from "./DashboardDrrPercentDetailSection";
-import { DashboardCpoDetailSection } from "./DashboardCpoDetailSection";
-import { DashboardSppDetailSection } from "./DashboardSppDetailSection";
-import { DashboardAcquiringDetailSection } from "./DashboardAcquiringDetailSection";
-import { DashboardMarginDetailSection } from "./DashboardMarginDetailSection";
-import { DashboardPricesDetailSection } from "./DashboardPricesDetailSection";
-import { DashboardStocksDetailSection } from "./DashboardStocksDetailSection";
-import { DashboardBuyoutDetailSection } from "./DashboardBuyoutDetailSection";
-import { DashboardChangeHistorySection } from "./DashboardChangeHistorySection";
-import { DashboardUnitEconomicsSettingsSection } from "./DashboardUnitEconomicsSettingsSection";
 import { DashboardHubSection } from "./DashboardHubSection";
-import { DashboardProductsSection } from "./DashboardProductsSection";
-import { DashboardQueryFrequenciesSection } from "./DashboardQueryFrequenciesSection";
-import { DashboardSyncRunsSection } from "./DashboardSyncRunsSection";
 import { DashboardTechSection } from "./DashboardTechSection";
 import { isProductsWorkspaceSection } from "./persistence/dashboardViewState";
+
+// Lazy-секции (отдельные чанки) + SectionFallback — реестр в WbDashboardLazySections.
+import {
+  DashboardProductsSection,
+  DashboardCampaignsSection,
+  DashboardCatalogSection,
+  DashboardClusterStatsSection,
+  DashboardDailyStatsSection,
+  DashboardExportsOverviewSection,
+  DashboardJamStatusSection,
+  DashboardMethodWorkspaceSection,
+  DashboardMinusPhrasesSection,
+  DashboardCatalogProductDetailSection,
+  DashboardOrdersDetailSection,
+  DashboardOrdersSumDetailSection,
+  DashboardRevenueDetailSection,
+  DashboardCostSumDetailSection,
+  DashboardAdSpendDetailSection,
+  DashboardDrrPercentDetailSection,
+  DashboardCpoDetailSection,
+  DashboardSppDetailSection,
+  DashboardAcquiringDetailSection,
+  DashboardMarginDetailSection,
+  DashboardPricesDetailSection,
+  DashboardStocksDetailSection,
+  DashboardBuyoutDetailSection,
+  DashboardChangeHistorySection,
+  DashboardUnitEconomicsSettingsSection,
+  DashboardQueryFrequenciesSection,
+  DashboardSyncRunsSection,
+  SectionFallback,
+} from "./WbDashboardLazySections";
 import { CATALOG_PRODUCTS_HIDDEN_COLUMNS, UNIT_ECONOMICS_HIDDEN_COLUMNS } from "./productsTableColumns";
 import { WbCabinetSidebar } from "./WbCabinetSidebar";
 import type { WbDashboardShellProps } from "./WbDashboardShellTypes";
@@ -203,6 +213,7 @@ export function WbDashboardShell({
 
       <div className="wb-cabinet-main-wrap">
         <main className="wb-cabinet-content">
+          <Suspense fallback={<SectionFallback />}>
           {activeSection === "jam" ? (
             <DashboardJamStatusSection onBack={onSetExportsSection} />
           ) : activeSection === "catalog" ? (
@@ -457,6 +468,7 @@ export function WbDashboardShell({
               onSelectProduct={onSelectProduct}
             />
           )}
+          </Suspense>
 
           {statusNotice ? (
             <section className={`wb-alert wb-alert--${statusNotice.tone}`}>

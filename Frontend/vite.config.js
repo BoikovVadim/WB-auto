@@ -10,6 +10,25 @@ export default defineConfig(function (_a) {
         envDir: "..",
         build: {
             outDir: "build",
+            rollupOptions: {
+                output: {
+                    // Vendor-split: библиотеки в отдельные иммутабельные чанки (хешируются, кэшируются
+                    // браузером надолго и не инвалидируются при правках нашего кода). Чанки секций
+                    // создаются автоматически из React.lazy(() => import(...)) в WbDashboardShell.
+                    manualChunks: function (id) {
+                        if (!id.includes("node_modules"))
+                            return undefined;
+                        if (id.includes("react-dom") || id.includes("/react/") || id.includes("/scheduler/")) {
+                            return "react-vendor";
+                        }
+                        if (id.includes("@tanstack"))
+                            return "virtual-vendor";
+                        if (id.includes("axios"))
+                            return "axios-vendor";
+                        return "vendor";
+                    },
+                },
+            },
         },
         plugins: [react()],
         server: {
