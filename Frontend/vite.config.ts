@@ -1,8 +1,14 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 
-export default defineConfig(({ command }) => ({
-  base: command === "serve" ? "/" : "/wb/",
+export default defineConfig(({ command, mode }) => {
+  // base пути берём из env (envDir = корень монорепо), чтобы один и тот же код
+  // собирался и под корень нового домена (sales.oqqi.io → "/"), и под legacy-подпуть
+  // старого прода (legendgames.space/wb → VITE_BASE_PATH=/wb/). dev всегда "/".
+  const env = loadEnv(mode, "..", "");
+  const basePath = command === "serve" ? "/" : env.VITE_BASE_PATH || "/";
+  return {
+  base: basePath,
   // Read .env from the monorepo root (one level up from Frontend/).
   // Without this Vite only looks in Frontend/ and misses root-level vars
   // like VITE_WB_CLUSTERS_WRITE_API_KEY, which the write-guard requires.
@@ -36,4 +42,5 @@ export default defineConfig(({ command }) => ({
       },
     },
   },
-}));
+  };
+});
