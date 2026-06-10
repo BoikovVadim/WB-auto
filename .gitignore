@@ -22,3 +22,7 @@ Frontend/vite.config.d.ts
 # Артефакт поставки в Oqqi — не хранить в репозитории
 oqqi-sales.bundle
 oqqi-db-core.dump
+
+# Локальные настройки Claude (автономия оператора) — не для поставки
+.claude/settings.local.json
+.claude/scheduled_tasks.lock

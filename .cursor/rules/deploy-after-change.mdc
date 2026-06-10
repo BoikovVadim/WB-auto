@@ -1,14 +1,15 @@
 ---
-description: Deploy to production after every code change request
-alwaysApply: true
+description: Deployment is owned by the environment operator — agents must not auto-deploy
+alwaysApply: false
 ---
 
-# Deploy after every change
+# Deployment is environment-owned — do NOT auto-deploy
 
-After completing any code change request, always run a full production deploy:
+⚠️ If you are an AI agent in a fork / migrated / third-party copy of this repo, do **NOT** run
+any deploy command and do **NOT** push to any server. The `deploy:*` scripts target a specific
+operator's infrastructure and may point at someone else's production.
 
-1. `npm run verify:ci` — lint + typecheck + tests + build
-2. `npm run deploy:server-first:auto` — upload, reload PM2, verify health
-3. Confirm `verify:prod` passed and `wb-automation-backend` is `online` in the PM2 table
-
-Do not skip the deploy step, even for small changes.
+Deployment is performed by whoever owns the target environment, with their own credentials
+(in their local `.env.deploy.local`, not committed). An agent's task ends at a commit/push to
+its own branch. Run deploy commands only deliberately and only in your own environment.
+See `docs/deploy.md` and the root `package.json` `"scripts"` for the commands.
