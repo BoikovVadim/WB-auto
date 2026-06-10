@@ -3,6 +3,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { WbClustersRepository } from "./wb-clusters.repository";
 import type { MarginSnapshotRow } from "./wb-clusters.repository.margin-snapshot";
 import type { GlobalPercentMetric } from "./wb-clusters.repository.unit-economics";
+import { assembleMarginMatrix, type TodayMargin } from "./unit-economics.margin-matrix.assemble";
 
 export type UnitEconomicsSubjectSetting = {
   subject: string;
@@ -142,6 +143,18 @@ export class UnitEconomicsService {
     private readonly repository: WbClustersRepository,
   ) {}
 
+  // Кэш маржинальной матрицы: дорогой расчёт (снапшот + 7 запросов базиса + JS-сборка) при
+  // параллельных вкладках считался заново каждый раз. TTL короткий, т.к. «сегодня» — live;
+  // правки РЕДАКТИРУЕМЫХ настроек (комиссия/налог/эквайринг/ДРР) сбрасывают кэш ЯВНО
+  // (invalidateMarginMatrix) — иначе изменение «не применялось» бы до истечения TTL.
+  private marginMatrixCache: { at: number; data: MarginMatrix } | null = null;
+  private marginMatrixInflight: Promise<MarginMatrix> | null = null;
+  private static readonly MARGIN_MATRIX_TTL_MS = 30_000;
+
+  private invalidateMarginMatrix(): void {
+    this.marginMatrixCache = null;
+  }
+
   /** Предметы каталога с их комиссией (% или null) + глобальные %-метрики. */
   async getSettings(): Promise<UnitEconomicsSettings> {
     if (!this.repository.isConfigured()) {
@@ -170,6 +183,7 @@ export class UnitEconomicsService {
     await this.repository.ensureSchema();
     const value = round2(commissionPercent);
     await this.repository.upsertSubjectCommission(subject, value);
+    this.invalidateMarginMatrix();
     return { subject, commissionPercent: value };
   }
 
@@ -177,6 +191,7 @@ export class UnitEconomicsService {
     if (!this.repository.isConfigured()) throw new Error("PostgreSQL не настроен.");
     await this.repository.ensureSchema();
     await this.repository.deleteSubjectCommission(subject);
+    this.invalidateMarginMatrix();
   }
 
   /** Запись глобальной %-метрики (acquiring/drr); null очищает. */
@@ -186,6 +201,7 @@ export class UnitEconomicsService {
     await this.repository.ensureSchema();
     const rounded = value === null ? null : round2(value);
     await this.repository.setGlobalPercent(safeMetric, rounded);
+    this.invalidateMarginMatrix();
     return { metric: safeMetric, value: rounded };
   }
 
@@ -423,8 +439,29 @@ export class UnitEconomicsService {
    * его первой датой. priceWithDiscount возвращается per-cell, чтобы фронт считал взвешенный
    * «Итого, %» (Σмаржа₽ / Σцены × 100), как в inline-колонке.
    */
+  /**
+   * Маржинальная матрица с TTL-кэшем (30с) + in-flight дедуп: параллельные вкладки не считают
+   * заново. Свежесть «сегодня» в пределах TTL; правки настроек инвалидируют кэш мгновенно.
+   */
   async getMarginMatrix(): Promise<MarginMatrix> {
     if (!this.repository.isConfigured()) return { today: "", dates: [], products: [] };
+    const fresh =
+      this.marginMatrixCache &&
+      Date.now() - this.marginMatrixCache.at < UnitEconomicsService.MARGIN_MATRIX_TTL_MS;
+    if (fresh) return this.marginMatrixCache!.data;
+    if (this.marginMatrixInflight) return this.marginMatrixInflight;
+    this.marginMatrixInflight = this.computeMarginMatrix()
+      .then((data) => {
+        this.marginMatrixCache = { at: Date.now(), data };
+        return data;
+      })
+      .finally(() => {
+        this.marginMatrixInflight = null;
+      });
+    return this.marginMatrixInflight;
+  }
+
+  private async computeMarginMatrix(): Promise<MarginMatrix> {
     await this.repository.ensureSchema();
     const [snapshot, today, base] = await Promise.all([
       this.repository.getMarginSnapshotMatrix(),
@@ -432,46 +469,15 @@ export class UnitEconomicsService {
       this.loadUnitEconomicsBase(),
     ]);
 
-    // Закрытые дни снапшота без сегодня (на случай ручного снапшота за сегодня) — DESC.
-    const pastDates = snapshot.dates.filter((d) => d !== today);
-    const pastSnapshotIdx = pastDates.map((d) => snapshot.dates.indexOf(d));
-    const dates = [today, ...pastDates];
-
     // «Сегодня» на лету: маржа по эффективной цене и с/с (товары без с/с — нет данных).
-    const todayByNmId = new Map<number, { marginRub: number; marginPercent: number | null; price: number }>();
+    const todayByNmId = new Map<number, TodayMargin>();
     for (const [nmId, b] of base) {
       if (b.cost == null) continue;
       const { marginRub, marginPercent } = marginAt(b.priceWithDiscount, b.cost, b);
       todayByNmId.set(nmId, { marginRub, marginPercent, price: b.priceWithDiscount });
     }
 
-    const snapByNmId = new Map(snapshot.products.map((p) => [p.nmId, p]));
-    const nmIds = new Set<number>([...todayByNmId.keys(), ...snapByNmId.keys()]);
-
-    const products: MarginMatrix["products"] = [];
-    for (const nmId of nmIds) {
-      const marginRub = new Array<number | null>(dates.length).fill(null);
-      const marginPercent = new Array<number | null>(dates.length).fill(null);
-      const priceWithDiscount = new Array<number | null>(dates.length).fill(null);
-
-      const t = todayByNmId.get(nmId);
-      if (t) {
-        marginRub[0] = t.marginRub;
-        marginPercent[0] = t.marginPercent;
-        priceWithDiscount[0] = t.price;
-      }
-      const snap = snapByNmId.get(nmId);
-      if (snap) {
-        for (let i = 0; i < pastDates.length; i++) {
-          const si = pastSnapshotIdx[i]!;
-          marginRub[i + 1] = snap.marginRub[si] ?? null;
-          marginPercent[i + 1] = snap.marginPercent[si] ?? null;
-          priceWithDiscount[i + 1] = snap.priceWithDiscount[si] ?? null;
-        }
-      }
-      products.push({ nmId, marginRub, marginPercent, priceWithDiscount });
-    }
-
-    return { today, dates, products };
+    // Сборка матрицы (сегодня + закрытые дни снапшота) — чистая, в отдельном модуле.
+    return assembleMarginMatrix(snapshot, today, todayByNmId);
   }
 }
