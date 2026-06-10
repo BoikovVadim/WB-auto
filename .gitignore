@@ -18,3 +18,7 @@ Frontend/build
 # Сгенерированные из vite.config.ts артефакты (source of truth — .ts)
 Frontend/vite.config.js
 Frontend/vite.config.d.ts
+
+# Артефакт поставки в Oqqi — не хранить в репозитории
+oqqi-sales.bundle
+oqqi-db-core.dump
