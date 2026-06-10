@@ -1,3 +1,4 @@
+import { appEnv } from "../common/env";
 import { normalizeBidFromWb } from "./wb-clusters-queue.helpers";
 import type { ProductSnapshotWarmupPriority } from "./wb-clusters.types";
 import type { WbClustersWriteLanesContext } from "./wb-clusters.flow-context";
@@ -131,6 +132,11 @@ export async function processClusterBidWritePass(
   self: WbClustersWriteLanesContext,
   reason: "apply-command" | "cron",
 ) {
+  // Read-only (миграция): не флашим ставки в WB ни по крону, ни по немедленному apply-command —
+  // job'ы остаются в очереди pending, в чужой боевой кабинет не пишем. Абсолютный рубеж — в клиенте.
+  if (appEnv.wbAutomationReadOnly) {
+    return;
+  }
   if (self.bidQueuePassPromise) {
     return self.bidQueuePassPromise;
   }
@@ -163,6 +169,10 @@ export async function processClusterActionWritePass(
   self: WbClustersWriteLanesContext,
   reason: "apply-command" | "cron",
 ) {
+  // Read-only (миграция): не флашим вкл/выкл кластеров в WB (см. processClusterBidWritePass).
+  if (appEnv.wbAutomationReadOnly) {
+    return;
+  }
   if (self.actionQueuePassPromise) {
     return self.actionQueuePassPromise;
   }

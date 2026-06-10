@@ -91,6 +91,11 @@ export class WbPricesApiClient {
    * `price` и `discount` обязаны быть целыми (WB не принимает копейки/доли %).
    */
   async uploadPrice(nmID: number, price: number, discount: number): Promise<number> {
+    // Абсолютный рубеж read-only: не пишем цену в чужой боевой кабинет при миграции (два писателя).
+    // Выше есть no-op-гейт в setProductPrice; сюда дойти не должны — падаем, а не записываем.
+    if (appEnv.wbAutomationReadOnly) {
+      throw new Error("WB write blocked: WB_AUTOMATION_READ_ONLY (uploadPrice)");
+    }
     const token = this.getToken();
     if (!token) throw new Error("WB_API_TOKEN not configured");
 

@@ -271,6 +271,11 @@ export abstract class WbClustersServiceDataSppStockPrice extends WbClustersServi
 
   /** Запрашивает изменение цены товара и отправляет его на маркетплейс WB. */
   async setProductPrice(nmId: number, targetFinal: number) {
+    // Read-only (миграция): ручная смена цены не уходит в чужой боевой кабинет WB. Понятная
+    // ошибка вместо «висящей» отправки — UI покажет, что экземпляр в режиме наблюдения.
+    if (appEnv.wbAutomationReadOnly) {
+      throw new Error("Изменение цены недоступно: сервер в режиме наблюдения (read-only).");
+    }
     if (!this.wbClustersRepository.isConfigured()) {
       throw new Error("PostgreSQL не настроен.");
     }

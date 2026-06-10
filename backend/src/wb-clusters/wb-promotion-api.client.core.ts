@@ -164,6 +164,12 @@ export class WbPromotionApiClient {
     if (input.bids.length === 0) {
       return;
     }
+    // Абсолютный рубеж read-only: ни один write-в-WB не должен уйти, кто бы ни вызвал (защита от
+    // двух писателей при миграции). Сюда доходить НЕ должны (выше есть no-op-гейты) — если дошли,
+    // это баг гейтинга, и упасть безопаснее, чем записать в чужой боевой кабинет.
+    if (appEnv.wbAutomationReadOnly) {
+      throw new Error("WB write blocked: WB_AUTOMATION_READ_ONLY (setNormQueryBids)");
+    }
     await this.request<void>({ method: "POST", path: "/adv/v0/normquery/bids", body: { bids: input.bids } }, options);
   }
 
@@ -177,6 +183,10 @@ export class WbPromotionApiClient {
   async setNormQueryMinus(items: Array<{ advert_id: number; nm_id: number; norm_queries: string[] }>, options?: { failFastOnTooManyRequests?: boolean; maxQueueWaitMs?: number }) {
     if (items.length === 0) {
       return { items: [] satisfies NonNullable<PromotionNormQueryMinusResponse["items"]> };
+    }
+    // Абсолютный рубеж read-only (см. setNormQueryBids) — не пишем вкл/выкл кластеров в чужой кабинет.
+    if (appEnv.wbAutomationReadOnly) {
+      throw new Error("WB write blocked: WB_AUTOMATION_READ_ONLY (setNormQueryMinus)");
     }
     const results: NonNullable<PromotionNormQueryMinusResponse["items"]> = [];
     for (const item of items) {
